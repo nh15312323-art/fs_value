@@ -5,7 +5,7 @@
 // ============================================================
 
 const YEARS_BACK = 3; // 우선 3년으로 시작. 안정적으로 되면 10으로 늘리세요.
-const CONCURRENCY = 6; // 한 번에 동시에 보낼 DART 요청 수 (너무 크게 하면 Apps Script 동시실행 한도에 걸릴 수 있음)
+const CONCURRENCY = 12; // 동시 요청 수. 24개 요청을 2묶음으로 처리해 대기시간을 줄임
 
 const REPRT_CODES = [
   { code: "11013", label: "1분기" },
@@ -91,14 +91,21 @@ const HTML_PAGE = `<!doctype html>
 </body>
 </html>`;
 
-async function fetchDart(corpCode, bsnsYear, reprtCode, fsDiv, proxyUrl) {
+async function fetchDart(corpCode, bsnsYear, reprtCode, fsDiv, proxyUrl, timeoutMs = 15000) {
   const url = new URL(proxyUrl);
   url.searchParams.set("corp_code", corpCode);
   url.searchParams.set("bsns_year", bsnsYear);
   url.searchParams.set("reprt_code", reprtCode);
   url.searchParams.set("fs_div", fsDiv);
-  const resp = await fetch(url.toString());
-  return resp.json();
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(url.toString(), { signal: controller.signal });
+    return await resp.json();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function pickAccount(list, ids, names) {
@@ -132,31 +139,42 @@ function buildPeriods(yearsBack) {
 }
 
 async function fetchPeriodRow(corpCode, period, proxyUrl) {
-  let fsDiv = "CFS";
-  let dart = await fetchDart(corpCode, period.year, period.code, fsDiv, proxyUrl);
-  if (dart.status !== "000") {
-    fsDiv = "OFS";
-    dart = await fetchDart(corpCode, period.year, period.code, fsDiv, proxyUrl);
-  }
-
-  const row = { period_label: `${period.year} ${period.label}`, fs_div: dart.status === "000" ? fsDiv : null };
-  if (dart.status !== "000") {
+  const emptyRow = (extra) => {
+    const row = { period_label: `${period.year} ${period.label}`, fs_div: null, ...extra };
     for (const item of ACCOUNT_ITEMS) row[item.key] = null;
-  } else {
-    for (const item of ACCOUNT_ITEMS) {
-      row[item.key] = pickAccount(dart.list, item.ids, item.names);
+    row.capex = null;
+    row.fcf = null;
+    delete row.capex_ppe;
+    delete row.capex_intangible;
+    return row;
+  };
+
+  try {
+    let fsDiv = "CFS";
+    let dart = await fetchDart(corpCode, period.year, period.code, fsDiv, proxyUrl);
+    if (dart.status !== "000") {
+      fsDiv = "OFS";
+      dart = await fetchDart(corpCode, period.year, period.code, fsDiv, proxyUrl);
     }
+
+    if (dart.status !== "000") return emptyRow();
+
+    const row = { period_label: `${period.year} ${period.label}`, fs_div: fsDiv };
+    for (const item of ACCOUNT_ITEMS) row[item.key] = pickAccount(dart.list, item.ids, item.names);
+
+    const capex = (row.capex_ppe != null || row.capex_intangible != null)
+      ? Math.abs(row.capex_ppe || 0) + Math.abs(row.capex_intangible || 0)
+      : null;
+    row.capex = capex;
+    row.fcf = row.ocf != null && capex != null ? row.ocf - capex : null;
+    delete row.capex_ppe;
+    delete row.capex_intangible;
+
+    return row;
+  } catch (e) {
+    // 타임아웃/네트워크 오류 등 — 이 기간만 실패 처리하고 나머지는 계속 진행
+    return emptyRow({ error: String(e.message || e) });
   }
-
-  const capex = (row.capex_ppe != null || row.capex_intangible != null)
-    ? Math.abs(row.capex_ppe || 0) + Math.abs(row.capex_intangible || 0)
-    : null;
-  row.capex = capex;
-  row.fcf = row.ocf != null && capex != null ? row.ocf - capex : null;
-  delete row.capex_ppe;
-  delete row.capex_intangible;
-
-  return row;
 }
 
 export default {
