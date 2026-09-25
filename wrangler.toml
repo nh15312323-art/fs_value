@@ -1,0 +1,8 @@
+name = "fs-value"
+main = "src/index.js"
+compatibility_date = "2026-09-25"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "market-value-db"
+database_id = "5802964b-7f51-4f2d-b2bb-5a573c44621d"
