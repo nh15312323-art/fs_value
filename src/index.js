@@ -14,6 +14,22 @@
 // 기존 저장소 구조(라우터 등)가 있다면 이 안의 fetch 핸들러 로직만
 // 가져다 쓰시면 됩니다.
 // ============================================================
+// ============================================================
+// Phase 2: 웹(Cloudflare Worker)에서 DART 조회 + 파생계산이 되는지 검증
+//
+// 확인해야 할 것 (본인 저장소에 맞게):
+//   1) wrangler.toml(또는 wrangler.jsonc)에 D1 바인딩이 있는지, 이름이 무엇인지
+//        예: [[d1_databases]]
+//            binding = "DB"                 <- 이 이름을 아래 env.DB 와 맞춰야 함
+//            database_name = "market-value-db"
+//            database_id = "..."
+//   2) DART_API_KEY를 Cloudflare Worker 환경변수(Secret)로 등록
+//        npx wrangler secret put DART_API_KEY
+//
+// 이 파일 하나만으로 동작하는 최소 예시입니다.
+// 기존 저장소 구조(라우터 등)가 있다면 이 안의 fetch 핸들러 로직만
+// 가져다 쓰시면 됩니다.
+// ============================================================
 
 const HTML_PAGE = `<!doctype html>
 <html lang="ko">
@@ -79,9 +95,8 @@ const HTML_PAGE = `<!doctype html>
 </body>
 </html>`;
 
-async function fetchDart(corpCode, bsnsYear, reprtCode, fsDiv, apiKey) {
-  const url = new URL("https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json");
-  url.searchParams.set("crtfc_key", apiKey);
+async function fetchDart(corpCode, bsnsYear, reprtCode, fsDiv, proxyUrl) {
+  const url = new URL(proxyUrl); // Google Apps Script 웹앱 URL (DART_API_KEY는 Apps Script 쪽에만 저장)
   url.searchParams.set("corp_code", corpCode);
   url.searchParams.set("bsns_year", bsnsYear);
   url.searchParams.set("reprt_code", reprtCode);
@@ -123,12 +138,12 @@ export default {
         return Response.json({ error: `'${corpName}' 종목을 corp_master에서 찾을 수 없습니다.` }, { status: 404 });
       }
 
-      // 2) DART 호출: 연결(CFS) 먼저, 없으면 개별(OFS)로 폴백
+      // 2) DART 호출(Apps Script 중계기 경유): 연결(CFS) 먼저, 없으면 개별(OFS)로 폴백
       let fsDiv = "CFS";
-      let dart = await fetchDart(row.corp_code, bsnsYear, reprtCode, fsDiv, env.DART_API_KEY);
+      let dart = await fetchDart(row.corp_code, bsnsYear, reprtCode, fsDiv, env.DART_PROXY_URL);
       if (dart.status !== "000") {
         fsDiv = "OFS";
-        dart = await fetchDart(row.corp_code, bsnsYear, reprtCode, fsDiv, env.DART_API_KEY);
+        dart = await fetchDart(row.corp_code, bsnsYear, reprtCode, fsDiv, env.DART_PROXY_URL);
       }
       if (dart.status !== "000") {
         return Response.json({ error: `DART 조회 실패 (status=${dart.status}, message=${dart.message})` }, { status: 502 });
