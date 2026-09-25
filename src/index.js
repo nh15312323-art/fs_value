@@ -14,22 +14,6 @@
 // 기존 저장소 구조(라우터 등)가 있다면 이 안의 fetch 핸들러 로직만
 // 가져다 쓰시면 됩니다.
 // ============================================================
-// ============================================================
-// Phase 2: 웹(Cloudflare Worker)에서 DART 조회 + 파생계산이 되는지 검증
-//
-// 확인해야 할 것 (본인 저장소에 맞게):
-//   1) wrangler.toml(또는 wrangler.jsonc)에 D1 바인딩이 있는지, 이름이 무엇인지
-//        예: [[d1_databases]]
-//            binding = "DB"                 <- 이 이름을 아래 env.DB 와 맞춰야 함
-//            database_name = "market-value-db"
-//            database_id = "..."
-//   2) DART_API_KEY를 Cloudflare Worker 환경변수(Secret)로 등록
-//        npx wrangler secret put DART_API_KEY
-//
-// 이 파일 하나만으로 동작하는 최소 예시입니다.
-// 기존 저장소 구조(라우터 등)가 있다면 이 안의 fetch 핸들러 로직만
-// 가져다 쓰시면 됩니다.
-// ============================================================
 
 const HTML_PAGE = `<!doctype html>
 <html lang="ko">
@@ -106,10 +90,13 @@ async function fetchDart(corpCode, bsnsYear, reprtCode, fsDiv, proxyUrl) {
   return resp.json();
 }
 
-function pickAccount(list, names) {
-  // account_nm이 공시마다 조금씩 다를 수 있어 부분일치로 먼저 찾음
-  // (10년치 본 구축 시엔 account_id 기반 매칭으로 고도화 예정)
-  const item = list.find((row) => names.some((n) => row.account_nm?.includes(n)));
+function pickAccount(list, ids, names) {
+  // 1) 표준 계정ID로 먼저 매칭 (연간/반기/분기 표기와 무관하게 안정적)
+  let item = list.find((row) => ids.includes(row.account_id));
+  // 2) 실패 시 계정명 텍스트로 매칭 (반기순이익/분기순이익 등 표기 차이 대응)
+  if (!item) {
+    item = list.find((row) => names.some((n) => row.account_nm?.includes(n)));
+  }
   if (!item) return null;
   const raw = item.thstrm_amount?.replace(/,/g, "");
   return raw ? Number(raw) : null;
@@ -150,9 +137,17 @@ export default {
       }
 
       // 3) 필요한 항목만 추출 + 파생값(영업이익률) 계산
-      const revenue = pickAccount(dart.list, ["매출액", "수익(매출액)"]);
-      const operatingIncome = pickAccount(dart.list, ["영업이익"]);
-      const netIncome = pickAccount(dart.list, ["당기순이익"]);
+      const revenue = pickAccount(
+        dart.list,
+        ["ifrs-full_Revenue", "ifrs-full_RevenueFromContractsWithCustomers"],
+        ["매출액", "수익(매출액)"]
+      );
+      const operatingIncome = pickAccount(dart.list, ["dart_OperatingIncomeLoss"], ["영업이익"]);
+      const netIncome = pickAccount(
+        dart.list,
+        ["ifrs-full_ProfitLoss"],
+        ["당기순이익", "반기순이익", "분기순이익", "순이익"]
+      );
       const operatingMargin = revenue && operatingIncome != null ? operatingIncome / revenue : null;
 
       return Response.json({
