@@ -71,7 +71,7 @@ const HTML_PAGE = `<!doctype html>
 
         statusEl.textContent = \`\${data.corp_name} (\${data.corp_code}) — \${data.rows.length}개 기간\`;
 
-        const cols = ['기간', 'fs_div', '매출액', '매출원가', '영업이익', '당기순이익', '총자본', '총부채', '현금및현금성자산', '단기금융자산', '영업활동현금흐름', 'CapEx', '잉여현금흐름', '매출채권', '재고자산', '매입채무'];
+        const cols = ['기간', 'fs_div', '매출액', '매출원가', '영업이익', '당기순이익', '총자본', '총부채', '현금및현금성자산', '단기금융자산', '영업활동현금흐름', 'CapEx', '잉여현금흐름', '매출채권', '재고자산', '매입채무', '비고'];
         let html = '<table><tr>' + cols.map(c => \`<th>\${c}</th>\`).join('') + '</tr>';
         for (const r of data.rows) {
           const cells = [
@@ -83,7 +83,7 @@ const HTML_PAGE = `<!doctype html>
           html += '<tr>' + cells.map((v, i) => {
             if (i < 2) return \`<td>\${v}</td>\`; // 기간, fs_div: 텍스트 그대로
             return \`<td>\${v != null ? Number(v).toLocaleString() : 'N/A'}</td>\`;
-          }).join('') + '</tr>';
+          }).join('') + \`<td>\${r.error ?? ''}</td>\` + '</tr>';
         }
         html += '</table>';
         wrapEl.innerHTML = html;
@@ -112,13 +112,13 @@ async function fetchDart(corpCode, bsnsYear, reprtCode, fsDiv, proxyUrl, timeout
   }
 }
 
-async function fetchDartWithRetry(corpCode, bsnsYear, reprtCode, fsDiv, proxyUrl, retries = 1) {
+async function fetchDartWithRetry(corpCode, bsnsYear, reprtCode, fsDiv, proxyUrl, retries = 2) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       return await fetchDart(corpCode, bsnsYear, reprtCode, fsDiv, proxyUrl);
     } catch (e) {
       if (attempt === retries) throw e;
-      await new Promise((r) => setTimeout(r, 600));
+      await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
     }
   }
 }
