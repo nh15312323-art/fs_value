@@ -5,7 +5,7 @@
 // ============================================================
 
 const YEARS_BACK = 3; // 우선 3년으로 시작. 안정적으로 되면 10으로 늘리세요.
-const CONCURRENCY = 12; // 동시 요청 수. 24개 요청을 2묶음으로 처리해 대기시간을 줄임
+const CONCURRENCY = 3; // 동시 요청 수를 줄여 DART/Apps Script 쪽 순간 과부하를 피함
 
 const REPRT_CODES = [
   { code: "11013", label: "1분기" },
@@ -74,12 +74,16 @@ const HTML_PAGE = `<!doctype html>
         const cols = ['기간', 'fs_div', '매출액', '매출원가', '영업이익', '당기순이익', '총자본', '총부채', '현금및현금성자산', '단기금융자산', '영업활동현금흐름', 'CapEx', '잉여현금흐름', '매출채권', '재고자산', '매입채무'];
         let html = '<table><tr>' + cols.map(c => \`<th>\${c}</th>\`).join('') + '</tr>';
         for (const r of data.rows) {
-          html += '<tr>' + [
+          const cells = [
             r.period_label, r.fs_div ?? '-',
             r.revenue, r.cogs, r.operating_income, r.net_income,
             r.total_equity, r.total_liabilities, r.cash, r.st_financial_assets,
             r.ocf, r.capex, r.fcf, r.receivables, r.inventory, r.payables,
-          ].map(v => \`<td>\${v != null ? Number(v).toLocaleString() : (v ?? 'N/A')}</td>\`).join('') + '</tr>';
+          ];
+          html += '<tr>' + cells.map((v, i) => {
+            if (i < 2) return \`<td>\${v}</td>\`; // 기간, fs_div: 텍스트 그대로
+            return \`<td>\${v != null ? Number(v).toLocaleString() : 'N/A'}</td>\`;
+          }).join('') + '</tr>';
         }
         html += '</table>';
         wrapEl.innerHTML = html;
@@ -105,6 +109,17 @@ async function fetchDart(corpCode, bsnsYear, reprtCode, fsDiv, proxyUrl, timeout
     return await resp.json();
   } finally {
     clearTimeout(timer);
+  }
+}
+
+async function fetchDartWithRetry(corpCode, bsnsYear, reprtCode, fsDiv, proxyUrl, retries = 1) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fetchDart(corpCode, bsnsYear, reprtCode, fsDiv, proxyUrl);
+    } catch (e) {
+      if (attempt === retries) throw e;
+      await new Promise((r) => setTimeout(r, 600));
+    }
   }
 }
 
@@ -151,10 +166,10 @@ async function fetchPeriodRow(corpCode, period, proxyUrl) {
 
   try {
     let fsDiv = "CFS";
-    let dart = await fetchDart(corpCode, period.year, period.code, fsDiv, proxyUrl);
+    let dart = await fetchDartWithRetry(corpCode, period.year, period.code, fsDiv, proxyUrl);
     if (dart.status !== "000") {
       fsDiv = "OFS";
-      dart = await fetchDart(corpCode, period.year, period.code, fsDiv, proxyUrl);
+      dart = await fetchDartWithRetry(corpCode, period.year, period.code, fsDiv, proxyUrl);
     }
 
     if (dart.status !== "000") return emptyRow();
