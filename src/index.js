@@ -123,22 +123,24 @@ const HTML_PAGE = `<!doctype html>
         if (!byYear[r.bsns_year]) byYear[r.bsns_year] = {};
         byYear[r.bsns_year][r.reprt_code] = r;
       }
-      const seq = [
-        { code: '11013', qLabel: '1분기', prev: null },
-        { code: '11012', qLabel: '2분기', prev: '11013' },
-        { code: '11014', qLabel: '3분기', prev: '11012' },
-        { code: '11011', qLabel: '4분기', prev: '11014' },
-      ];
       const out = [];
       for (const y of Object.keys(byYear).sort()) {
-        for (const step of seq) {
-          const cur = byYear[y][step.code];
-          if (!cur) continue;
-          const row = { ...cur, period_label: \`\${y} \${step.qLabel}\` };
-          if (step.prev) {
-            const prevRow = byYear[y][step.prev];
-            for (const key of FLOW_KEYS) {
-              row[key] = (cur[key] != null && prevRow && prevRow[key] != null) ? cur[key] - prevRow[key] : null;
+        const q1 = byYear[y]['11013'];
+        const q2 = byYear[y]['11012']; // 반기 thstrm_amount = 2분기 단독값 (그대로 사용)
+        const q3 = byYear[y]['11014']; // 3분기 thstrm_amount = 3분기 단독값 (그대로 사용)
+        const annual = byYear[y]['11011']; // 사업보고서 thstrm_amount = 연간 누적
+
+        if (q1) out.push({ ...q1, period_label: \`\${y} 1분기\` });
+        if (q2) out.push({ ...q2, period_label: \`\${y} 2분기\` });
+        if (q3) out.push({ ...q3, period_label: \`\${y} 3분기\` });
+        if (annual) {
+          const row = { ...annual, period_label: \`\${y} 4분기\` };
+          for (const key of FLOW_KEYS) {
+            const parts = [q1 && q1[key], q2 && q2[key], q3 && q3[key]];
+            if (annual[key] != null && parts.every((v) => v != null)) {
+              row[key] = annual[key] - (parts[0] + parts[1] + parts[2]);
+            } else {
+              row[key] = null;
             }
           }
           out.push(row);
