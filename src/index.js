@@ -72,8 +72,22 @@ const HTML_PAGE = `<!doctype html>
   <br/>
   <button onclick="fetchAndSave()">DART에서 조회 + 저장</button>
   <button onclick="loadFromDb()">DB에서 조회</button>
+  <br/>
+  <label>확인할 연도: <input id="rawYear" type="number" style="width:80px" value="2018" /></label>
+  <select id="rawReprt">
+    <option value="11013">1분기</option>
+    <option value="11012">반기</option>
+    <option value="11014">3분기</option>
+    <option value="11011" selected>사업보고서</option>
+  </select>
+  <select id="rawFsDiv">
+    <option value="CFS" selected>연결(CFS)</option>
+    <option value="OFS">개별(OFS)</option>
+  </select>
+  <br/>
   <button onclick="rawCheck('stockTotqySttus')">주식총수 원본보기</button>
   <button onclick="rawCheck('alotMatter')">배당현황 원본보기</button>
+  <button onclick="rawCheckFs()">재무제표 원본보기</button>
   <div id="status"></div>
   <pre id="raw" style="white-space:pre-wrap; background:#f5f5f5; padding:8px; font-size:11px;"></pre>
   <div id="wrap"></div>
@@ -81,17 +95,38 @@ const HTML_PAGE = `<!doctype html>
   <script>
     async function rawCheck(kind) {
       const corpName = document.getElementById('corpName').value.trim();
-      const yearsBack = Number(document.getElementById('yearsBack').value);
+      const year = document.getElementById('rawYear').value;
+      const reprtCode = document.getElementById('rawReprt').value;
       const statusEl = document.getElementById('status');
       const rawEl = document.getElementById('raw');
-      const thisYear = new Date().getFullYear();
       statusEl.textContent = '원본 조회 중...';
       rawEl.textContent = '';
       try {
-        const res = await fetch(\`/api/raw?kind=\${kind}&corp_name=\${encodeURIComponent(corpName)}&bsns_year=\${thisYear - 1}&reprt_code=11011\`);
+        const res = await fetch(\`/api/raw?kind=\${kind}&corp_name=\${encodeURIComponent(corpName)}&bsns_year=\${year}&reprt_code=\${reprtCode}\`);
         const data = await res.json();
-        statusEl.textContent = \`\${kind} 원본 (사업보고서, \${thisYear - 1}년)\`;
+        statusEl.textContent = \`\${kind} 원본 (\${year}년, reprt_code=\${reprtCode})\`;
         rawEl.textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        statusEl.textContent = '오류: ' + e.message;
+      }
+    }
+
+    async function rawCheckFs() {
+      const corpName = document.getElementById('corpName').value.trim();
+      const year = document.getElementById('rawYear').value;
+      const reprtCode = document.getElementById('rawReprt').value;
+      const fsDiv = document.getElementById('rawFsDiv').value;
+      const statusEl = document.getElementById('status');
+      const rawEl = document.getElementById('raw');
+      statusEl.textContent = '원본 조회 중...';
+      rawEl.textContent = '';
+      try {
+        const res = await fetch(\`/api/raw?kind=fnlttSinglAcntAll&corp_name=\${encodeURIComponent(corpName)}&bsns_year=\${year}&reprt_code=\${reprtCode}&fs_div=\${fsDiv}\`);
+        const data = await res.json();
+        statusEl.textContent = \`재무제표 원본 (\${year}년, reprt_code=\${reprtCode}, \${fsDiv})\`;
+        // CF(현금흐름표) 관련 행만 추려서 보여줌 (전체는 너무 길어서)
+        const cfRows = (data.list || []).filter((r) => r.sj_div === 'CF');
+        rawEl.textContent = JSON.stringify(cfRows.length ? cfRows : data, null, 2);
       } catch (e) {
         statusEl.textContent = '오류: ' + e.message;
       }
@@ -230,8 +265,17 @@ function parseAmount(v) {
 
 function pickStockCounts(dart) {
   if (!dart || dart.status !== "000") return { total_shares: null, treasury_shares: null };
-  const row = dart.list.find((r) => r.se === "합계");
-  if (!row) return { total_shares: null, treasury_shares: null };
+  const norm = (s) => (s || "").replace(/\s/g, "");
+  let row = dart.list.find((r) => norm(r.se) === "합계");
+  if (!row) {
+    // "합계" 행 표기가 다르거나 없는 경우: 보통주/우선주 행을 직접 합산
+    const parts = dart.list.filter((r) => ["보통주", "우선주"].includes(norm(r.se)));
+    if (parts.length > 0) {
+      const sum = (key) => parts.reduce((acc, r) => acc + (parseAmount(r[key]) || 0), 0);
+      return { total_shares: sum("istc_totqy") || null, treasury_shares: sum("tesstk_co") || null };
+    }
+    return { total_shares: null, treasury_shares: null };
+  }
   return { total_shares: parseAmount(row.istc_totqy), treasury_shares: parseAmount(row.tesstk_co) };
 }
 
@@ -351,15 +395,18 @@ export default {
     }
 
     if (pathname === "/api/raw") {
-      const kind = searchParams.get("kind"); // stockTotqySttus | alotMatter
+      const kind = searchParams.get("kind"); // stockTotqySttus | alotMatter | fnlttSinglAcntAll
       const corpName = searchParams.get("corp_name");
       const bsnsYear = searchParams.get("bsns_year");
       const reprtCode = searchParams.get("reprt_code") || "11011";
+      const fsDiv = searchParams.get("fs_div"); // fnlttSinglAcntAll 조회 시에만 필요
 
       const corpRow = await env.DB.prepare("SELECT corp_code, corp_name FROM corp_master WHERE corp_name = ?").bind(corpName).first();
       if (!corpRow) return Response.json({ error: `'${corpName}' 종목을 corp_master에서 찾을 수 없습니다.` }, { status: 404 });
 
-      const raw = await fetchDartGeneric(kind, corpRow.corp_code, bsnsYear, reprtCode, env.DART_PROXY_URL);
+      const raw = fsDiv
+        ? await fetchDart(corpRow.corp_code, bsnsYear, reprtCode, fsDiv, env.DART_PROXY_URL)
+        : await fetchDartGeneric(kind, corpRow.corp_code, bsnsYear, reprtCode, env.DART_PROXY_URL);
       return Response.json(raw);
     }
 
