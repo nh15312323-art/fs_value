@@ -40,7 +40,9 @@ const DB_COLUMNS = [
   "corp_code", "bsns_year", "reprt_code", "period_label", "period_order", "fs_div",
   "revenue", "cogs", "operating_income", "net_income",
   "total_equity", "total_liabilities", "cash", "st_financial_assets",
-  "ocf", "capex", "fcf", "receivables", "inventory", "payables", "updated_at",
+  "ocf", "capex", "fcf", "receivables", "inventory", "payables",
+  "total_shares", "treasury_shares", "dividend_per_share",
+  "updated_at",
 ];
 
 const HTML_PAGE = `<!doctype html>
@@ -98,7 +100,7 @@ const HTML_PAGE = `<!doctype html>
 
   <script>
     function renderTable(rows) {
-      const cols = ['기간', 'fs_div', '매출액', '매출원가', '영업이익', '당기순이익', '총자본', '총부채', '현금및현금성자산', '단기금융자산', '영업활동현금흐름', 'CapEx', '잉여현금흐름', '매출채권', '재고자산', '매입채무', '비고'];
+      const cols = ['기간', 'fs_div', '매출액', '매출원가', '영업이익', '당기순이익', '총자본', '총부채', '현금및현금성자산', '단기금융자산', '영업활동현금흐름', 'CapEx', '잉여현금흐름', '매출채권', '재고자산', '매입채무', '총주식수', '자기주식수', '주당배당금', '비고'];
       let html = '<table><tr>' + cols.map(c => \`<th>\${c}</th>\`).join('') + '</tr>';
       for (const r of rows) {
         const cells = [
@@ -106,6 +108,7 @@ const HTML_PAGE = `<!doctype html>
           r.revenue, r.cogs, r.operating_income, r.net_income,
           r.total_equity, r.total_liabilities, r.cash, r.st_financial_assets,
           r.ocf, r.capex, r.fcf, r.receivables, r.inventory, r.payables,
+          r.total_shares, r.treasury_shares, r.dividend_per_share,
         ];
         html += '<tr>' + cells.map((v, i) => {
           if (i < 2) return \`<td>\${v}</td>\`;
@@ -124,10 +127,10 @@ const HTML_PAGE = `<!doctype html>
       const thisYear = new Date().getFullYear();
       const startYear = thisYear - yearsBack + 1;
 
-      // 5년 단위로 구간을 나눠서 순서대로 호출 (한 번에 너무 많이 부르면 실패함)
+      // 3년 단위로 구간을 나눠서 순서대로 호출 (항목이 늘어 호출 수가 늘었으므로 묶음을 더 작게)
       const chunks = [];
-      for (let y = startYear; y <= thisYear; y += 5) {
-        chunks.push([y, Math.min(y + 4, thisYear)]);
+      for (let y = startYear; y <= thisYear; y += 3) {
+        chunks.push([y, Math.min(y + 2, thisYear)]);
       }
 
       let allRows = [];
@@ -213,6 +216,27 @@ async function fetchDartWithRetry(corpCode, bsnsYear, reprtCode, fsDiv, proxyUrl
   }
 }
 
+function parseAmount(v) {
+  if (v == null) return null;
+  const raw = String(v).replace(/,/g, "").trim();
+  if (raw === "" || raw === "-") return null;
+  const n = Number(raw);
+  return Number.isNaN(n) ? null : n;
+}
+
+function pickStockCounts(dart) {
+  if (!dart || dart.status !== "000") return { total_shares: null, treasury_shares: null };
+  const row = dart.list.find((r) => r.se === "합계");
+  if (!row) return { total_shares: null, treasury_shares: null };
+  return { total_shares: parseAmount(row.istc_totqy), treasury_shares: parseAmount(row.tesstk_co) };
+}
+
+function pickDividendPerShare(dart) {
+  if (!dart || dart.status !== "000") return null;
+  const row = dart.list.find((r) => r.se === "주당 현금배당금(원)" && r.stock_knd === "보통주");
+  return row ? parseAmount(row.thstrm) : null;
+}
+
 function pickAccount(list, ids, names) {
   let item = list.find((row) => ids.includes(row.account_id));
   if (!item) item = list.find((row) => names.some((n) => row.account_nm?.includes(n)));
@@ -253,6 +277,7 @@ async function fetchPeriodRow(corpCode, period, proxyUrl) {
     revenue: null, cogs: null, operating_income: null, net_income: null,
     total_equity: null, total_liabilities: null, cash: null, st_financial_assets: null,
     ocf: null, capex: null, fcf: null, receivables: null, inventory: null, payables: null,
+    total_shares: null, treasury_shares: null, dividend_per_share: null,
     ...extra,
   });
 
@@ -273,11 +298,30 @@ async function fetchPeriodRow(corpCode, period, proxyUrl) {
       : null;
     const fcf = vals.ocf != null && capex != null ? vals.ocf - capex : null;
 
+    // 주식총수/자기주식수는 매 기간, 배당은 사업보고서(연간)만 조회 (호출 수 절약)
+    let stockCounts = { total_shares: null, treasury_shares: null };
+    let dividendPerShare = null;
+    try {
+      const stockDart = await fetchDartGeneric("stockTotqySttus", corpCode, period.year, period.code, proxyUrl);
+      stockCounts = pickStockCounts(stockDart);
+    } catch (e) {
+      // 실패해도 나머지 재무데이터는 살림
+    }
+    if (period.code === "11011") {
+      try {
+        const divDart = await fetchDartGeneric("alotMatter", corpCode, period.year, period.code, proxyUrl);
+        dividendPerShare = pickDividendPerShare(divDart);
+      } catch (e) {
+        // 실패해도 나머지 재무데이터는 살림
+      }
+    }
+
     return emptyRow({
       fs_div: fsDiv,
       revenue: vals.revenue, cogs: vals.cogs, operating_income: vals.operating_income, net_income: vals.net_income,
       total_equity: vals.total_equity, total_liabilities: vals.total_liabilities, cash: vals.cash, st_financial_assets: vals.st_financial_assets,
       ocf: vals.ocf, capex, fcf, receivables: vals.receivables, inventory: vals.inventory, payables: vals.payables,
+      total_shares: stockCounts.total_shares, treasury_shares: stockCounts.treasury_shares, dividend_per_share: dividendPerShare,
     });
   } catch (e) {
     return emptyRow({ error: String(e.message || e) });
