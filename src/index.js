@@ -20,20 +20,20 @@ const REPRT_CODES = [
 ];
 
 const ACCOUNT_ITEMS = [
-  { key: "revenue", ids: ["ifrs-full_Revenue", "ifrs-full_RevenueFromContractsWithCustomers"], names: ["매출액", "수익(매출액)"] },
-  { key: "cogs", ids: ["ifrs-full_CostOfSales"], names: ["매출원가"] },
+  { key: "revenue", ids: ["ifrs-full_Revenue", "ifrs_Revenue", "ifrs-full_RevenueFromContractsWithCustomers"], names: ["매출액", "수익(매출액)"] },
+  { key: "cogs", ids: ["ifrs-full_CostOfSales", "ifrs_CostOfSales"], names: ["매출원가"] },
   { key: "operating_income", ids: ["dart_OperatingIncomeLoss"], names: ["영업이익"] },
-  { key: "net_income", ids: ["ifrs-full_ProfitLoss"], names: ["당기순이익", "반기순이익", "분기순이익", "순이익"] },
-  { key: "total_equity", ids: ["ifrs-full_Equity"], names: ["자본총계"] },
-  { key: "total_liabilities", ids: ["ifrs-full_Liabilities"], names: ["부채총계"] },
-  { key: "cash", ids: ["ifrs-full_CashAndCashEquivalents"], names: ["현금및현금성자산"] },
+  { key: "net_income", ids: ["ifrs-full_ProfitLoss", "ifrs_ProfitLoss"], names: ["당기순이익", "반기순이익", "분기순이익", "순이익"] },
+  { key: "total_equity", ids: ["ifrs-full_Equity", "ifrs_Equity"], names: ["자본총계"] },
+  { key: "total_liabilities", ids: ["ifrs-full_Liabilities", "ifrs_Liabilities"], names: ["부채총계"] },
+  { key: "cash", ids: ["ifrs-full_CashAndCashEquivalents", "ifrs_CashAndCashEquivalents"], names: ["현금및현금성자산"] },
   { key: "st_financial_assets", ids: [], names: ["단기금융상품", "단기금융자산"] },
-  { key: "ocf", ids: ["ifrs-full_CashFlowsFromUsedInOperatingActivities"], names: ["영업활동현금흐름", "영업활동으로 인한 현금흐름", "영업활동으로인한현금흐름"] },
-  { key: "capex_ppe", ids: ["ifrs-full_PurchaseOfPropertyPlantAndEquipment", "ifrs-full_PaymentsToAcquirePropertyPlantAndEquipment"], names: ["유형자산의 취득", "유형자산 취득", "유형자산의취득", "유형자산취득"] },
-  { key: "capex_intangible", ids: ["ifrs-full_PurchaseOfIntangibleAssetsOtherThanGoodwill", "ifrs-full_PurchaseOfIntangibleAssets", "ifrs-full_PaymentsToAcquireIntangibleAssets"], names: ["무형자산의 취득", "무형자산 취득", "무형자산의취득", "무형자산취득"] },
-  { key: "receivables", ids: ["ifrs-full_TradeAndOtherCurrentReceivables"], names: ["매출채권"] },
-  { key: "inventory", ids: ["ifrs-full_Inventories"], names: ["재고자산"] },
-  { key: "payables", ids: ["ifrs-full_TradeAndOtherCurrentPayables"], names: ["매입채무"] },
+  { key: "ocf", ids: ["ifrs-full_CashFlowsFromUsedInOperatingActivities", "ifrs_CashFlowsFromUsedInOperatingActivities"], names: ["영업활동현금흐름", "영업활동 현금흐름", "영업활동으로 인한 현금흐름", "영업활동으로인한현금흐름"] },
+  { key: "capex_ppe", ids: ["ifrs-full_PurchaseOfPropertyPlantAndEquipment", "ifrs_PurchaseOfPropertyPlantAndEquipment", "ifrs-full_PaymentsToAcquirePropertyPlantAndEquipment"], names: ["유형자산의 취득", "유형자산 취득", "유형자산의취득", "유형자산취득"] },
+  { key: "capex_intangible", ids: ["ifrs-full_PurchaseOfIntangibleAssetsOtherThanGoodwill", "ifrs_PurchaseOfIntangibleAssetsOtherThanGoodwill", "ifrs-full_PurchaseOfIntangibleAssets", "ifrs-full_PaymentsToAcquireIntangibleAssets"], names: ["무형자산의 취득", "무형자산 취득", "무형자산의취득", "무형자산취득"] },
+  { key: "receivables", ids: ["ifrs-full_TradeAndOtherCurrentReceivables", "ifrs_TradeAndOtherCurrentReceivables"], names: ["매출채권"] },
+  { key: "inventory", ids: ["ifrs-full_Inventories", "ifrs_Inventories"], names: ["재고자산"] },
+  { key: "payables", ids: ["ifrs-full_TradeAndOtherCurrentPayables", "ifrs_TradeAndOtherCurrentPayables"], names: ["매입채무"] },
 ];
 
 const DB_COLUMNS = [
@@ -266,16 +266,8 @@ function parseAmount(v) {
 function pickStockCounts(dart) {
   if (!dart || dart.status !== "000") return { total_shares: null, treasury_shares: null };
   const norm = (s) => (s || "").replace(/\s/g, "");
-  let row = dart.list.find((r) => norm(r.se) === "합계");
-  if (!row) {
-    // "합계" 행 표기가 다르거나 없는 경우: 보통주/우선주 행을 직접 합산
-    const parts = dart.list.filter((r) => ["보통주", "우선주"].includes(norm(r.se)));
-    if (parts.length > 0) {
-      const sum = (key) => parts.reduce((acc, r) => acc + (parseAmount(r[key]) || 0), 0);
-      return { total_shares: sum("istc_totqy") || null, treasury_shares: sum("tesstk_co") || null };
-    }
-    return { total_shares: null, treasury_shares: null };
-  }
+  const row = dart.list.find((r) => norm(r.se) === "보통주");
+  if (!row) return { total_shares: null, treasury_shares: null };
   return { total_shares: parseAmount(row.istc_totqy), treasury_shares: parseAmount(row.tesstk_co) };
 }
 
