@@ -126,29 +126,33 @@ const HTML_PAGE = `<!doctype html>
 
       const thisYear = new Date().getFullYear();
       const startYear = thisYear - yearsBack + 1;
+      const reprtCodes = [
+        { code: '11013', label: '1분기' },
+        { code: '11012', label: '반기' },
+        { code: '11014', label: '3분기' },
+        { code: '11011', label: '사업보고서' },
+      ];
 
-      // 3년 단위로 구간을 나눠서 순서대로 호출 (항목이 늘어 호출 수가 늘었으므로 묶음을 더 작게)
-      const chunks = [];
-      for (let y = startYear; y <= thisYear; y += 3) {
-        chunks.push([y, Math.min(y + 2, thisYear)]);
+      const periods = [];
+      for (let y = startYear; y <= thisYear; y++) {
+        for (const r of reprtCodes) periods.push({ year: y, ...r });
       }
 
-      let allRows = [];
-      for (let i = 0; i < chunks.length; i++) {
-        const [s, e] = chunks[i];
-        statusEl.textContent = \`저장 중... (\${i + 1}/\${chunks.length}구간: \${s}~\${e}년)\`;
+      const rows = [];
+      for (let i = 0; i < periods.length; i++) {
+        const p = periods[i];
+        statusEl.textContent = \`저장 중... (\${i + 1}/\${periods.length}: \${p.year} \${p.label})\`;
         try {
-          const res = await fetch(\`/api/fetch-and-save?corp_name=\${encodeURIComponent(corpName)}&start_year=\${s}&end_year=\${e}\`);
+          const res = await fetch(\`/api/fetch-and-save?corp_name=\${encodeURIComponent(corpName)}&year=\${p.year}&reprt_code=\${p.code}\`);
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || '저장 실패');
-          allRows = allRows.concat(data.rows);
+          rows.push(data.row);
         } catch (e) {
-          statusEl.textContent = \`오류(\${s}~\${e}년 구간): \` + e.message;
-          return;
+          rows.push({ period_label: \`\${p.year} \${p.label}\`, error: e.message });
         }
+        renderTable(rows); // 매 기간마다 화면 갱신 (진행상황을 바로 볼 수 있게)
       }
-      statusEl.textContent = \`저장 완료 (\${allRows.length}개 기간)\`;
-      renderTable(allRows);
+      statusEl.textContent = \`저장 완료 (\${rows.length}개 기간)\`;
     }
 
     async function loadFromDb() {
@@ -361,18 +365,19 @@ export default {
 
     if (pathname === "/api/fetch-and-save") {
       const corpName = searchParams.get("corp_name");
-      const startYear = Number(searchParams.get("start_year"));
-      const endYear = Number(searchParams.get("end_year"));
+      const year = Number(searchParams.get("year"));
+      const reprtCode = searchParams.get("reprt_code");
 
       const corpRow = await env.DB.prepare("SELECT corp_code, corp_name FROM corp_master WHERE corp_name = ?").bind(corpName).first();
       if (!corpRow) return Response.json({ error: `'${corpName}' 종목을 corp_master에서 찾을 수 없습니다.` }, { status: 404 });
 
-      const periods = buildPeriods(startYear, endYear);
-      const rows = await mapWithConcurrency(periods, CONCURRENCY, (p) => fetchPeriodRow(corpRow.corp_code, p, env.DART_PROXY_URL));
+      const periodMeta = REPRT_CODES.find((r) => r.code === reprtCode);
+      if (!periodMeta) return Response.json({ error: `알 수 없는 reprt_code: ${reprtCode}` }, { status: 400 });
 
-      await saveRowsToDb(env.DB, rows);
+      const row = await fetchPeriodRow(corpRow.corp_code, { year, ...periodMeta }, env.DART_PROXY_URL);
+      await saveRowsToDb(env.DB, [row]);
 
-      return Response.json({ corp_name: corpRow.corp_name, corp_code: corpRow.corp_code, rows });
+      return Response.json({ corp_name: corpRow.corp_name, corp_code: corpRow.corp_code, row });
     }
 
     if (pathname === "/api/financial-history-db") {
