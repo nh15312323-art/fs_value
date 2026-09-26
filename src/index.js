@@ -1,16 +1,6 @@
 // ============================================================
-// Phase 3 (개정): DART 조회를 연도 구간별로 나눠서 D1에 저장하고,
-// 화면은 "DART에서 조회+저장"과 "DB에서 조회(DART 재조회 없음)"
-// 두 가지 방식으로 데이터를 볼 수 있게 함.
-//
-// 이렇게 바꾸는 이유: Cloudflare Workers 무료 플랜은 한 번의 요청에서
-// 외부로 나가는 호출(subrequest)을 최대 50개로 제한합니다. 10년치를
-// 한 번에 부르면 이 한도를 넘어서 전부 실패합니다. 연도 구간을 나눠서
-// 여러 번 호출하고 결과를 D1에 저장해두면, 이후 조회는 D1만 읽으므로
-// (D1 조회는 subrequest로 카운트되지 않음) 이 제한과 무관해집니다.
+// Phase 5: ROIC/밸류에이션 계산 + 분기·연간 토글 + 헤더 고정
 // ============================================================
-
-const CONCURRENCY = 3;
 
 const REPRT_CODES = [
   { code: "11013", label: "1분기", order: 1 },
@@ -18,6 +8,9 @@ const REPRT_CODES = [
   { code: "11014", label: "3분기", order: 3 },
   { code: "11011", label: "사업보고서", order: 4 },
 ];
+
+// 분기 누적치 차감이 필요한 흐름(flow) 항목. 그 외는 시점(stock) 항목이라 그대로 둠.
+const FLOW_KEYS = ["revenue", "cogs", "operating_income", "net_income", "ocf", "capex", "fcf"];
 
 const ACCOUNT_ITEMS = [
   { key: "revenue", ids: ["ifrs-full_Revenue", "ifrs_Revenue", "ifrs-full_RevenueFromContractsWithCustomers"], names: ["매출액", "수익(매출액)"] },
@@ -34,6 +27,11 @@ const ACCOUNT_ITEMS = [
   { key: "receivables", ids: ["ifrs-full_TradeAndOtherCurrentReceivables", "ifrs_TradeAndOtherCurrentReceivables"], names: ["매출채권"] },
   { key: "inventory", ids: ["ifrs-full_Inventories", "ifrs_Inventories"], names: ["재고자산"] },
   { key: "payables", ids: ["ifrs-full_TradeAndOtherCurrentPayables", "ifrs_TradeAndOtherCurrentPayables"], names: ["매입채무"] },
+  // ROIC의 투하자본(IC) 계산용으로 추가된 항목들
+  { key: "short_term_trading_securities", ids: [], names: ["단기매매증권"] },
+  { key: "fvpl_financial_assets", ids: ["ifrs-full_FinancialAssetsAtFairValueThroughProfitOrLoss"], names: ["당기손익-공정가치측정금융자산", "당기손익공정가치측정금융자산"] },
+  { key: "fvoci_financial_assets", ids: ["ifrs-full_FinancialAssetsAtFairValueThroughOtherComprehensiveIncome"], names: ["기타포괄손익-공정가치측정금융자산", "기타포괄손익공정가치측정금융자산"] },
+  { key: "investment_property", ids: ["ifrs-full_InvestmentProperty"], names: ["투자부동산"] },
 ];
 
 const DB_COLUMNS = [
@@ -42,6 +40,7 @@ const DB_COLUMNS = [
   "total_equity", "total_liabilities", "cash", "st_financial_assets",
   "ocf", "capex", "fcf", "receivables", "inventory", "payables",
   "total_shares", "treasury_shares", "dividend_per_share",
+  "short_term_trading_securities", "fvpl_financial_assets", "fvoci_financial_assets", "investment_property",
   "updated_at",
 ];
 
@@ -54,12 +53,16 @@ const HTML_PAGE = `<!doctype html>
   <style>
     body { font-family: sans-serif; max-width: 100%; margin: 20px auto; padding: 0 12px; }
     input, button, select { font-size: 16px; padding: 8px; margin: 4px 4px 4px 0; }
-    #wrap { overflow-x: auto; margin-top: 12px; }
-    table { border-collapse: collapse; white-space: nowrap; font-size: 13px; }
-    td, th { border: 1px solid #ccc; padding: 6px 8px; text-align: right; }
-    th { background: #f5f5f5; position: sticky; top: 0; }
-    th:first-child, td:first-child { position: sticky; left: 0; background: #fff; text-align: left; }
+    #wrap { overflow: auto; margin-top: 12px; max-height: 70vh; }
+    table { border-collapse: separate; border-spacing: 0; white-space: nowrap; font-size: 13px; }
+    td, th { border-bottom: 1px solid #ccc; border-right: 1px solid #ccc; padding: 6px 8px; text-align: right; }
+    th { background: #f5f5f5; position: sticky; top: 0; z-index: 2; }
+    th:first-child, td:first-child { position: sticky; left: 0; background: #fff; text-align: left; z-index: 1; }
+    th:first-child { z-index: 3; }
     #status { color: #b00; margin-top: 8px; white-space: pre-line; }
+    #summary { border: 1px solid #ccc; padding: 10px; margin-top: 12px; background: #fafafa; }
+    #summary div { margin: 4px 0; }
+    .toggle-active { background: #2563eb; color: #fff; }
   </style>
 </head>
 <body>
@@ -73,6 +76,23 @@ const HTML_PAGE = `<!doctype html>
   <button onclick="fetchAndSave()">DART에서 조회 + 저장</button>
   <button onclick="loadFromDb()">DB에서 조회</button>
   <br/>
+  <button id="btnQuarterly" class="toggle-active" onclick="setView('quarterly')">분기별 보기</button>
+  <button id="btnAnnual" onclick="setView('annual')">연간 보기</button>
+  <br/>
+  <label>현재 주가: <input id="currentPrice" type="number" style="width:120px" placeholder="예: 88000" /></label>
+  <button onclick="renderSummary()">밸류에이션 계산</button>
+
+  <div id="status"></div>
+  <div id="summary" style="display:none"></div>
+  <div id="wrap"></div>
+  <div id="chartWrap" style="display:none; margin-top:16px;">
+    <div id="chartTitle" style="font-weight:bold; margin-bottom:4px;"></div>
+    <canvas id="chartCanvas" style="width:100%; height:220px; border:1px solid #ccc;"></canvas>
+    <p style="font-size:12px; color:#666;">표의 항목 이름(열 제목)을 더블클릭하면 그 항목의 추이가 여기 표시됩니다.</p>
+  </div>
+
+  <hr/>
+  <h4>원본 데이터 확인 (디버깅용)</h4>
   <label>확인할 연도: <input id="rawYear" type="number" style="width:80px" value="2018" /></label>
   <select id="rawReprt">
     <option value="11013">1분기</option>
@@ -88,16 +108,207 @@ const HTML_PAGE = `<!doctype html>
   <button onclick="rawCheck('stockTotqySttus')">주식총수 원본보기</button>
   <button onclick="rawCheck('alotMatter')">배당현황 원본보기</button>
   <button onclick="rawCheckFs()">재무제표 원본보기</button>
-  <div id="status"></div>
   <pre id="raw" style="white-space:pre-wrap; background:#f5f5f5; padding:8px; font-size:11px;"></pre>
-  <div id="wrap"></div>
-  <div id="chartWrap" style="display:none; margin-top:16px;">
-    <div id="chartTitle" style="font-weight:bold; margin-bottom:4px;"></div>
-    <canvas id="chartCanvas" style="width:100%; height:220px; border:1px solid #ccc;"></canvas>
-    <p style="font-size:12px; color:#666;">표의 항목 이름(열 제목)을 더블클릭하면 그 항목의 추이가 여기 표시됩니다.</p>
-  </div>
 
   <script>
+    let rawRows = [];      // DB/DART에서 받아온, 가공 안 된 원본 기간별 데이터
+    let currentRows = [];  // 현재 화면에 표시 중인 데이터 (분기별 변환 or 연간 그대로)
+    let viewMode = 'quarterly';
+
+    const FLOW_KEYS = ${JSON.stringify(FLOW_KEYS)};
+
+    function toQuarterlyRows(rows) {
+      const byYear = {};
+      for (const r of rows) {
+        if (!byYear[r.bsns_year]) byYear[r.bsns_year] = {};
+        byYear[r.bsns_year][r.reprt_code] = r;
+      }
+      const seq = [
+        { code: '11013', qLabel: '1분기', prev: null },
+        { code: '11012', qLabel: '2분기', prev: '11013' },
+        { code: '11014', qLabel: '3분기', prev: '11012' },
+        { code: '11011', qLabel: '4분기', prev: '11014' },
+      ];
+      const out = [];
+      for (const y of Object.keys(byYear).sort()) {
+        for (const step of seq) {
+          const cur = byYear[y][step.code];
+          if (!cur) continue;
+          const row = { ...cur, period_label: \`\${y} \${step.qLabel}\` };
+          if (step.prev) {
+            const prevRow = byYear[y][step.prev];
+            for (const key of FLOW_KEYS) {
+              row[key] = (cur[key] != null && prevRow && prevRow[key] != null) ? cur[key] - prevRow[key] : null;
+            }
+          }
+          out.push(row);
+        }
+      }
+      return out;
+    }
+
+    function toAnnualRows(rows) {
+      return rows
+        .filter((r) => r.reprt_code === '11011')
+        .sort((a, b) => a.bsns_year.localeCompare(b.bsns_year))
+        .map((r) => ({ ...r, period_label: \`\${r.bsns_year} 연간\` }));
+    }
+
+    function setView(mode) {
+      viewMode = mode;
+      document.getElementById('btnQuarterly').className = mode === 'quarterly' ? 'toggle-active' : '';
+      document.getElementById('btnAnnual').className = mode === 'annual' ? 'toggle-active' : '';
+      applyView();
+    }
+
+    function applyView() {
+      const rows = viewMode === 'quarterly' ? toQuarterlyRows(rawRows) : toAnnualRows(rawRows);
+      renderTable(rows);
+    }
+
+    function renderTable(rows) {
+      currentRows = rows;
+      const cols = ['기간', 'fs_div', '매출액', '매출원가', '영업이익', '당기순이익', '총자본', '총부채', '현금및현금성자산', '단기금융자산', '영업활동현금흐름', 'CapEx', '잉여현금흐름', '매출채권', '재고자산', '매입채무', '총주식수', '자기주식수', '주당배당금', '비고'];
+      const keys = [null, null, 'revenue', 'cogs', 'operating_income', 'net_income', 'total_equity', 'total_liabilities', 'cash', 'st_financial_assets', 'ocf', 'capex', 'fcf', 'receivables', 'inventory', 'payables', 'total_shares', 'treasury_shares', 'dividend_per_share', null];
+      let html = '<table><tr>' + cols.map((c, i) =>
+        keys[i]
+          ? \`<th ondblclick="showChart('\${keys[i]}','\${c}')" title="더블클릭하면 그래프">\${c}</th>\`
+          : \`<th>\${c}</th>\`
+      ).join('') + '</tr>';
+      for (const r of rows) {
+        const cells = [
+          r.period_label, r.fs_div ?? '-',
+          r.revenue, r.cogs, r.operating_income, r.net_income,
+          r.total_equity, r.total_liabilities, r.cash, r.st_financial_assets,
+          r.ocf, r.capex, r.fcf, r.receivables, r.inventory, r.payables,
+          r.total_shares, r.treasury_shares, r.dividend_per_share,
+        ];
+        html += '<tr>' + cells.map((v, i) => {
+          if (i < 2) return \`<td>\${v}</td>\`;
+          return \`<td>\${v != null ? Number(v).toLocaleString() : 'N/A'}</td>\`;
+        }).join('') + \`<td>\${r.error ?? ''}</td>\` + '</tr>';
+      }
+      document.getElementById('wrap').innerHTML = html + '</table>';
+    }
+
+    function computeIC(r) {
+      if (r.total_liabilities == null || r.total_equity == null) return null;
+      const sub = (v) => v || 0;
+      return r.total_liabilities + r.total_equity
+        - sub(r.cash) - sub(r.st_financial_assets) - sub(r.short_term_trading_securities)
+        - sub(r.fvpl_financial_assets) - sub(r.fvoci_financial_assets) - sub(r.investment_property);
+    }
+
+    function computeROIC(r) {
+      const ic = computeIC(r);
+      if (ic == null || ic <= 0 || r.operating_income == null) return null;
+      return (r.operating_income * (1 - 0.24)) / ic;
+    }
+
+    function computeROE(r) {
+      if (r.net_income == null || !r.total_equity) return null;
+      return r.net_income / r.total_equity;
+    }
+
+    function renderSummary() {
+      const annualRows = toAnnualRows(rawRows);
+      if (annualRows.length === 0) {
+        alert('연간(사업보고서) 데이터가 없습니다. 먼저 조회/저장하세요.');
+        return;
+      }
+
+      const roics = annualRows.map(computeROIC).filter((v) => v != null);
+      const roes = annualRows.map(computeROE).filter((v) => v != null);
+      const avgROIC = roics.length ? roics.reduce((a, b) => a + b, 0) / roics.length : null;
+      const avgROE = roes.length ? roes.reduce((a, b) => a + b, 0) / roes.length : null;
+
+      const latest = annualRows[annualRows.length - 1];
+      const outstandingShares = (latest.total_shares != null && latest.treasury_shares != null)
+        ? latest.total_shares - latest.treasury_shares
+        : null;
+      const bps = (outstandingShares && latest.total_equity != null) ? latest.total_equity / outstandingShares : null;
+      const projected = (bps != null && avgROE != null) ? bps * Math.pow(1 + avgROE, 10) : null;
+
+      const priceInput = Number(document.getElementById('currentPrice').value) || null;
+      const marketCap = (priceInput && outstandingShares) ? priceInput * outstandingShares : null;
+
+      const roicPct = avgROIC != null ? (avgROIC * 100).toFixed(2) + '%' : 'N/A';
+      const roicJudge = avgROIC != null ? (avgROIC >= 0.10 ? '✅ 10% 이상' : '⚠️ 10% 미만') : '';
+      const bpsStr = bps != null ? Math.round(bps).toLocaleString() + '원' : 'N/A';
+      const projectedStr = projected != null ? Math.round(projected).toLocaleString() + '원' : 'N/A';
+      let valuationJudge = '';
+      if (projected != null && priceInput) {
+        valuationJudge = projected > priceInput ? '✅ 예상가 > 현재가 (저평가 가능성)' : '⚠️ 예상가 ≤ 현재가 (고평가 가능성)';
+      }
+
+      const el = document.getElementById('summary');
+      el.style.display = 'block';
+      el.innerHTML = \`
+        <div><b>10년 평균 ROIC:</b> \${roicPct} (연도 \${roics.length}개 평균) \${roicJudge}</div>
+        <div><b>10년 평균 ROE:</b> \${avgROE != null ? (avgROE * 100).toFixed(2) + '%' : 'N/A'} (연도 \${roes.length}개 평균)</div>
+        <div><b>최근 BPS(\${latest.bsns_year}년말, 보통주 유통주식 기준):</b> \${bpsStr}</div>
+        <div><b>10년 후 예상 주가 (BPS×(1+평균ROE)^10):</b> \${projectedStr}</div>
+        \${valuationJudge ? \`<div><b>비교 결과:</b> \${valuationJudge} (현재가: \${priceInput.toLocaleString()}원)\` : '<div style="color:#888">현재 주가를 입력하면 비교 결과가 표시됩니다.</div>'}
+        \${marketCap != null ? \`<div><b>참고 시가총액:</b> \${Math.round(marketCap).toLocaleString()}원</div>\` : ''}
+      \`;
+    }
+
+    async function fetchAndSave() {
+      const corpName = document.getElementById('corpName').value.trim();
+      const yearsBack = Number(document.getElementById('yearsBack').value);
+      const statusEl = document.getElementById('status');
+      document.getElementById('wrap').innerHTML = '';
+      document.getElementById('summary').style.display = 'none';
+
+      const thisYear = new Date().getFullYear();
+      const startYear = thisYear - yearsBack + 1;
+      const reprtCodes = [
+        { code: '11013', label: '1분기' },
+        { code: '11012', label: '반기' },
+        { code: '11014', label: '3분기' },
+        { code: '11011', label: '사업보고서' },
+      ];
+      const periods = [];
+      for (let y = startYear; y <= thisYear; y++) {
+        for (const r of reprtCodes) periods.push({ year: y, ...r });
+      }
+
+      const rows = [];
+      for (let i = 0; i < periods.length; i++) {
+        const p = periods[i];
+        statusEl.textContent = \`저장 중... (\${i + 1}/\${periods.length}: \${p.year} \${p.label})\`;
+        try {
+          const res = await fetch(\`/api/fetch-and-save?corp_name=\${encodeURIComponent(corpName)}&year=\${p.year}&reprt_code=\${p.code}\`);
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || '저장 실패');
+          rows.push(data.row);
+        } catch (e) {
+          rows.push({ period_label: \`\${p.year} \${p.label}\`, bsns_year: String(p.year), reprt_code: p.code, error: e.message });
+        }
+        rawRows = rows;
+        applyView();
+      }
+      statusEl.textContent = \`저장 완료 (\${rows.length}개 기간)\`;
+    }
+
+    async function loadFromDb() {
+      const corpName = document.getElementById('corpName').value.trim();
+      const statusEl = document.getElementById('status');
+      document.getElementById('wrap').innerHTML = '';
+      document.getElementById('summary').style.display = 'none';
+      statusEl.textContent = 'DB 조회 중...';
+      try {
+        const res = await fetch(\`/api/financial-history-db?corp_name=\${encodeURIComponent(corpName)}\`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'DB 조회 실패');
+        statusEl.textContent = \`\${data.corp_name} — DB에 저장된 \${data.rows.length}개 기간 (DART 재조회 안 함)\`;
+        rawRows = data.rows;
+        applyView();
+      } catch (e) {
+        statusEl.textContent = '오류: ' + e.message;
+      }
+    }
+
     async function rawCheck(kind) {
       const corpName = document.getElementById('corpName').value.trim();
       const year = document.getElementById('rawYear').value;
@@ -129,91 +340,8 @@ const HTML_PAGE = `<!doctype html>
         const res = await fetch(\`/api/raw?kind=fnlttSinglAcntAll&corp_name=\${encodeURIComponent(corpName)}&bsns_year=\${year}&reprt_code=\${reprtCode}&fs_div=\${fsDiv}\`);
         const data = await res.json();
         statusEl.textContent = \`재무제표 원본 (\${year}년, reprt_code=\${reprtCode}, \${fsDiv})\`;
-        // CF(현금흐름표) 관련 행만 추려서 보여줌 (전체는 너무 길어서)
-        const cfRows = (data.list || []).filter((r) => r.sj_div === 'CF');
+        const cfRows = (data.list || []).filter((r) => ['CF', 'IS', 'CIS'].includes(r.sj_div));
         rawEl.textContent = JSON.stringify(cfRows.length ? cfRows : data, null, 2);
-      } catch (e) {
-        statusEl.textContent = '오류: ' + e.message;
-      }
-    }
-  </script>
-
-  <script>
-    let currentRows = [];
-
-    function renderTable(rows) {
-      currentRows = rows;
-      const cols = ['기간', 'fs_div', '매출액', '매출원가', '영업이익', '당기순이익', '총자본', '총부채', '현금및현금성자산', '단기금융자산', '영업활동현금흐름', 'CapEx', '잉여현금흐름', '매출채권', '재고자산', '매입채무', '총주식수', '자기주식수', '주당배당금', '비고'];
-      const keys = [null, null, 'revenue', 'cogs', 'operating_income', 'net_income', 'total_equity', 'total_liabilities', 'cash', 'st_financial_assets', 'ocf', 'capex', 'fcf', 'receivables', 'inventory', 'payables', 'total_shares', 'treasury_shares', 'dividend_per_share', null];
-      let html = '<table><tr>' + cols.map((c, i) =>
-        keys[i]
-          ? \`<th ondblclick="showChart('\${keys[i]}','\${c}')" style="cursor:pointer" title="더블클릭하면 그래프">\${c}</th>\`
-          : \`<th>\${c}</th>\`
-      ).join('') + '</tr>';
-      for (const r of rows) {
-        const cells = [
-          r.period_label, r.fs_div ?? '-',
-          r.revenue, r.cogs, r.operating_income, r.net_income,
-          r.total_equity, r.total_liabilities, r.cash, r.st_financial_assets,
-          r.ocf, r.capex, r.fcf, r.receivables, r.inventory, r.payables,
-          r.total_shares, r.treasury_shares, r.dividend_per_share,
-        ];
-        html += '<tr>' + cells.map((v, i) => {
-          if (i < 2) return \`<td>\${v}</td>\`;
-          return \`<td>\${v != null ? Number(v).toLocaleString() : 'N/A'}</td>\`;
-        }).join('') + \`<td>\${r.error ?? ''}</td>\` + '</tr>';
-      }
-      document.getElementById('wrap').innerHTML = html + '</table>';
-    }
-
-    async function fetchAndSave() {
-      const corpName = document.getElementById('corpName').value.trim();
-      const yearsBack = Number(document.getElementById('yearsBack').value);
-      const statusEl = document.getElementById('status');
-      document.getElementById('wrap').innerHTML = '';
-
-      const thisYear = new Date().getFullYear();
-      const startYear = thisYear - yearsBack + 1;
-      const reprtCodes = [
-        { code: '11013', label: '1분기' },
-        { code: '11012', label: '반기' },
-        { code: '11014', label: '3분기' },
-        { code: '11011', label: '사업보고서' },
-      ];
-
-      const periods = [];
-      for (let y = startYear; y <= thisYear; y++) {
-        for (const r of reprtCodes) periods.push({ year: y, ...r });
-      }
-
-      const rows = [];
-      for (let i = 0; i < periods.length; i++) {
-        const p = periods[i];
-        statusEl.textContent = \`저장 중... (\${i + 1}/\${periods.length}: \${p.year} \${p.label})\`;
-        try {
-          const res = await fetch(\`/api/fetch-and-save?corp_name=\${encodeURIComponent(corpName)}&year=\${p.year}&reprt_code=\${p.code}\`);
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || '저장 실패');
-          rows.push(data.row);
-        } catch (e) {
-          rows.push({ period_label: \`\${p.year} \${p.label}\`, error: e.message });
-        }
-        renderTable(rows); // 매 기간마다 화면 갱신 (진행상황을 바로 볼 수 있게)
-      }
-      statusEl.textContent = \`저장 완료 (\${rows.length}개 기간)\`;
-    }
-
-    async function loadFromDb() {
-      const corpName = document.getElementById('corpName').value.trim();
-      const statusEl = document.getElementById('status');
-      document.getElementById('wrap').innerHTML = '';
-      statusEl.textContent = 'DB 조회 중...';
-      try {
-        const res = await fetch(\`/api/financial-history-db?corp_name=\${encodeURIComponent(corpName)}\`);
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'DB 조회 실패');
-        statusEl.textContent = \`\${data.corp_name} — DB에 저장된 \${data.rows.length}개 기간 (DART 재조회 안 함)\`;
-        renderTable(data.rows);
       } catch (e) {
         statusEl.textContent = '오류: ' + e.message;
       }
@@ -224,12 +352,7 @@ const HTML_PAGE = `<!doctype html>
         .filter((r) => !r.error)
         .map((r) => ({ x: r.period_label, y: r[key] }))
         .filter((p) => p.y != null);
-
-      if (points.length === 0) {
-        alert('표시할 데이터가 없습니다 (모두 N/A).');
-        return;
-      }
-
+      if (points.length === 0) { alert('표시할 데이터가 없습니다 (모두 N/A).'); return; }
       document.getElementById('chartTitle').textContent = label + ' 추이 (' + points.length + '개 기간)';
       document.getElementById('chartWrap').style.display = 'block';
       drawChart(points);
@@ -248,12 +371,10 @@ const HTML_PAGE = `<!doctype html>
 
       const padL = 70, padR = 10, padT = 10, padB = 40;
       const plotW = W - padL - padR, plotH = H - padT - padB;
-
       const values = points.map((p) => p.y);
       let min = Math.min(...values), max = Math.max(...values);
       if (min === max) { min -= 1; max += 1; }
       const range = max - min;
-
       const xStep = points.length > 1 ? plotW / (points.length - 1) : 0;
       const yFor = (v) => padT + plotH - ((v - min) / range) * plotH;
       const xFor = (i) => padL + i * xStep;
@@ -265,7 +386,6 @@ const HTML_PAGE = `<!doctype html>
         ctx.lineTo(padL + plotW, yFor(0));
         ctx.stroke();
       }
-
       ctx.fillStyle = '#333';
       ctx.font = '11px sans-serif';
       ctx.fillText(Math.round(max).toLocaleString(), 2, yFor(max) + 4);
@@ -359,6 +479,23 @@ function parseAmount(v) {
   return Number.isNaN(n) ? null : n;
 }
 
+// 계정ID(우선) 또는 계정명(폴백)으로 매칭되는 모든 행을 합산.
+// 유동/비유동으로 나뉜 계정(예: 당기손익공정가치측정금융자산)을 자동으로 합쳐줌.
+function sumAccount(list, ids, names) {
+  let matches = list.filter((row) => ids.includes(row.account_id));
+  if (matches.length === 0) {
+    matches = list.filter((row) => names.some((n) => row.account_nm?.includes(n)));
+  }
+  if (matches.length === 0) return null;
+  let total = 0;
+  let found = false;
+  for (const m of matches) {
+    const v = parseAmount(m.thstrm_amount);
+    if (v != null) { total += v; found = true; }
+  }
+  return found ? total : null;
+}
+
 function pickStockCounts(dart) {
   if (!dart || dart.status !== "000") return { total_shares: null, treasury_shares: null };
   const norm = (s) => (s || "").replace(/\s/g, "");
@@ -373,49 +510,24 @@ function pickDividendPerShare(dart) {
   return row ? parseAmount(row.thstrm) : null;
 }
 
-function pickAccount(list, ids, names) {
-  let item = list.find((row) => ids.includes(row.account_id));
-  if (!item) item = list.find((row) => names.some((n) => row.account_nm?.includes(n)));
-  if (!item) return null;
-  const raw = item.thstrm_amount?.replace(/,/g, "");
-  return raw ? Number(raw) : null;
-}
-
-async function mapWithConcurrency(items, limit, fn) {
-  const results = new Array(items.length);
-  let i = 0;
-  async function worker() {
-    while (i < items.length) {
-      const idx = i++;
-      results[idx] = await fn(items[idx], idx);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return results;
-}
-
-function buildPeriods(startYear, endYear) {
-  const periods = [];
-  for (let y = startYear; y <= endYear; y++) {
-    for (const r of REPRT_CODES) periods.push({ year: y, ...r });
-  }
-  return periods;
-}
-
 async function fetchPeriodRow(corpCode, period, proxyUrl) {
-  const emptyRow = (extra) => ({
-    corp_code: corpCode,
-    bsns_year: String(period.year),
-    reprt_code: period.code,
-    period_label: `${period.year} ${period.label}`,
-    period_order: period.year * 10 + period.order,
-    fs_div: null,
-    revenue: null, cogs: null, operating_income: null, net_income: null,
-    total_equity: null, total_liabilities: null, cash: null, st_financial_assets: null,
-    ocf: null, capex: null, fcf: null, receivables: null, inventory: null, payables: null,
-    total_shares: null, treasury_shares: null, dividend_per_share: null,
-    ...extra,
-  });
+  const emptyRow = (extra) => {
+    const row = {
+      corp_code: corpCode,
+      bsns_year: String(period.year),
+      reprt_code: period.code,
+      period_label: `${period.year} ${period.label}`,
+      period_order: period.year * 10 + period.order,
+      fs_div: null,
+      total_shares: null, treasury_shares: null, dividend_per_share: null,
+    };
+    for (const item of ACCOUNT_ITEMS) row[item.key] = null;
+    row.capex = null;
+    row.fcf = null;
+    delete row.capex_ppe;
+    delete row.capex_intangible;
+    return { ...row, ...extra };
+  };
 
   try {
     let fsDiv = "CFS";
@@ -427,38 +539,38 @@ async function fetchPeriodRow(corpCode, period, proxyUrl) {
     if (dart.status !== "000") return emptyRow();
 
     const vals = {};
-    for (const item of ACCOUNT_ITEMS) vals[item.key] = pickAccount(dart.list, item.ids, item.names);
+    for (const item of ACCOUNT_ITEMS) vals[item.key] = sumAccount(dart.list, item.ids, item.names);
 
     const capex = (vals.capex_ppe != null || vals.capex_intangible != null)
       ? Math.abs(vals.capex_ppe || 0) + Math.abs(vals.capex_intangible || 0)
       : null;
     const fcf = vals.ocf != null && capex != null ? vals.ocf - capex : null;
 
-    // 주식총수/자기주식수는 매 기간, 배당은 사업보고서(연간)만 조회 (호출 수 절약)
     let stockCounts = { total_shares: null, treasury_shares: null };
     let dividendPerShare = null;
     try {
       const stockDart = await fetchDartGeneric("stockTotqySttus", corpCode, period.year, period.code, proxyUrl);
       stockCounts = pickStockCounts(stockDart);
-    } catch (e) {
-      // 실패해도 나머지 재무데이터는 살림
-    }
+    } catch (e) { /* 실패해도 나머지는 살림 */ }
     if (period.code === "11011") {
       try {
         const divDart = await fetchDartGeneric("alotMatter", corpCode, period.year, period.code, proxyUrl);
         dividendPerShare = pickDividendPerShare(divDart);
-      } catch (e) {
-        // 실패해도 나머지 재무데이터는 살림
-      }
+      } catch (e) { /* 실패해도 나머지는 살림 */ }
     }
 
-    return emptyRow({
+    const row = emptyRow({
       fs_div: fsDiv,
-      revenue: vals.revenue, cogs: vals.cogs, operating_income: vals.operating_income, net_income: vals.net_income,
-      total_equity: vals.total_equity, total_liabilities: vals.total_liabilities, cash: vals.cash, st_financial_assets: vals.st_financial_assets,
-      ocf: vals.ocf, capex, fcf, receivables: vals.receivables, inventory: vals.inventory, payables: vals.payables,
-      total_shares: stockCounts.total_shares, treasury_shares: stockCounts.treasury_shares, dividend_per_share: dividendPerShare,
+      total_shares: stockCounts.total_shares,
+      treasury_shares: stockCounts.treasury_shares,
+      dividend_per_share: dividendPerShare,
     });
+    for (const item of ACCOUNT_ITEMS) row[item.key] = vals[item.key];
+    row.capex = capex;
+    row.fcf = fcf;
+    delete row.capex_ppe;
+    delete row.capex_intangible;
+    return row;
   } catch (e) {
     return emptyRow({ error: String(e.message || e) });
   }
@@ -469,6 +581,7 @@ async function saveRowsToDb(db, rows) {
   const colSql = DB_COLUMNS.join(", ");
   const ph = "(" + DB_COLUMNS.map(() => "?").join(", ") + ")";
   for (const r of rows) {
+    if (r.error) continue; // 실패한 기간은 저장하지 않음 (다음에 다시 시도 가능하게)
     const values = DB_COLUMNS.map((c) => (c === "updated_at" ? now : r[c] ?? null));
     await db.prepare(`INSERT OR REPLACE INTO financial_raw (${colSql}) VALUES ${ph}`).bind(...values).run();
   }
@@ -483,11 +596,11 @@ export default {
     }
 
     if (pathname === "/api/raw") {
-      const kind = searchParams.get("kind"); // stockTotqySttus | alotMatter | fnlttSinglAcntAll
+      const kind = searchParams.get("kind");
       const corpName = searchParams.get("corp_name");
       const bsnsYear = searchParams.get("bsns_year");
       const reprtCode = searchParams.get("reprt_code") || "11011";
-      const fsDiv = searchParams.get("fs_div"); // fnlttSinglAcntAll 조회 시에만 필요
+      const fsDiv = searchParams.get("fs_div");
 
       const corpRow = await env.DB.prepare("SELECT corp_code, corp_name FROM corp_master WHERE corp_name = ?").bind(corpName).first();
       if (!corpRow) return Response.json({ error: `'${corpName}' 종목을 corp_master에서 찾을 수 없습니다.` }, { status: 404 });
