@@ -91,6 +91,11 @@ const HTML_PAGE = `<!doctype html>
   <div id="status"></div>
   <pre id="raw" style="white-space:pre-wrap; background:#f5f5f5; padding:8px; font-size:11px;"></pre>
   <div id="wrap"></div>
+  <div id="chartWrap" style="display:none; margin-top:16px;">
+    <div id="chartTitle" style="font-weight:bold; margin-bottom:4px;"></div>
+    <canvas id="chartCanvas" style="width:100%; height:220px; border:1px solid #ccc;"></canvas>
+    <p style="font-size:12px; color:#666;">표의 항목 이름(열 제목)을 더블클릭하면 그 항목의 추이가 여기 표시됩니다.</p>
+  </div>
 
   <script>
     async function rawCheck(kind) {
@@ -134,9 +139,17 @@ const HTML_PAGE = `<!doctype html>
   </script>
 
   <script>
+    let currentRows = [];
+
     function renderTable(rows) {
+      currentRows = rows;
       const cols = ['기간', 'fs_div', '매출액', '매출원가', '영업이익', '당기순이익', '총자본', '총부채', '현금및현금성자산', '단기금융자산', '영업활동현금흐름', 'CapEx', '잉여현금흐름', '매출채권', '재고자산', '매입채무', '총주식수', '자기주식수', '주당배당금', '비고'];
-      let html = '<table><tr>' + cols.map(c => \`<th>\${c}</th>\`).join('') + '</tr>';
+      const keys = [null, null, 'revenue', 'cogs', 'operating_income', 'net_income', 'total_equity', 'total_liabilities', 'cash', 'st_financial_assets', 'ocf', 'capex', 'fcf', 'receivables', 'inventory', 'payables', 'total_shares', 'treasury_shares', 'dividend_per_share', null];
+      let html = '<table><tr>' + cols.map((c, i) =>
+        keys[i]
+          ? \`<th ondblclick="showChart('\${keys[i]}','\${c}')" style="cursor:pointer" title="더블클릭하면 그래프">\${c}</th>\`
+          : \`<th>\${c}</th>\`
+      ).join('') + '</tr>';
       for (const r of rows) {
         const cells = [
           r.period_label, r.fs_div ?? '-',
@@ -204,6 +217,89 @@ const HTML_PAGE = `<!doctype html>
       } catch (e) {
         statusEl.textContent = '오류: ' + e.message;
       }
+    }
+
+    function showChart(key, label) {
+      const points = currentRows
+        .filter((r) => !r.error)
+        .map((r) => ({ x: r.period_label, y: r[key] }))
+        .filter((p) => p.y != null);
+
+      if (points.length === 0) {
+        alert('표시할 데이터가 없습니다 (모두 N/A).');
+        return;
+      }
+
+      document.getElementById('chartTitle').textContent = label + ' 추이 (' + points.length + '개 기간)';
+      document.getElementById('chartWrap').style.display = 'block';
+      drawChart(points);
+      document.getElementById('chartWrap').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function drawChart(points) {
+      const canvas = document.getElementById('chartCanvas');
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const W = canvas.clientWidth, H = canvas.clientHeight;
+      canvas.width = W * dpr;
+      canvas.height = H * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+
+      const padL = 70, padR = 10, padT = 10, padB = 40;
+      const plotW = W - padL - padR, plotH = H - padT - padB;
+
+      const values = points.map((p) => p.y);
+      let min = Math.min(...values), max = Math.max(...values);
+      if (min === max) { min -= 1; max += 1; }
+      const range = max - min;
+
+      const xStep = points.length > 1 ? plotW / (points.length - 1) : 0;
+      const yFor = (v) => padT + plotH - ((v - min) / range) * plotH;
+      const xFor = (i) => padL + i * xStep;
+
+      if (min < 0 && max > 0) {
+        ctx.strokeStyle = '#999';
+        ctx.beginPath();
+        ctx.moveTo(padL, yFor(0));
+        ctx.lineTo(padL + plotW, yFor(0));
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = '#333';
+      ctx.font = '11px sans-serif';
+      ctx.fillText(Math.round(max).toLocaleString(), 2, yFor(max) + 4);
+      ctx.fillText(Math.round(min).toLocaleString(), 2, yFor(min) + 4);
+
+      ctx.strokeStyle = '#2563eb';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      points.forEach((p, i) => {
+        const x = xFor(i), y = yFor(p.y);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+
+      ctx.fillStyle = '#2563eb';
+      points.forEach((p, i) => {
+        ctx.beginPath();
+        ctx.arc(xFor(i), yFor(p.y), 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      ctx.fillStyle = '#333';
+      ctx.font = '10px sans-serif';
+      const maxLabels = 8;
+      const step = Math.max(1, Math.ceil(points.length / maxLabels));
+      points.forEach((p, i) => {
+        if (i % step === 0 || i === points.length - 1) {
+          ctx.save();
+          ctx.translate(xFor(i), H - padB + 14);
+          ctx.rotate(-Math.PI / 4);
+          ctx.fillText(p.x, 0, 0);
+          ctx.restore();
+        }
+      });
     }
   </script>
 </body>
