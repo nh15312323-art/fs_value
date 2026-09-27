@@ -316,48 +316,82 @@ const HTML_PAGE = `<!doctype html>
       return r.net_income / r.total_equity;
     }
 
+    function computeStepMetrics(r, prior) {
+      const totalAssets = (r.total_liabilities != null && r.total_equity != null) ? r.total_liabilities + r.total_equity : null;
+      const priorAssets = (prior && prior.total_liabilities != null && prior.total_equity != null) ? prior.total_liabilities + prior.total_equity : null;
+      const avgAssets = (totalAssets != null && priorAssets != null) ? (totalAssets + priorAssets) / 2 : totalAssets;
+      const avgEquity = (r.total_equity != null && prior && prior.total_equity != null) ? (r.total_equity + prior.total_equity) / 2 : r.total_equity;
+
+      const ebit = (r.pretax_income != null && r.interest_expense != null) ? r.pretax_income + r.interest_expense : null;
+
+      const taxBurden = (r.net_income != null && r.pretax_income) ? r.net_income / r.pretax_income : null;
+      const interestBurden = (r.pretax_income != null && ebit) ? r.pretax_income / ebit : null;
+      const ebitMargin = (ebit != null && r.revenue) ? ebit / r.revenue : null;
+      const assetTurnover = (r.revenue != null && avgAssets) ? r.revenue / avgAssets : null;
+      const leverage = (avgAssets != null && avgEquity) ? avgAssets / avgEquity : null;
+
+      const factors = [taxBurden, interestBurden, ebitMargin, assetTurnover, leverage];
+      const roeCheck = factors.every((v) => v != null) ? factors.reduce((a, b) => a * b, 1) : null;
+      const parentROE = (r.parent_net_income != null && r.parent_equity) ? r.parent_net_income / r.parent_equity : null;
+      const roic = computeROIC(r);
+
+      return { label: r.period_label, taxBurden, interestBurden, ebitMargin, assetTurnover, leverage, roeCheck, parentROE, roic };
+    }
+
     function compute5StepRows(annualRows) {
       const byYear = {};
       annualRows.forEach((r) => { byYear[r.bsns_year] = r; });
+      return annualRows.map((r) => computeStepMetrics(r, byYear[String(Number(r.bsns_year) - 1)]));
+    }
 
-      return annualRows.map((r) => {
-        const prior = byYear[String(Number(r.bsns_year) - 1)];
-        const totalAssets = (r.total_liabilities != null && r.total_equity != null) ? r.total_liabilities + r.total_equity : null;
-        const priorAssets = (prior && prior.total_liabilities != null && prior.total_equity != null) ? prior.total_liabilities + prior.total_equity : null;
-        const avgAssets = (totalAssets != null && priorAssets != null) ? (totalAssets + priorAssets) / 2 : totalAssets;
-        const avgEquity = (r.total_equity != null && prior && prior.total_equity != null) ? (r.total_equity + prior.total_equity) / 2 : r.total_equity;
+    // 사업보고서가 아직 없는 최신 연도를 위한 TTM(최근 4개 분기 합산) 행 생성
+    function buildTTMRow(quarterlyRows) {
+      if (quarterlyRows.length === 0) return null;
+      const latest = quarterlyRows.reduce((a, b) => (b.period_order > a.period_order ? b : a));
+      const m = latest.period_label.match(/(\d)분기$/);
+      if (!m) return null;
+      const N = Number(m[1]);
+      if (N === 4) return null; // 이미 사업보고서(연간) 데이터가 있음
 
-        const ebit = (r.pretax_income != null && r.interest_expense != null) ? r.pretax_income + r.interest_expense : null;
+      const Y = Number(latest.bsns_year);
+      const find = (year, q) => quarterlyRows.find((r) => r.bsns_year === String(year) && r.period_label === \`\${year} \${q}분기\`);
 
-        const taxBurden = (r.net_income != null && r.pretax_income) ? r.net_income / r.pretax_income : null;
-        const interestBurden = (r.pretax_income != null && ebit) ? r.pretax_income / ebit : null;
-        const ebitMargin = (ebit != null && r.revenue) ? ebit / r.revenue : null;
-        const assetTurnover = (r.revenue != null && avgAssets) ? r.revenue / avgAssets : null;
-        const leverage = (avgAssets != null && avgEquity) ? avgAssets / avgEquity : null;
+      const needed = [];
+      for (let k = 1; k <= N; k++) needed.push(find(Y, k));
+      for (let k = N + 1; k <= 4; k++) needed.push(find(Y - 1, k));
+      if (needed.some((r) => !r)) return null; // 4개 분기가 다 모여야 TTM 계산 가능
 
-        const factors = [taxBurden, interestBurden, ebitMargin, assetTurnover, leverage];
-        const roeCheck = factors.every((v) => v != null) ? factors.reduce((a, b) => a * b, 1) : null;
-        const parentROE = (r.parent_net_income != null && r.parent_equity) ? r.parent_net_income / r.parent_equity : null;
+      const ttm = { ...latest, bsns_year: String(Y), period_label: \`\${Y} TTM (\${N}분기 기준)\` };
+      for (const key of FLOW_KEYS) {
+        const vals = needed.map((r) => r[key]);
+        ttm[key] = vals.every((v) => v != null) ? vals.reduce((a, b) => a + b, 0) : null;
+      }
 
-        return { year: r.bsns_year, taxBurden, interestBurden, ebitMargin, assetTurnover, leverage, roeCheck, parentROE };
-      });
+      const priorSameQ = find(Y - 1, N); // 평균자기자본/평균자산 계산용: 1년 전 같은 분기
+      return { row: ttm, prior: priorSameQ };
     }
 
     function renderFiveStep() {
       const annualRows = toAnnualRows(rawRows);
-      if (annualRows.length === 0) { alert('연간 데이터가 없습니다.'); return; }
+      const quarterlyRows = toQuarterlyRows(rawRows);
+      const ttm = buildTTMRow(quarterlyRows);
+
       const steps = compute5StepRows(annualRows);
+      if (ttm) steps.push(computeStepMetrics(ttm.row, ttm.prior));
+
+      if (steps.length === 0) { alert('분석할 데이터가 없습니다.'); return; }
+
       const pct = (v) => v != null ? (v * 100).toFixed(1) + '%' : 'N/A';
       const num = (v) => v != null ? v.toFixed(2) : 'N/A';
 
-      let html = '<table><tr><th>연도</th><th>세율부담<br/>(순이익/세전)</th><th>이자부담<br/>(세전/EBIT)</th><th>EBIT마진</th><th>자산회전율</th><th>레버리지</th><th>계산된 ROE</th><th>지배주주 ROE</th></tr>';
+      let html = '<table><tr><th>기간</th><th>세율부담<br/>(순이익/세전)</th><th>이자부담<br/>(세전/EBIT)</th><th>EBIT마진</th><th>자산회전율</th><th>레버리지</th><th>계산된 ROE</th><th>지배주주 ROE</th><th>ROIC</th></tr>';
       for (const s of steps) {
-        html += \`<tr><td>\${s.year}</td><td>\${pct(s.taxBurden)}</td><td>\${pct(s.interestBurden)}</td><td>\${pct(s.ebitMargin)}</td><td>\${num(s.assetTurnover)}</td><td>\${num(s.leverage)}</td><td>\${pct(s.roeCheck)}</td><td>\${pct(s.parentROE)}</td></tr>\`;
+        html += \`<tr><td>\${s.label}</td><td>\${pct(s.taxBurden)}</td><td>\${pct(s.interestBurden)}</td><td>\${pct(s.ebitMargin)}</td><td>\${num(s.assetTurnover)}</td><td>\${num(s.leverage)}</td><td>\${pct(s.roeCheck)}</td><td>\${pct(s.parentROE)}</td><td>\${pct(s.roic)}</td></tr>\`;
       }
       html += '</table>';
       const el = document.getElementById('fiveStepWrap');
       el.style.display = 'block';
-      el.innerHTML = '<div class="card-title">5단계 ROE 분해 (연도별)</div>' + html;
+      el.innerHTML = '<div class="card-title">5단계 ROE 분해 (연도별, 최신 연도는 사업보고서 없으면 TTM)</div>' + html;
     }
 
     function latestSnapshotRow(rows) {
