@@ -162,6 +162,12 @@ const HTML_PAGE = `<!doctype html>
     <div id="summary" style="display:none; margin-top:10px;"></div>
   </div>
 
+  <div class="card">
+    <div class="card-title">5단계 ROE 분해</div>
+    <button onclick="renderFiveStep()">분해해서 보기</button>
+    <div id="fiveStepWrap" style="display:none; margin-top:10px; overflow-x:auto;"></div>
+  </div>
+
   <div id="status"></div>
   <div id="wrap"></div>
   <div id="chartWrap" style="display:none; margin-top:14px;" class="card">
@@ -262,8 +268,8 @@ const HTML_PAGE = `<!doctype html>
 
     function renderTable(rows) {
       currentRows = rows;
-      const cols = ['기간', 'fs_div', '매출액', '매출원가', '영업이익', '당기순이익', '총자본', '총부채', '현금및현금성자산', '단기금융자산', '영업활동현금흐름', 'CapEx', '잉여현금흐름', '매출채권', '재고자산', '매입채무', '총주식수', '자기주식수', '주당배당금', '비고'];
-      const keys = [null, null, 'revenue', 'cogs', 'operating_income', 'net_income', 'total_equity', 'total_liabilities', 'cash', 'st_financial_assets', 'ocf', 'capex', 'fcf', 'receivables', 'inventory', 'payables', 'total_shares', 'treasury_shares', 'dividend_per_share', null];
+      const cols = ['기간', 'fs_div', '매출액', '매출원가', '영업이익', '당기순이익', '총자본', '총부채', '현금및현금성자산', '단기금융자산', '영업활동현금흐름', 'CapEx', '잉여현금흐름', '매출채권', '재고자산', '매입채무', '총주식수', '자기주식수', '주당배당금', '기타채권', '단기대여금', '기타채무', '단기차입금', '유동성장기부채', '유동리스부채', '유형자산', '무형자산', '사용권자산', '지배주주순이익', '세전이익', '이자비용', '지배주주자기자본', '비고'];
+      const keys = [null, null, 'revenue', 'cogs', 'operating_income', 'net_income', 'total_equity', 'total_liabilities', 'cash', 'st_financial_assets', 'ocf', 'capex', 'fcf', 'receivables', 'inventory', 'payables', 'total_shares', 'treasury_shares', 'dividend_per_share', 'other_receivables', 'short_term_loans', 'other_payables', 'short_term_borrowings', 'current_portion_lt_debt', 'current_lease_liabilities', 'tangible_assets', 'intangible_assets', 'right_of_use_assets', 'parent_net_income', 'pretax_income', 'interest_expense', 'parent_equity', null];
       let html = '<table><tr>' + cols.map((c, i) =>
         keys[i]
           ? \`<th ondblclick="showChart('\${keys[i]}','\${c}')" title="더블클릭하면 그래프">\${c}</th>\`
@@ -276,6 +282,10 @@ const HTML_PAGE = `<!doctype html>
           r.total_equity, r.total_liabilities, r.cash, r.st_financial_assets,
           r.ocf, r.capex, r.fcf, r.receivables, r.inventory, r.payables,
           r.total_shares, r.treasury_shares, r.dividend_per_share,
+          r.other_receivables, r.short_term_loans, r.other_payables,
+          r.short_term_borrowings, r.current_portion_lt_debt, r.current_lease_liabilities,
+          r.tangible_assets, r.intangible_assets, r.right_of_use_assets,
+          r.parent_net_income, r.pretax_income, r.interest_expense, r.parent_equity,
         ];
         html += '<tr>' + cells.map((v, i) => {
           if (i < 2) return \`<td>\${v}</td>\`;
@@ -304,6 +314,50 @@ const HTML_PAGE = `<!doctype html>
     function computeROE(r) {
       if (r.net_income == null || !r.total_equity) return null;
       return r.net_income / r.total_equity;
+    }
+
+    function compute5StepRows(annualRows) {
+      const byYear = {};
+      annualRows.forEach((r) => { byYear[r.bsns_year] = r; });
+
+      return annualRows.map((r) => {
+        const prior = byYear[String(Number(r.bsns_year) - 1)];
+        const totalAssets = (r.total_liabilities != null && r.total_equity != null) ? r.total_liabilities + r.total_equity : null;
+        const priorAssets = (prior && prior.total_liabilities != null && prior.total_equity != null) ? prior.total_liabilities + prior.total_equity : null;
+        const avgAssets = (totalAssets != null && priorAssets != null) ? (totalAssets + priorAssets) / 2 : totalAssets;
+        const avgEquity = (r.total_equity != null && prior && prior.total_equity != null) ? (r.total_equity + prior.total_equity) / 2 : r.total_equity;
+
+        const ebit = (r.pretax_income != null && r.interest_expense != null) ? r.pretax_income + r.interest_expense : null;
+
+        const taxBurden = (r.net_income != null && r.pretax_income) ? r.net_income / r.pretax_income : null;
+        const interestBurden = (r.pretax_income != null && ebit) ? r.pretax_income / ebit : null;
+        const ebitMargin = (ebit != null && r.revenue) ? ebit / r.revenue : null;
+        const assetTurnover = (r.revenue != null && avgAssets) ? r.revenue / avgAssets : null;
+        const leverage = (avgAssets != null && avgEquity) ? avgAssets / avgEquity : null;
+
+        const factors = [taxBurden, interestBurden, ebitMargin, assetTurnover, leverage];
+        const roeCheck = factors.every((v) => v != null) ? factors.reduce((a, b) => a * b, 1) : null;
+        const parentROE = (r.parent_net_income != null && r.parent_equity) ? r.parent_net_income / r.parent_equity : null;
+
+        return { year: r.bsns_year, taxBurden, interestBurden, ebitMargin, assetTurnover, leverage, roeCheck, parentROE };
+      });
+    }
+
+    function renderFiveStep() {
+      const annualRows = toAnnualRows(rawRows);
+      if (annualRows.length === 0) { alert('연간 데이터가 없습니다.'); return; }
+      const steps = compute5StepRows(annualRows);
+      const pct = (v) => v != null ? (v * 100).toFixed(1) + '%' : 'N/A';
+      const num = (v) => v != null ? v.toFixed(2) : 'N/A';
+
+      let html = '<table><tr><th>연도</th><th>세율부담<br/>(순이익/세전)</th><th>이자부담<br/>(세전/EBIT)</th><th>EBIT마진</th><th>자산회전율</th><th>레버리지</th><th>계산된 ROE</th><th>지배주주 ROE</th></tr>';
+      for (const s of steps) {
+        html += \`<tr><td>\${s.year}</td><td>\${pct(s.taxBurden)}</td><td>\${pct(s.interestBurden)}</td><td>\${pct(s.ebitMargin)}</td><td>\${num(s.assetTurnover)}</td><td>\${num(s.leverage)}</td><td>\${pct(s.roeCheck)}</td><td>\${pct(s.parentROE)}</td></tr>\`;
+      }
+      html += '</table>';
+      const el = document.getElementById('fiveStepWrap');
+      el.style.display = 'block';
+      el.innerHTML = '<div class="card-title">5단계 ROE 분해 (연도별)</div>' + html;
     }
 
     function latestSnapshotRow(rows) {
