@@ -10,7 +10,7 @@ const REPRT_CODES = [
 ];
 
 // 분기 누적치 차감이 필요한 흐름(flow) 항목. 그 외는 시점(stock) 항목이라 그대로 둠.
-const FLOW_KEYS = ["revenue", "cogs", "operating_income", "net_income", "ocf", "capex", "fcf"];
+const FLOW_KEYS = ["revenue", "cogs", "operating_income", "net_income", "ocf", "capex", "fcf", "parent_net_income", "pretax_income", "interest_expense"];
 
 const ACCOUNT_ITEMS = [
   { key: "revenue", ids: ["ifrs-full_Revenue", "ifrs_Revenue", "ifrs-full_RevenueFromContractsWithCustomers"], names: ["매출액", "수익(매출액)"] },
@@ -32,6 +32,21 @@ const ACCOUNT_ITEMS = [
   { key: "fvpl_financial_assets", ids: ["ifrs-full_FinancialAssetsAtFairValueThroughProfitOrLoss"], names: ["당기손익-공정가치측정금융자산", "당기손익공정가치측정금융자산"] },
   { key: "fvoci_financial_assets", ids: ["ifrs-full_FinancialAssetsAtFairValueThroughOtherComprehensiveIncome"], names: ["기타포괄손익-공정가치측정금융자산", "기타포괄손익공정가치측정금융자산"] },
   { key: "investment_property", ids: ["ifrs-full_InvestmentProperty"], names: ["투자부동산"] },
+  // 신규 IC(영업 관점: 순운전자본+고정자산) 계산용 항목
+  { key: "other_receivables", ids: ["ifrs-full_OtherReceivables"], names: ["기타채권"] },
+  { key: "short_term_loans", ids: [], names: ["단기대여금"] },
+  { key: "other_payables", ids: ["ifrs-full_OtherPayables"], names: ["기타채무"] },
+  { key: "short_term_borrowings", ids: ["ifrs-full_ShorttermBorrowings", "ifrs-full_ShortTermBorrowings"], names: ["단기차입금"] },
+  { key: "current_portion_lt_debt", ids: ["ifrs-full_CurrentPortionOfLongtermBorrowings"], names: ["유동성장기부채", "유동성 장기차입금", "유동성장기차입금", "유동성사채"] },
+  { key: "current_lease_liabilities", ids: ["ifrs-full_CurrentLeaseLiabilities"], names: ["유동리스부채"] },
+  { key: "tangible_assets", ids: ["ifrs-full_PropertyPlantAndEquipment"], names: ["유형자산"] },
+  { key: "intangible_assets", ids: ["ifrs-full_IntangibleAssetsOtherThanGoodwill", "ifrs-full_IntangibleAssetsAndGoodwill"], names: ["무형자산"] },
+  { key: "right_of_use_assets", ids: ["ifrs-full_RightofuseAssets"], names: ["사용권자산"] },
+  // 5단계 ROE 분석 준비용 항목 (계산은 나중에, 지금은 원천만 저장)
+  { key: "parent_net_income", ids: ["ifrs-full_ProfitLossAttributableToOwnersOfParent"], names: ["지배기업의 소유주에게 귀속되는 당기순이익", "지배기업소유주지분순이익", "지배주주순이익"] },
+  { key: "pretax_income", ids: ["ifrs-full_ProfitLossBeforeTax"], names: ["법인세비용차감전순이익", "법인세비용차감전순손익", "세전이익"] },
+  { key: "interest_expense", ids: ["ifrs-full_FinanceCosts", "ifrs-full_InterestExpense"], names: ["이자비용", "금융비용"] },
+  { key: "parent_equity", ids: ["ifrs-full_EquityAttributableToOwnersOfParent"], names: ["지배기업의 소유주에게 귀속되는 자본", "지배기업소유주지분", "지배주주지분"] },
 ];
 
 const DB_COLUMNS = [
@@ -41,6 +56,10 @@ const DB_COLUMNS = [
   "ocf", "capex", "fcf", "receivables", "inventory", "payables",
   "total_shares", "treasury_shares", "dividend_per_share",
   "short_term_trading_securities", "fvpl_financial_assets", "fvoci_financial_assets", "investment_property",
+  "other_receivables", "short_term_loans", "other_payables",
+  "short_term_borrowings", "current_portion_lt_debt", "current_lease_liabilities",
+  "tangible_assets", "intangible_assets", "right_of_use_assets",
+  "parent_net_income", "pretax_income", "interest_expense", "parent_equity",
   "updated_at",
 ];
 
@@ -267,11 +286,13 @@ const HTML_PAGE = `<!doctype html>
     }
 
     function computeIC(r) {
-      if (r.total_liabilities == null || r.total_equity == null) return null;
-      const sub = (v) => v || 0;
-      return r.total_liabilities + r.total_equity
-        - sub(r.cash) - sub(r.st_financial_assets) - sub(r.short_term_trading_securities)
-        - sub(r.fvpl_financial_assets) - sub(r.fvoci_financial_assets) - sub(r.investment_property);
+      // 영업 관점 IC = (매출채권+기타채권+재고자산-단기대여금) - (매입채무+기타채무-단기차입금-유동성장기부채-유동리스부채) + 유형자산+무형자산+사용권자산
+      if (r.receivables == null && r.payables == null && r.tangible_assets == null) return null;
+      const v = (x) => x || 0;
+      const operatingReceivables = v(r.receivables) + v(r.other_receivables) + v(r.inventory) - v(r.short_term_loans);
+      const operatingPayables = v(r.payables) + v(r.other_payables) - v(r.short_term_borrowings) - v(r.current_portion_lt_debt) - v(r.current_lease_liabilities);
+      const fixedAssets = v(r.tangible_assets) + v(r.intangible_assets) + v(r.right_of_use_assets);
+      return (operatingReceivables - operatingPayables) + fixedAssets;
     }
 
     function computeROIC(r) {
