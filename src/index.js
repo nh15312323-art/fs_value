@@ -318,6 +318,28 @@ const HTML_PAGE = `<!doctype html>
       return r.net_income / r.total_equity;
     }
 
+    // 전기와 당기 값의 평균. 전기 자료가 없으면 당기(기말) 값을 그대로 사용
+    function avgOf(cur, prev) {
+      if (cur == null) return null;
+      return prev != null ? (cur + prev) / 2 : cur;
+    }
+
+    // 지배주주 ROE = 지배주주순이익 / 평균 지배주주자본 (분자·분모를 같은 기준으로 맞춤)
+    function computeParentROEAvg(r, prior) {
+      const eq = avgOf(r.parent_equity, prior ? prior.parent_equity : null);
+      if (r.parent_net_income == null || !eq) return null;
+      return r.parent_net_income / eq;
+    }
+
+    // 밸류에이션용 ROE: 지배주주 기준 우선, 지배주주 자료가 없으면 연결(순이익 / 평균 총자본) 기준으로 대체
+    function computeROEAvg(r, prior) {
+      const p = computeParentROEAvg(r, prior);
+      if (p != null) return { value: p, basis: 'parent' };
+      const eq = avgOf(r.total_equity, prior ? prior.total_equity : null);
+      if (r.net_income == null || !eq) return null;
+      return { value: r.net_income / eq, basis: 'consolidated' };
+    }
+
     function computeStepMetrics(r, prior) {
       const totalAssets = (r.total_liabilities != null && r.total_equity != null) ? r.total_liabilities + r.total_equity : null;
       const priorAssets = (prior && prior.total_liabilities != null && prior.total_equity != null) ? prior.total_liabilities + prior.total_equity : null;
@@ -334,7 +356,7 @@ const HTML_PAGE = `<!doctype html>
 
       const factors = [taxBurden, interestBurden, ebitMargin, assetTurnover, leverage];
       const roeCheck = factors.every((v) => v != null) ? factors.reduce((a, b) => a * b, 1) : null;
-      const parentROE = (r.parent_net_income != null && r.parent_equity) ? r.parent_net_income / r.parent_equity : null;
+      const parentROE = computeParentROEAvg(r, prior);
       const roic = computeROIC(r);
 
       return { label: r.period_label, taxBurden, interestBurden, ebitMargin, assetTurnover, leverage, roeCheck, parentROE, roic };
@@ -386,7 +408,7 @@ const HTML_PAGE = `<!doctype html>
       const pct = (v) => v != null ? (v * 100).toFixed(1) + '%' : 'N/A';
       const num = (v) => v != null ? v.toFixed(2) : 'N/A';
 
-      let html = '<table><tr><th>기간</th><th>세율부담<br/>(순이익/세전)</th><th>이자부담<br/>(세전/EBIT)</th><th>EBIT마진</th><th>자산회전율</th><th>레버리지</th><th>계산된 ROE</th><th>지배주주 ROE</th><th>ROIC</th></tr>';
+      let html = '<table><tr><th>기간</th><th>세율부담<br/>(순이익/세전)</th><th>이자부담<br/>(세전/EBIT)</th><th>EBIT마진</th><th>자산회전율</th><th>레버리지</th><th>계산된 ROE<br/>(연결·평균자본)</th><th>지배주주 ROE<br/>(평균 지배자본)</th><th>ROIC</th></tr>';
       for (const s of steps) {
         html += \`<tr><td>\${s.label}</td><td>\${pct(s.taxBurden)}</td><td>\${pct(s.interestBurden)}</td><td>\${pct(s.ebitMargin)}</td><td>\${num(s.assetTurnover)}</td><td>\${num(s.leverage)}</td><td>\${pct(s.roeCheck)}</td><td>\${pct(s.parentROE)}</td><td>\${pct(s.roic)}</td></tr>\`;
       }
@@ -411,7 +433,13 @@ const HTML_PAGE = `<!doctype html>
       }
 
       const roics = annualRows.map(computeROIC).filter((v) => v != null);
-      const roes = annualRows.map(computeROE).filter((v) => v != null);
+      const byYearForROE = {};
+      annualRows.forEach((r) => { byYearForROE[r.bsns_year] = r; });
+      const roeResults = annualRows
+        .map((r) => computeROEAvg(r, byYearForROE[String(Number(r.bsns_year) - 1)]))
+        .filter((x) => x && isFinite(x.value));
+      const roes = roeResults.map((x) => x.value);
+      const consolCnt = roeResults.filter((x) => x.basis === 'consolidated').length;
       const avgROIC = roics.length ? roics.reduce((a, b) => a + b, 0) / roics.length : null;
       const avgROE = roes.length ? roes.reduce((a, b) => a + b, 0) / roes.length : null;
 
@@ -420,7 +448,9 @@ const HTML_PAGE = `<!doctype html>
       const outstandingShares = (latest.total_shares != null && latest.treasury_shares != null)
         ? latest.total_shares - latest.treasury_shares
         : null;
-      const bps = (outstandingShares && latest.total_equity != null) ? latest.total_equity / outstandingShares : null;
+      const equityForBps = latest.parent_equity != null ? latest.parent_equity : latest.total_equity;
+      const bpsBasis = latest.parent_equity != null ? '지배주주지분' : '총자본(지배주주지분 자료 없음)';
+      const bps = (outstandingShares && equityForBps != null) ? equityForBps / outstandingShares : null;
       const projected = (bps != null && avgROE != null) ? bps * Math.pow(1 + avgROE, 10) : null;
 
       const priceInput = Number(document.getElementById('currentPrice').value) || null;
@@ -439,8 +469,8 @@ const HTML_PAGE = `<!doctype html>
       el.style.display = 'block';
       el.innerHTML = \`
         <div><b>10년 평균 ROIC:</b> \${roicPct} (연도 \${roics.length}개 평균) \${roicJudge}</div>
-        <div><b>10년 평균 ROE:</b> \${avgROE != null ? (avgROE * 100).toFixed(2) + '%' : 'N/A'} (연도 \${roes.length}개 평균)</div>
-        <div><b>최근 BPS(\${latest.period_label} 기준, 보통주 유통주식 기준):</b> \${bpsStr}</div>
+        <div><b>10년 평균 ROE:</b> \${avgROE != null ? (avgROE * 100).toFixed(2) + '%' : 'N/A'} (\${roes.length}개 연도 평균 · 지배주주순이익÷평균 지배주주자본\${consolCnt ? ', 자료 없는 ' + consolCnt + '개 연도는 연결 기준' : ''})</div>
+        <div><b>최근 BPS(\${latest.period_label} 기준, \${bpsBasis}÷보통주 유통주식):</b> \${bpsStr}</div>
         <div><b>10년 후 예상 주가 (BPS×(1+평균ROE)^10):</b> \${projectedStr}</div>
         \${valuationJudge ? \`<div><b>비교 결과:</b> \${valuationJudge} (현재가: \${priceInput.toLocaleString()}원)\` : '<div style="color:#888">현재 주가를 입력하면 비교 결과가 표시됩니다.</div>'}
         \${marketCap != null ? \`<div><b>참고 시가총액:</b> \${Math.round(marketCap).toLocaleString()}원</div>\` : ''}
