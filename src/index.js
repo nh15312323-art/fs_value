@@ -13,8 +13,8 @@ const REPRT_CODES = [
 const FLOW_KEYS = ["revenue", "cogs", "operating_income", "net_income", "ocf", "capex", "fcf", "parent_net_income", "pretax_income", "interest_expense"];
 
 const ACCOUNT_ITEMS = [
-  { key: "revenue", ids: ["ifrs-full_Revenue", "ifrs_Revenue", "ifrs-full_RevenueFromContractsWithCustomers"], names: ["매출액", "수익(매출액)", "영업수익"] },
-  { key: "cogs", ids: ["ifrs-full_CostOfSales", "ifrs_CostOfSales"], names: ["매출원가", "영업비용"] },
+  { key: "revenue", ids: ["ifrs-full_Revenue", "ifrs_Revenue", "ifrs-full_RevenueFromContractsWithCustomers"], names: ["매출액", "수익(매출액)"] },
+  { key: "cogs", ids: ["ifrs-full_CostOfSales", "ifrs_CostOfSales"], names: ["매출원가"] },
   { key: "operating_income", ids: ["dart_OperatingIncomeLoss"], names: ["영업이익"] },
   { key: "net_income", ids: ["ifrs-full_ProfitLoss", "ifrs_ProfitLoss"], names: ["당기순이익", "반기순이익", "분기순이익", "순이익"] },
   { key: "total_equity", ids: ["ifrs-full_Equity", "ifrs_Equity"], names: ["자본총계"] },
@@ -212,12 +212,14 @@ const HTML_PAGE = `<!doctype html>
     let rawRows = [];      // DB/DART에서 받아온, 가공 안 된 원본 기간별 데이터
     let currentRows = [];  // 현재 화면에 표시 중인 데이터 (분기별 변환 or 연간 그대로)
     let viewMode = 'quarterly';
+    // 실제 데이터가 있는 행만 분석에 사용 (공시 전이라 비어있는 행/오류 행 제외)
+    const isUsable = (r) => !r.error && r.fs_div != null;
 
     const FLOW_KEYS = ${JSON.stringify(FLOW_KEYS)};
 
     function toQuarterlyRows(rows) {
       const byYear = {};
-      for (const r of rows) {
+      for (const r of rows.filter(isUsable)) {
         if (!byYear[r.bsns_year]) byYear[r.bsns_year] = {};
         byYear[r.bsns_year][r.reprt_code] = r;
       }
@@ -249,7 +251,7 @@ const HTML_PAGE = `<!doctype html>
 
     function toAnnualRows(rows) {
       return rows
-        .filter((r) => r.reprt_code === '11011')
+        .filter((r) => isUsable(r) && r.reprt_code === '11011')
         .sort((a, b) => a.bsns_year.localeCompare(b.bsns_year))
         .map((r) => ({ ...r, period_label: \`\${r.bsns_year} 연간\` }));
     }
@@ -486,7 +488,10 @@ const HTML_PAGE = `<!doctype html>
         rawRows = rows;
         applyView();
       }
-      statusEl.textContent = \`저장 완료 (\${rows.length}개 기간)\`;
+      const savedCnt = rows.filter(isUsable).length;
+      const failed = rows.filter((r) => r.error);
+      const pendingCnt = rows.length - savedCnt - failed.length;
+      statusEl.textContent = \`저장 완료: \${savedCnt}개 기간 저장, \${pendingCnt}개는 아직 공시 전이거나 데이터 없음\` + (failed.length ? \`, \${failed.length}개 오류 (\${failed[0].period_label}: \${failed[0].error})\` : '');
     }
 
     async function loadFromDb() {
@@ -679,19 +684,56 @@ function parseAmount(v) {
 
 // 계정ID(우선) 또는 계정명(폴백)으로 매칭되는 모든 행을 합산.
 // 유동/비유동으로 나뉜 계정(예: 당기손익공정가치측정금융자산)을 자동으로 합쳐줌.
-function sumAccount(list, ids, names) {
-  let matches = list.filter((row) => ids.includes(row.account_id));
-  if (matches.length === 0) {
-    matches = list.filter((row) => names.some((n) => row.account_nm?.includes(n)));
+// 항목별로 찾을 재무제표 종류(sj_div). 같은 계정ID가 자본변동표(SCE)·현금흐름표(CF)·포괄손익(CIS) 등에
+// 중복 등장하므로, 전체를 합산하면 값이 부풀어 오른다. 그래서 해당 재무제표 안에서만 찾는다.
+// 손익 항목은 IS(손익계산서) → CIS(포괄손익계산서) 순서로, 먼저 값이 나오는 쪽 하나만 사용.
+const SJ_BY_KEY = {
+  revenue: ["IS", "CIS"], cogs: ["IS", "CIS"], operating_income: ["IS", "CIS"], net_income: ["IS", "CIS"],
+  parent_net_income: ["IS", "CIS"], pretax_income: ["IS", "CIS"], interest_expense: ["IS", "CIS", "CF"],
+  ocf: ["CF"], capex_ppe: ["CF"], capex_intangible: ["CF"],
+  total_equity: ["BS"], total_liabilities: ["BS"], cash: ["BS"], st_financial_assets: ["BS"],
+  receivables: ["BS"], inventory: ["BS"], payables: ["BS"],
+  short_term_trading_securities: ["BS"], fvpl_financial_assets: ["BS"], fvoci_financial_assets: ["BS"], investment_property: ["BS"],
+  other_receivables: ["BS"], short_term_loans: ["BS"], other_payables: ["BS"],
+  short_term_borrowings: ["BS"], current_portion_lt_debt: ["BS"], current_lease_liabilities: ["BS"],
+  tangible_assets: ["BS"], intangible_assets: ["BS"], right_of_use_assets: ["BS"], parent_equity: ["BS"],
+};
+
+function sumAccount(list, ids, names, sjOrder) {
+  const norm = (s) => (s || "").replace(/\s/g, "");
+  const sumRows = (rows) => {
+    let total = 0;
+    let found = false;
+    for (const m of rows) {
+      const v = parseAmount(m.thstrm_amount);
+      if (v != null) { total += v; found = true; }
+    }
+    return found ? total : null;
+  };
+
+  for (const sj of sjOrder) {
+    const inSj = list.filter((row) => row.sj_div === sj);
+    // account_detail이 "-"인 행이 본 계정. 값이 없으면 세부구분(member) 행까지 넓혀서 다시 찾음
+    const plain = inSj.filter((row) => !row.account_detail || row.account_detail === "-");
+    for (const pool of [plain, inSj]) {
+      // 1) 계정ID: 우선순위대로 첫 번째로 값이 있는 ID의 행만 사용 (대체 ID를 중복 합산하지 않음)
+      for (const id of ids) {
+        const v = sumRows(pool.filter((row) => row.account_id === id));
+        if (v != null) return v;
+      }
+      // 2) 계정명: 띄어쓰기 무시하고 정확히 일치하는 행 우선, 없으면 포함하는 첫 행 하나만
+      for (const n of names) {
+        const exact = pool.filter((row) => norm(row.account_nm) === norm(n));
+        if (exact.length) {
+          const v = sumRows(exact);
+          if (v != null) return v;
+        }
+        const fuzzy = pool.find((row) => row.account_nm?.includes(n) && parseAmount(row.thstrm_amount) != null);
+        if (fuzzy) return parseAmount(fuzzy.thstrm_amount);
+      }
+    }
   }
-  if (matches.length === 0) return null;
-  let total = 0;
-  let found = false;
-  for (const m of matches) {
-    const v = parseAmount(m.thstrm_amount);
-    if (v != null) { total += v; found = true; }
-  }
-  return found ? total : null;
+  return null;
 }
 
 function pickStockCounts(dart) {
@@ -737,7 +779,9 @@ async function fetchPeriodRow(corpCode, period, proxyUrl) {
     if (dart.status !== "000") return emptyRow();
 
     const vals = {};
-    for (const item of ACCOUNT_ITEMS) vals[item.key] = sumAccount(dart.list, item.ids, item.names);
+    for (const item of ACCOUNT_ITEMS) {
+      vals[item.key] = sumAccount(dart.list, item.ids, item.names, SJ_BY_KEY[item.key] || ["BS", "IS", "CIS", "CF"]);
+    }
 
     const capex = (vals.capex_ppe != null || vals.capex_intangible != null)
       ? Math.abs(vals.capex_ppe || 0) + Math.abs(vals.capex_intangible || 0)
@@ -779,7 +823,9 @@ async function saveRowsToDb(db, rows) {
   const colSql = DB_COLUMNS.join(", ");
   const ph = "(" + DB_COLUMNS.map(() => "?").join(", ") + ")";
   for (const r of rows) {
-    if (r.error) continue; // 실패한 기간은 저장하지 않음 (다음에 다시 시도 가능하게)
+    // 오류가 났거나, DART에 데이터가 없는(아직 공시 전인) 빈 행은 저장하지 않음.
+    // 빈 행을 저장하면 "완결된 연도"로 오인되거나 기존 정상 데이터를 null로 덮어쓸 수 있다.
+    if (r.error || r.fs_div == null) continue;
     const values = DB_COLUMNS.map((c) => (c === "updated_at" ? now : r[c] ?? null));
     await db.prepare(`INSERT OR REPLACE INTO financial_raw (${colSql}) VALUES ${ph}`).bind(...values).run();
   }
