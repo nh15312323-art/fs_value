@@ -318,6 +318,11 @@ const HTML_PAGE = `<!doctype html>
       return r.net_income / r.total_equity;
     }
 
+    // 전기와 재무제표 기준(연결 CFS / 개별 OFS)이 다르면 평균에 쓰지 않음 (기준이 섞이면 왜곡됨)
+    function comparablePrior(r, prior) {
+      return (prior && prior.fs_div === r.fs_div) ? prior : null;
+    }
+
     // 전기와 당기 값의 평균. 전기 자료가 없으면 당기(기말) 값을 그대로 사용
     function avgOf(cur, prev) {
       if (cur == null) return null;
@@ -333,6 +338,7 @@ const HTML_PAGE = `<!doctype html>
 
     // 밸류에이션용 ROE: 지배주주 기준 우선, 지배주주 자료가 없으면 연결(순이익 / 평균 총자본) 기준으로 대체
     function computeROEAvg(r, prior) {
+      prior = comparablePrior(r, prior);
       const p = computeParentROEAvg(r, prior);
       if (p != null) return { value: p, basis: 'parent' };
       const eq = avgOf(r.total_equity, prior ? prior.total_equity : null);
@@ -341,6 +347,7 @@ const HTML_PAGE = `<!doctype html>
     }
 
     function computeStepMetrics(r, prior) {
+      prior = comparablePrior(r, prior);
       const totalAssets = (r.total_liabilities != null && r.total_equity != null) ? r.total_liabilities + r.total_equity : null;
       const priorAssets = (prior && prior.total_liabilities != null && prior.total_equity != null) ? prior.total_liabilities + prior.total_equity : null;
       const avgAssets = (totalAssets != null && priorAssets != null) ? (totalAssets + priorAssets) / 2 : totalAssets;
@@ -359,7 +366,7 @@ const HTML_PAGE = `<!doctype html>
       const parentROE = computeParentROEAvg(r, prior);
       const roic = computeROIC(r);
 
-      return { label: r.period_label, taxBurden, interestBurden, ebitMargin, assetTurnover, leverage, roeCheck, parentROE, roic };
+      return { label: r.period_label, isOFS: r.fs_div === 'OFS', taxBurden, interestBurden, ebitMargin, assetTurnover, leverage, roeCheck, parentROE, roic };
     }
 
     function compute5StepRows(annualRows) {
@@ -372,9 +379,9 @@ const HTML_PAGE = `<!doctype html>
     function buildTTMRow(quarterlyRows) {
       if (quarterlyRows.length === 0) return null;
       const latest = quarterlyRows.reduce((a, b) => (b.period_order > a.period_order ? b : a));
-      const m = latest.period_label.match(/(\d)분기$/);
-      if (!m) return null;
-      const N = Number(m[1]);
+      // period_order = 연도*10 + 분기번호 (예: 20262 → 2026년 2분기)
+      const N = Number(latest.period_order) % 10;
+      if (!(N >= 1 && N <= 4)) return null;
       if (N === 4) return null; // 이미 사업보고서(연간) 데이터가 있음
 
       const Y = Number(latest.bsns_year);
@@ -410,7 +417,7 @@ const HTML_PAGE = `<!doctype html>
 
       let html = '<table><tr><th>기간</th><th>세율부담<br/>(순이익/세전)</th><th>이자부담<br/>(세전/EBIT)</th><th>EBIT마진</th><th>자산회전율</th><th>레버리지</th><th>계산된 ROE<br/>(연결·평균자본)</th><th>지배주주 ROE<br/>(평균 지배자본)</th><th>ROIC</th></tr>';
       for (const s of steps) {
-        html += \`<tr><td>\${s.label}</td><td>\${pct(s.taxBurden)}</td><td>\${pct(s.interestBurden)}</td><td>\${pct(s.ebitMargin)}</td><td>\${num(s.assetTurnover)}</td><td>\${num(s.leverage)}</td><td>\${pct(s.roeCheck)}</td><td>\${pct(s.parentROE)}</td><td>\${pct(s.roic)}</td></tr>\`;
+        html += \`<tr><td>\${s.label}</td><td>\${pct(s.taxBurden)}</td><td>\${pct(s.interestBurden)}</td><td>\${pct(s.ebitMargin)}</td><td>\${num(s.assetTurnover)}</td><td>\${num(s.leverage)}</td><td>\${pct(s.roeCheck)}</td><td>\${s.parentROE == null && s.isOFS ? '해당없음(개별)' : pct(s.parentROE)}</td><td>\${pct(s.roic)}</td></tr>\`;
       }
       html += '</table>';
       const el = document.getElementById('fiveStepWrap');
@@ -425,12 +432,11 @@ const HTML_PAGE = `<!doctype html>
       return withData.reduce((a, b) => (b.period_order > a.period_order ? b : a));
     }
 
-    function renderSummary() {
-      const annualRows = toAnnualRows(rawRows);
-      if (annualRows.length === 0) {
-        alert('연간(사업보고서) 데이터가 없습니다. 먼저 조회/저장하세요.');
-        return;
-      }
+    // rows: 한 종목의 원본 기간 데이터, priceInput: 현재 주가(없으면 null)
+    // 반환값은 순수 데이터(숫자/문자열)만 담아서, 단일종목 요약/비교 화면 양쪽에서 재사용한다.
+    function computeSummaryMetrics(rows, priceInput) {
+      const annualRows = toAnnualRows(rows);
+      if (annualRows.length === 0) return null;
 
       const roics = annualRows.map(computeROIC).filter((v) => v != null);
       const byYearForROE = {};
@@ -443,42 +449,70 @@ const HTML_PAGE = `<!doctype html>
       const avgROIC = roics.length ? roics.reduce((a, b) => a + b, 0) / roics.length : null;
       const avgROE = roes.length ? roes.reduce((a, b) => a + b, 0) / roes.length : null;
 
-      // BPS/유통주식수는 "가장 최근 사업보고서"가 아니라 "가장 최근에 실제로 조회된 시점"(분기 포함) 기준
-      const latest = latestSnapshotRow(rawRows) || annualRows[annualRows.length - 1];
+      // BPS/유통주식수/EPS는 "가장 최근 사업보고서"가 아니라 실제로 가장 최근 조회된 시점(분기 포함) 기준
+      const latest = latestSnapshotRow(rows) || annualRows[annualRows.length - 1];
       const outstandingShares = (latest.total_shares != null && latest.treasury_shares != null)
         ? latest.total_shares - latest.treasury_shares
         : null;
       const equityForBps = latest.parent_equity != null ? latest.parent_equity : latest.total_equity;
-      const bpsBasis = latest.parent_equity != null ? '지배주주지분' : '총자본(지배주주지분 자료 없음)';
+      const bpsBasis = latest.parent_equity != null ? '지배주주지분' : (latest.fs_div === 'OFS' ? '총자본(개별재무제표)' : '총자본(지배주주지분 자료 없음)');
       const bps = (outstandingShares && equityForBps != null) ? equityForBps / outstandingShares : null;
       const projected = (bps != null && avgROE != null) ? bps * Math.pow(1 + avgROE, 10) : null;
 
-      const priceInput = Number(document.getElementById('currentPrice').value) || null;
-      const marketCap = (priceInput && outstandingShares) ? priceInput * outstandingShares : null;
+      // EPS: 사업보고서가 아직 없는 최신연도는 TTM(최근 4개분기 합산) 이익을 사용
+      const quarterlyRows = toQuarterlyRows(rows);
+      const ttm = buildTTMRow(quarterlyRows);
+      const earningsRow = ttm ? ttm.row : annualRows[annualRows.length - 1];
+      const earningsBasis = ttm ? 'TTM' : '연간';
+      const earnings = earningsRow.parent_net_income != null ? earningsRow.parent_net_income : earningsRow.net_income;
+      const earningsSrcBasis = earningsRow.parent_net_income != null ? '지배주주순이익' : '연결순이익';
+      const eps = (outstandingShares && earnings != null) ? earnings / outstandingShares : null;
 
-      const roicPct = avgROIC != null ? (avgROIC * 100).toFixed(2) + '%' : 'N/A';
-      const roicJudge = avgROIC != null ? (avgROIC >= 0.10 ? '✅ 10% 이상' : '⚠️ 10% 미만') : '';
-      const bpsStr = bps != null ? Math.round(bps).toLocaleString() + '원' : 'N/A';
-      const projectedStr = projected != null ? Math.round(projected).toLocaleString() + '원' : 'N/A';
+      const marketCap = (priceInput && outstandingShares) ? priceInput * outstandingShares : null;
+      const per = (priceInput && eps) ? priceInput / eps : null;
+      const pbr = (priceInput && bps) ? priceInput / bps : null;
+      const earningsYield = eps && priceInput ? eps / priceInput : null; // = 1/PER, 요구수익률 관점
+
+      return {
+        avgROIC, roicN: roics.length, avgROE, roeN: roes.length, consolCnt,
+        latestLabel: latest.period_label, bpsBasis, bps, projected,
+        priceInput, marketCap,
+        eps, epsBasis: earningsBasis + '·' + earningsSrcBasis, per, pbr, earningsYield,
+      };
+    }
+
+    function renderSummary() {
+      const priceInput = Number(document.getElementById('currentPrice').value) || null;
+      const m = computeSummaryMetrics(rawRows, priceInput);
+      if (!m) { alert('연간(사업보고서) 데이터가 없습니다. 먼저 조회/저장하세요.'); return; }
+
+      const pctStr = (v) => v != null ? (v * 100).toFixed(2) + '%' : 'N/A';
+      const wonStr = (v) => v != null ? Math.round(v).toLocaleString() + '원' : 'N/A';
+      const numStr = (v) => v != null ? v.toFixed(2) : 'N/A';
+      const roicJudge = m.avgROIC != null ? (m.avgROIC >= 0.10 ? '✅ 10% 이상' : '⚠️ 10% 미만') : '';
       let valuationJudge = '';
-      if (projected != null && priceInput) {
-        valuationJudge = projected > priceInput ? '✅ 예상가 > 현재가 (저평가 가능성)' : '⚠️ 예상가 ≤ 현재가 (고평가 가능성)';
+      if (m.projected != null && m.priceInput) {
+        valuationJudge = m.projected > m.priceInput ? '✅ 예상가 > 현재가 (저평가 가능성)' : '⚠️ 예상가 ≤ 현재가 (고평가 가능성)';
       }
 
       const el = document.getElementById('summary');
       el.style.display = 'block';
       el.innerHTML = \`
-        <div><b>10년 평균 ROIC:</b> \${roicPct} (연도 \${roics.length}개 평균) \${roicJudge}</div>
-        <div><b>10년 평균 ROE:</b> \${avgROE != null ? (avgROE * 100).toFixed(2) + '%' : 'N/A'} (\${roes.length}개 연도 평균 · 지배주주순이익÷평균 지배주주자본\${consolCnt ? ', 자료 없는 ' + consolCnt + '개 연도는 연결 기준' : ''})</div>
-        <div><b>최근 BPS(\${latest.period_label} 기준, \${bpsBasis}÷보통주 유통주식):</b> \${bpsStr}</div>
-        <div><b>10년 후 예상 주가 (BPS×(1+평균ROE)^10):</b> \${projectedStr}</div>
-        \${valuationJudge ? \`<div><b>비교 결과:</b> \${valuationJudge} (현재가: \${priceInput.toLocaleString()}원)\` : '<div style="color:#888">현재 주가를 입력하면 비교 결과가 표시됩니다.</div>'}
-        \${marketCap != null ? \`<div><b>참고 시가총액:</b> \${Math.round(marketCap).toLocaleString()}원</div>\` : ''}
+        <div><b>10년 평균 ROIC:</b> \${pctStr(m.avgROIC)} (연도 \${m.roicN}개 평균) \${roicJudge}</div>
+        <div><b>10년 평균 ROE:</b> \${pctStr(m.avgROE)} (\${m.roeN}개 연도 평균 · 지배주주순이익÷평균 지배주주자본\${m.consolCnt ? ', 지배주주 자료가 없는(개별재무제표 등) ' + m.consolCnt + '개 연도는 순이익÷평균 총자본' : ''})</div>
+        <div><b>최근 BPS(\${m.latestLabel} 기준, \${m.bpsBasis}÷보통주 유통주식):</b> \${wonStr(m.bps)}</div>
+        <div><b>10년 후 예상 주가 (BPS×(1+평균ROE)^10):</b> \${wonStr(m.projected)}</div>
+        \${valuationJudge ? \`<div><b>비교 결과:</b> \${valuationJudge} (현재가: \${m.priceInput.toLocaleString()}원)\` : '<div style="color:#888">현재 주가를 입력하면 비교 결과가 표시됩니다.</div>'}
+        \${m.marketCap != null ? \`<div><b>참고 시가총액:</b> \${wonStr(m.marketCap)}</div>\` : ''}
+        <hr style="border:none;border-top:1px solid var(--border);margin:8px 0;"/>
+        <div><b>EPS(\${m.epsBasis} 기준):</b> \${m.eps != null ? Math.round(m.eps).toLocaleString() + '원' : 'N/A'}</div>
+        <div><b>PER:</b> \${numStr(m.per)}\${m.per != null ? '배' : ''}</div>
+        <div><b>PBR:</b> \${numStr(m.pbr)}\${m.pbr != null ? '배' : ''}</div>
+        <div><b>이익수익률(1/PER, 요구수익률 관점):</b> \${pctStr(m.earningsYield)}</div>
       \`;
     }
 
-    async function fetchAndSave() {
-      const corpName = document.getElementById('corpName').value.trim();
+    async function fetchAndSave() {      const corpName = document.getElementById('corpName').value.trim();
       const startYear = Number(document.getElementById('startYear').value);
       const endYear = Number(document.getElementById('endYear').value);
       const statusEl = document.getElementById('status');
