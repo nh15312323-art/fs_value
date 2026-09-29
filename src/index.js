@@ -476,6 +476,10 @@ const HTML_PAGE = `<!doctype html>
       const bps = (outstandingShares && equityForBps != null) ? equityForBps / outstandingShares : null;
       const projected = (bps != null && avgROE != null) ? bps * Math.pow(1 + avgROE, 10) : null;
 
+      // 예상 상승배수 및 연환산 기대수익률(CAGR): (예상가/현재가)^(1/10) - 1
+      const expectedMultiple = (projected != null && priceInput) ? projected / priceInput : null;
+      const annualizedReturn = (expectedMultiple != null && expectedMultiple > 0) ? Math.pow(expectedMultiple, 1 / 10) - 1 : null;
+
       // EPS: 사업보고서가 아직 없는 최신연도는 TTM(최근 4개분기 합산) 이익을 사용
       const quarterlyRows = toQuarterlyRows(rows);
       const ttm = buildTTMRow(quarterlyRows);
@@ -493,7 +497,7 @@ const HTML_PAGE = `<!doctype html>
       return {
         avgROIC, roicN: roics.length, avgROE, roeN: roes.length, consolCnt,
         latestLabel: latest.period_label, bpsBasis, bps, projected,
-        priceInput, marketCap,
+        priceInput, marketCap, expectedMultiple, annualizedReturn,
         eps, epsBasis: earningsBasis + '·' + earningsSrcBasis, per, pbr, earningsYield,
       };
     }
@@ -520,6 +524,7 @@ const HTML_PAGE = `<!doctype html>
         <div><b>최근 BPS(\${m.latestLabel} 기준, \${m.bpsBasis}÷보통주 유통주식):</b> \${wonStr(m.bps)}</div>
         <div><b>10년 후 예상 주가 (BPS×(1+평균ROE)^10):</b> \${wonStr(m.projected)}</div>
         \${valuationJudge ? \`<div><b>비교 결과:</b> \${valuationJudge} (현재가: \${m.priceInput.toLocaleString()}원)\` : '<div style="color:#888">현재 주가를 입력하면 비교 결과가 표시됩니다.</div>'}
+        \${m.annualizedReturn != null ? \`<div><b>연환산 기대수익률(CAGR):</b> \${(m.annualizedReturn * 100).toFixed(2)}% (10년간 \${m.expectedMultiple.toFixed(2)}배 상승 가정)</div>\` : ''}
         \${m.marketCap != null ? \`<div><b>참고 시가총액:</b> \${wonStr(m.marketCap)}</div>\` : ''}
         <hr style="border:none;border-top:1px solid var(--border);margin:8px 0;"/>
         <div><b>EPS(\${m.epsBasis} 기준):</b> \${m.eps != null ? Math.round(m.eps).toLocaleString() + '원' : 'N/A'}</div>
@@ -573,6 +578,7 @@ const HTML_PAGE = `<!doctype html>
         ['BPS 기준시점', mA.latestLabel, mB.latestLabel],
         ['BPS', wonStr(mA.bps), wonStr(mB.bps)],
         ['10년 후 예상주가', wonStr(mA.projected), wonStr(mB.projected)],
+        ['연환산 기대수익률(CAGR)', pctStr(mA.annualizedReturn), pctStr(mB.annualizedReturn)],
         ['현재주가', mA.priceInput ? mA.priceInput.toLocaleString() + '원' : 'N/A', mB.priceInput ? mB.priceInput.toLocaleString() + '원' : 'N/A'],
         ['EPS', mA.eps != null ? Math.round(mA.eps).toLocaleString() + '원' : 'N/A', mB.eps != null ? Math.round(mB.eps).toLocaleString() + '원' : 'N/A'],
         ['PER', numStr(mA.per), numStr(mB.per)],
