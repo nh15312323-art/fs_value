@@ -168,6 +168,23 @@ const HTML_PAGE = `<!doctype html>
     <div id="fiveStepWrap" style="display:none; margin-top:10px; overflow-x:auto;"></div>
   </div>
 
+  <div class="card">
+    <div class="card-title">2종목 비교 (DB에 저장된 데이터끼리, DART 재조회 없음)</div>
+    <div class="row">
+      <input id="cmpNameA" placeholder="종목 A (예: 삼성전자)" style="flex:1; min-width:120px;" />
+      <input id="cmpPriceA" type="number" placeholder="A 현재주가" style="width:110px" />
+    </div>
+    <div class="row" style="margin-top:6px;">
+      <input id="cmpNameB" placeholder="종목 B (예: 현대자동차)" style="flex:1; min-width:120px;" />
+      <input id="cmpPriceB" type="number" placeholder="B 현재주가" style="width:110px" />
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <button class="primary" onclick="compareStocks()">비교하기</button>
+    </div>
+    <div id="cmpStatus" style="font-size:13px; color:var(--text-muted); margin-top:6px;"></div>
+    <div id="cmpWrap" style="display:none; margin-top:10px; overflow-x:auto;"></div>
+  </div>
+
   <div id="status"></div>
   <div id="wrap"></div>
   <div id="chartWrap" style="display:none; margin-top:14px;" class="card">
@@ -510,6 +527,68 @@ const HTML_PAGE = `<!doctype html>
         <div><b>PBR:</b> \${numStr(m.pbr)}\${m.pbr != null ? '배' : ''}</div>
         <div><b>이익수익률(1/PER, 요구수익률 관점):</b> \${pctStr(m.earningsYield)}</div>
       \`;
+    }
+
+    async function fetchRowsFromDb(corpName) {
+      const res = await fetch(\`/api/financial-history-db?corp_name=\${encodeURIComponent(corpName)}\`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'DB 조회 실패');
+      return data;
+    }
+
+    async function compareStocks() {
+      const nameA = document.getElementById('cmpNameA').value.trim();
+      const nameB = document.getElementById('cmpNameB').value.trim();
+      const priceA = Number(document.getElementById('cmpPriceA').value) || null;
+      const priceB = Number(document.getElementById('cmpPriceB').value) || null;
+      const statusEl = document.getElementById('cmpStatus');
+      const wrapEl = document.getElementById('cmpWrap');
+      wrapEl.style.display = 'none';
+
+      if (!nameA || !nameB) { statusEl.textContent = '두 종목명을 모두 입력해주세요.'; return; }
+      statusEl.textContent = '조회 중...';
+
+      let dataA, dataB;
+      try {
+        [dataA, dataB] = await Promise.all([fetchRowsFromDb(nameA), fetchRowsFromDb(nameB)]);
+      } catch (e) {
+        statusEl.textContent = '오류: ' + e.message;
+        return;
+      }
+
+      const mA = computeSummaryMetrics(dataA.rows, priceA);
+      const mB = computeSummaryMetrics(dataB.rows, priceB);
+      if (!mA || !mB) {
+        statusEl.textContent = '한쪽 이상 DB에 연간 데이터가 없습니다. 먼저 "DART에서 조회 + 저장"으로 데이터를 모아주세요.';
+        return;
+      }
+
+      const pctStr = (v) => v != null ? (v * 100).toFixed(2) + '%' : 'N/A';
+      const wonStr = (v) => v != null ? Math.round(v).toLocaleString() + '원' : 'N/A';
+      const numStr = (v) => v != null ? v.toFixed(2) : 'N/A';
+
+      const rows = [
+        ['10년 평균 ROIC', pctStr(mA.avgROIC), pctStr(mB.avgROIC)],
+        ['10년 평균 ROE', pctStr(mA.avgROE), pctStr(mB.avgROE)],
+        ['BPS 기준시점', mA.latestLabel, mB.latestLabel],
+        ['BPS', wonStr(mA.bps), wonStr(mB.bps)],
+        ['10년 후 예상주가', wonStr(mA.projected), wonStr(mB.projected)],
+        ['현재주가', mA.priceInput ? mA.priceInput.toLocaleString() + '원' : 'N/A', mB.priceInput ? mB.priceInput.toLocaleString() + '원' : 'N/A'],
+        ['EPS', mA.eps != null ? Math.round(mA.eps).toLocaleString() + '원' : 'N/A', mB.eps != null ? Math.round(mB.eps).toLocaleString() + '원' : 'N/A'],
+        ['PER', numStr(mA.per), numStr(mB.per)],
+        ['PBR', numStr(mA.pbr), numStr(mB.pbr)],
+        ['이익수익률(1/PER)', pctStr(mA.earningsYield), pctStr(mB.earningsYield)],
+        ['참고 시가총액', wonStr(mA.marketCap), wonStr(mB.marketCap)],
+      ];
+
+      let html = \`<table><tr><th>지표</th><th>\${dataA.corp_name}</th><th>\${dataB.corp_name}</th></tr>\`;
+      for (const [label, a, b] of rows) {
+        html += \`<tr><td>\${label}</td><td>\${a}</td><td>\${b}</td></tr>\`;
+      }
+      html += '</table>';
+      statusEl.textContent = '';
+      wrapEl.style.display = 'block';
+      wrapEl.innerHTML = html;
     }
 
     async function fetchAndSave() {      const corpName = document.getElementById('corpName').value.trim();
