@@ -60,6 +60,7 @@ const DB_COLUMNS = [
   "short_term_borrowings", "current_portion_lt_debt", "current_lease_liabilities",
   "tangible_assets", "intangible_assets", "right_of_use_assets",
   "parent_net_income", "pretax_income", "interest_expense", "parent_equity",
+  "filing_date", "price_at_filing", "per_at_filing", "pbr_at_filing", "fcf_yield_at_filing",
   "updated_at",
 ];
 
@@ -157,6 +158,7 @@ const HTML_PAGE = `<!doctype html>
     <div class="card-title">밸류에이션</div>
     <div class="row">
       <label>현재 주가 <input id="currentPrice" type="number" style="width:120px" placeholder="예: 88000" /></label>
+      <button onclick="fetchLatestPrice()">전일 종가 가져오기</button>
       <button class="primary" onclick="renderSummary()">계산하기</button>
     </div>
     <div id="summary" style="display:none; margin-top:10px;"></div>
@@ -287,8 +289,8 @@ const HTML_PAGE = `<!doctype html>
 
     function renderTable(rows) {
       currentRows = rows;
-      const cols = ['기간', 'fs_div', '매출액', '매출원가', '영업이익', '당기순이익', '총자본', '총부채', '현금및현금성자산', '단기금융자산', '영업활동현금흐름', 'CapEx', '잉여현금흐름', '매출채권', '재고자산', '매입채무', '총주식수', '자기주식수', '주당배당금', '기타채권', '단기대여금', '기타채무', '단기차입금', '유동성장기부채', '유동리스부채', '유형자산', '무형자산', '사용권자산', '지배주주순이익', '세전이익', '이자비용', '지배주주자기자본', '비고'];
-      const keys = [null, null, 'revenue', 'cogs', 'operating_income', 'net_income', 'total_equity', 'total_liabilities', 'cash', 'st_financial_assets', 'ocf', 'capex', 'fcf', 'receivables', 'inventory', 'payables', 'total_shares', 'treasury_shares', 'dividend_per_share', 'other_receivables', 'short_term_loans', 'other_payables', 'short_term_borrowings', 'current_portion_lt_debt', 'current_lease_liabilities', 'tangible_assets', 'intangible_assets', 'right_of_use_assets', 'parent_net_income', 'pretax_income', 'interest_expense', 'parent_equity', null];
+      const cols = ['기간', 'fs_div', '매출액', '매출원가', '영업이익', '당기순이익', '총자본', '총부채', '현금및현금성자산', '단기금융자산', '영업활동현금흐름', 'CapEx', '잉여현금흐름', '매출채권', '재고자산', '매입채무', '총주식수', '자기주식수', '주당배당금', '기타채권', '단기대여금', '기타채무', '단기차입금', '유동성장기부채', '유동리스부채', '유형자산', '무형자산', '사용권자산', '지배주주순이익', '세전이익', '이자비용', '지배주주자기자본', '공시일자', '공시시점 주가', '공시시점 PER', '공시시점 PBR', '공시시점 FCF Yield', '비고'];
+      const keys = [null, null, 'revenue', 'cogs', 'operating_income', 'net_income', 'total_equity', 'total_liabilities', 'cash', 'st_financial_assets', 'ocf', 'capex', 'fcf', 'receivables', 'inventory', 'payables', 'total_shares', 'treasury_shares', 'dividend_per_share', 'other_receivables', 'short_term_loans', 'other_payables', 'short_term_borrowings', 'current_portion_lt_debt', 'current_lease_liabilities', 'tangible_assets', 'intangible_assets', 'right_of_use_assets', 'parent_net_income', 'pretax_income', 'interest_expense', 'parent_equity', 'filing_date', 'price_at_filing', 'per_at_filing', 'pbr_at_filing', 'fcf_yield_at_filing', null];
       let html = '<table><tr>' + cols.map((c, i) =>
         keys[i]
           ? \`<th ondblclick="showChart('\${keys[i]}','\${c}')" title="더블클릭하면 그래프">\${c}</th>\`
@@ -305,9 +307,14 @@ const HTML_PAGE = `<!doctype html>
           r.short_term_borrowings, r.current_portion_lt_debt, r.current_lease_liabilities,
           r.tangible_assets, r.intangible_assets, r.right_of_use_assets,
           r.parent_net_income, r.pretax_income, r.interest_expense, r.parent_equity,
+          r.filing_date, r.price_at_filing, r.per_at_filing, r.pbr_at_filing, r.fcf_yield_at_filing,
         ];
         html += '<tr>' + cells.map((v, i) => {
           if (i < 2) return \`<td>\${v}</td>\`;
+          const key = keys[i];
+          if (key === 'filing_date') return \`<td>\${v ?? 'N/A'}</td>\`;
+          if (key === 'fcf_yield_at_filing') return \`<td>\${v != null ? (v * 100).toFixed(2) + '%' : 'N/A'}</td>\`;
+          if (key === 'per_at_filing' || key === 'pbr_at_filing') return \`<td>\${v != null ? v.toFixed(2) : 'N/A'}</td>\`;
           return \`<td>\${v != null ? Number(v).toLocaleString() : 'N/A'}</td>\`;
         }).join('') + \`<td>\${r.error ?? ''}</td>\` + '</tr>';
       }
@@ -532,6 +539,22 @@ const HTML_PAGE = `<!doctype html>
         <div><b>PBR:</b> \${numStr(m.pbr)}\${m.pbr != null ? '배' : ''}</div>
         <div><b>이익수익률(1/PER, 요구수익률 관점):</b> \${pctStr(m.earningsYield)}</div>
       \`;
+    }
+
+    async function fetchLatestPrice() {
+      const corpName = document.getElementById('corpName').value.trim();
+      const statusEl = document.getElementById('status');
+      if (!corpName) { statusEl.textContent = '종목명을 먼저 입력해주세요.'; return; }
+      statusEl.textContent = '전일 종가 조회 중...';
+      try {
+        const res = await fetch(\`/api/latest-price?corp_name=\${encodeURIComponent(corpName)}\`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '조회 실패');
+        document.getElementById('currentPrice').value = data.close;
+        statusEl.textContent = \`\${data.corp_name} \${data.date} 종가 \${data.close.toLocaleString()}원을 반영했습니다.\`;
+      } catch (e) {
+        statusEl.textContent = '오류: ' + e.message;
+      }
     }
 
     async function fetchRowsFromDb(corpName) {
@@ -899,7 +922,51 @@ function pickDividendPerShare(dart) {
   return row ? parseAmount(row.thstrm) : null;
 }
 
-async function fetchPeriodRow(corpCode, period, proxyUrl) {
+function addDaysStr(yyyymmdd, days) {
+  const y = Number(yyyymmdd.slice(0, 4)), m = Number(yyyymmdd.slice(4, 6)), d = Number(yyyymmdd.slice(6, 8));
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return `${dt.getUTCFullYear()}${String(dt.getUTCMonth() + 1).padStart(2, "0")}${String(dt.getUTCDate()).padStart(2, "0")}`;
+}
+
+async function fetchNaverPrices(symbol, startDate, endDate, proxyUrl, timeoutMs = 15000) {
+  const url = new URL(proxyUrl);
+  url.searchParams.set("source", "naver_price");
+  url.searchParams.set("symbol", symbol);
+  url.searchParams.set("start", startDate);
+  url.searchParams.set("end", endDate);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let text;
+  try {
+    const resp = await fetch(url.toString(), { signal: controller.signal });
+    text = await resp.text();
+  } finally {
+    clearTimeout(timer);
+  }
+
+  // 네이버 siseJson 응답: [['날짜','시가','고가','저가','종가','거래량', ...], ["20240102", ...], ...]
+  // 정식 JSON이 아니라 작은따옴표를 쓰므로 치환 후 파싱
+  let arr;
+  try {
+    arr = JSON.parse(text.trim().replace(/'/g, '"'));
+  } catch (e) {
+    return [];
+  }
+  if (!Array.isArray(arr) || arr.length < 2) return [];
+  return arr.slice(1)
+    .map((row) => ({ date: String(row[0]), close: Number(row[4]) }))
+    .filter((r) => /^\d{8}$/.test(r.date) && !Number.isNaN(r.close));
+}
+
+// targetDate(YYYYMMDD) 이전(포함) 중 가장 최근 거래일의 종가를 찾는다 (공시일이 휴일/주말일 수 있으므로)
+function closeAsOf(prices, targetDate) {
+  const candidates = prices.filter((p) => p.date <= targetDate).sort((a, b) => b.date.localeCompare(a.date));
+  return candidates.length ? candidates[0].close : null;
+}
+
+async function fetchPeriodRow(corpCode, stockCode, period, proxyUrl) {
   const emptyRow = (extra) => {
     const row = {
       corp_code: corpCode,
@@ -909,6 +976,7 @@ async function fetchPeriodRow(corpCode, period, proxyUrl) {
       period_order: period.year * 10 + period.order,
       fs_div: null,
       total_shares: null, treasury_shares: null, dividend_per_share: null,
+      filing_date: null, price_at_filing: null, per_at_filing: null, pbr_at_filing: null, fcf_yield_at_filing: null,
     };
     for (const item of ACCOUNT_ITEMS) row[item.key] = null;
     row.capex = null;
@@ -961,6 +1029,34 @@ async function fetchPeriodRow(corpCode, period, proxyUrl) {
     row.fcf = fcf;
     delete row.capex_ppe;
     delete row.capex_intangible;
+
+    // 공시일자(rcept_no 앞 8자리) 기준 종가로 그 시점 PER/PBR/FCF Yield 계산
+    const rceptNo = dart.list[0] && dart.list[0].rcept_no;
+    if (rceptNo && stockCode) {
+      const filingDate = rceptNo.slice(0, 8);
+      row.filing_date = filingDate;
+      try {
+        const prices = await fetchNaverPrices(stockCode, addDaysStr(filingDate, -15), filingDate, proxyUrl);
+        const price = closeAsOf(prices, filingDate);
+        row.price_at_filing = price;
+
+        const outstanding = (stockCounts.total_shares != null && stockCounts.treasury_shares != null)
+          ? stockCounts.total_shares - stockCounts.treasury_shares
+          : null;
+        const earnings = vals.parent_net_income != null ? vals.parent_net_income : vals.net_income;
+        const equityForBps = vals.parent_equity != null ? vals.parent_equity : vals.total_equity;
+
+        if (price != null && outstanding) {
+          const eps = earnings != null ? earnings / outstanding : null;
+          const bps = equityForBps != null ? equityForBps / outstanding : null;
+          const fcfPerShare = fcf != null ? fcf / outstanding : null;
+          row.per_at_filing = (eps && eps > 0) ? price / eps : null;
+          row.pbr_at_filing = (bps && bps > 0) ? price / bps : null;
+          row.fcf_yield_at_filing = fcfPerShare != null ? fcfPerShare / price : null;
+        }
+      } catch (e) { /* 주가 조회 실패해도 나머지 재무데이터는 살림 */ }
+    }
+
     return row;
   } catch (e) {
     return emptyRow({ error: String(e.message || e) });
@@ -1004,18 +1100,34 @@ export default {
       return Response.json(raw);
     }
 
+    if (pathname === "/api/latest-price") {
+      const corpName = searchParams.get("corp_name");
+      const corpRow = await env.DB.prepare("SELECT corp_code, corp_name, stock_code FROM corp_master WHERE corp_name = ?").bind(corpName).first();
+      if (!corpRow) return Response.json({ error: `'${corpName}' 종목을 corp_master에서 찾을 수 없습니다.` }, { status: 404 });
+      if (!corpRow.stock_code) return Response.json({ error: "종목코드가 없어 주가를 조회할 수 없습니다." }, { status: 400 });
+
+      const today = new Date();
+      const endStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+      const startStr = addDaysStr(endStr, -10);
+      const prices = await fetchNaverPrices(corpRow.stock_code, startStr, endStr, env.DART_PROXY_URL);
+      if (prices.length === 0) return Response.json({ error: "최근 시세를 가져오지 못했습니다." }, { status: 502 });
+      const latest = prices.slice().sort((a, b) => b.date.localeCompare(a.date))[0];
+
+      return Response.json({ corp_name: corpRow.corp_name, date: latest.date, close: latest.close });
+    }
+
     if (pathname === "/api/fetch-and-save") {
       const corpName = searchParams.get("corp_name");
       const year = Number(searchParams.get("year"));
       const reprtCode = searchParams.get("reprt_code");
 
-      const corpRow = await env.DB.prepare("SELECT corp_code, corp_name FROM corp_master WHERE corp_name = ?").bind(corpName).first();
+      const corpRow = await env.DB.prepare("SELECT corp_code, corp_name, stock_code FROM corp_master WHERE corp_name = ?").bind(corpName).first();
       if (!corpRow) return Response.json({ error: `'${corpName}' 종목을 corp_master에서 찾을 수 없습니다.` }, { status: 404 });
 
       const periodMeta = REPRT_CODES.find((r) => r.code === reprtCode);
       if (!periodMeta) return Response.json({ error: `알 수 없는 reprt_code: ${reprtCode}` }, { status: 400 });
 
-      const row = await fetchPeriodRow(corpRow.corp_code, { year, ...periodMeta }, env.DART_PROXY_URL);
+      const row = await fetchPeriodRow(corpRow.corp_code, corpRow.stock_code, { year, ...periodMeta }, env.DART_PROXY_URL);
       await saveRowsToDb(env.DB, [row]);
 
       return Response.json({ corp_name: corpRow.corp_name, corp_code: corpRow.corp_code, row });
