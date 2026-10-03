@@ -13,8 +13,9 @@ const REPRT_CODES = [
 const FLOW_KEYS = ["revenue", "cogs", "operating_income", "net_income", "ocf", "capex", "fcf", "parent_net_income", "pretax_income", "interest_expense"];
 
 const ACCOUNT_ITEMS = [
-  { key: "revenue", ids: ["ifrs-full_Revenue", "ifrs_Revenue", "ifrs-full_RevenueFromContractsWithCustomers"], names: ["매출액", "수익(매출액)"] },
-  { key: "cogs", ids: ["ifrs-full_CostOfSales", "ifrs_CostOfSales"], names: ["매출원가"] },
+  // 금융업(은행/보험/증권/지주 등)은 "매출액/매출원가" 대신 "영업수익/영업비용"으로 공시하는 경우가 많아 이름 폴백에 추가
+  { key: "revenue", ids: ["ifrs-full_Revenue", "ifrs_Revenue", "ifrs-full_RevenueFromContractsWithCustomers"], names: ["매출액", "수익(매출액)", "영업수익"] },
+  { key: "cogs", ids: ["ifrs-full_CostOfSales", "ifrs_CostOfSales"], names: ["매출원가", "영업비용"] },
   { key: "operating_income", ids: ["dart_OperatingIncomeLoss"], names: ["영업이익"] },
   { key: "net_income", ids: ["ifrs-full_ProfitLoss", "ifrs_ProfitLoss"], names: ["당기순이익", "반기순이익", "분기순이익", "순이익"] },
   { key: "total_equity", ids: ["ifrs-full_Equity", "ifrs_Equity"], names: ["자본총계"] },
@@ -61,7 +62,7 @@ const DB_COLUMNS = [
   "tangible_assets", "intangible_assets", "right_of_use_assets",
   "parent_net_income", "pretax_income", "interest_expense", "parent_equity",
   "filing_date", "price_at_filing", "price_at_period_end", "per_at_filing", "pbr_at_filing", "fcf_yield_at_filing",
-  "roa_at_filing", "peg_at_filing", "shares_source",
+  "roa_at_filing", "peg_at_filing", "eps_at_filing", "eps_growth_at_filing", "shares_source",
   "updated_at",
 ];
 
@@ -358,11 +359,14 @@ const HTML_PAGE = `<!doctype html>
         { label: '자기주식수', key: 'treasury_shares', type: 'won' },
         { label: '주식수 출처', key: 'shares_source', type: 'text' },
         { label: '주당배당금', key: 'dividend_per_share', type: 'won' },
+        { label: '배당성향(연간)', key: '_payoutRatio', type: 'percent' },
         // 공시시점 밸류에이션·수익성 (모두 TTM: 과거 분기를 모아 연간화한 값)
         { label: '공시일자', key: 'filing_date', type: 'text' },
         { label: '기간말 주가', key: 'price_at_period_end', type: 'won' },
         { label: '공시시점 주가', key: 'price_at_filing', type: 'won' },
         { label: '기간말→공시일 상승률', key: '_priceReturn', type: 'percent' },
+        { label: 'EPS(TTM)', key: 'eps_at_filing', type: 'won' },
+        { label: 'EPS 성장률(YoY)', key: 'eps_growth_at_filing', type: 'percent' },
         { label: '공시시점 PER(TTM)', key: 'per_at_filing', type: 'ratio' },
         { label: '공시시점 PBR', key: 'pbr_at_filing', type: 'ratio' },
         { label: '공시시점 ROA(TTM)', key: 'roa_at_filing', type: 'percent' },
@@ -375,6 +379,7 @@ const HTML_PAGE = `<!doctype html>
         if (col.key === '_grossMargin') return (r.revenue != null && r.cogs != null && r.revenue) ? (r.revenue - r.cogs) / r.revenue : null;
         if (col.key === '_opMargin') return (r.operating_income != null && r.revenue) ? r.operating_income / r.revenue : null;
         if (col.key === '_priceReturn') return priceReturnOf(r);
+        if (col.key === '_payoutRatio') return payoutRatioOf(r);
         return r[col.key];
       }
 
@@ -457,6 +462,17 @@ const HTML_PAGE = `<!doctype html>
     function priceReturnOf(r) {
       if (r.price_at_period_end == null || r.price_at_period_end <= 0 || r.price_at_filing == null) return null;
       return r.price_at_filing / r.price_at_period_end - 1;
+    }
+
+    // 배당성향 = 주당배당금 ÷ EPS(연간, 지배주주순이익÷유통주식수). 적자 연도나 배당 데이터가 없으면 null.
+    // (적자 연도에 배당을 하면 배당성향이 음수/왜곡되어 의미가 없어 null 처리)
+    function payoutRatioOf(r) {
+      const outstanding = (r.total_shares != null && r.treasury_shares != null) ? r.total_shares - r.treasury_shares : null;
+      if (!outstanding || outstanding <= 0) return null;
+      const earnings = r.parent_net_income != null ? r.parent_net_income : r.net_income;
+      if (earnings == null || earnings <= 0 || r.dividend_per_share == null) return null;
+      const eps = earnings / outstanding;
+      return r.dividend_per_share / eps;
     }
 
     function computeStepMetrics(r, prior) {
@@ -603,12 +619,25 @@ const HTML_PAGE = `<!doctype html>
       const byYearForROE = {};
       annualRows.forEach((r) => { byYearForROE[r.bsns_year] = r; });
       const roeResults = annualRows
-        .map((r) => computeROEAvg(r, byYearForROE[String(Number(r.bsns_year) - 1)]))
-        .filter((x) => x && isFinite(x.value));
+        .map((r) => {
+          const roe = computeROEAvg(r, byYearForROE[String(Number(r.bsns_year) - 1)]);
+          if (!roe || !isFinite(roe.value)) return null;
+          // 지속가능성장률(SGR) 모델: g = ROE × 유보율(1-배당성향). 배당으로 사외유출된 이익은 자기자본 재투자에
+          // 쓰이지 않으므로, ROE를 그대로 복리로 쓰는 것보다 BPS 성장 추정에 더 맞다(Higgins, 1977 지속가능성장률).
+          // 배당 데이터가 없는 연도(배당 미공시/무배당)는 유보율 100%(배당성향 0)로 간주.
+          const payout = payoutRatioOf(r);
+          const retention = payout != null ? 1 - payout : 1;
+          return { ...roe, payout, retention, adjusted: roe.value * retention };
+        })
+        .filter((x) => x != null);
       const roes = roeResults.map((x) => x.value);
       const consolCnt = roeResults.filter((x) => x.basis === 'consolidated').length;
       const avgROIC = roics.length ? roics.reduce((a, b) => a + b, 0) / roics.length : null;
       const avgROE = roes.length ? roes.reduce((a, b) => a + b, 0) / roes.length : null;
+      const payoutKnownResults = roeResults.filter((x) => x.payout != null);
+      const avgPayout = payoutKnownResults.length ? payoutKnownResults.reduce((a, x) => a + x.payout, 0) / payoutKnownResults.length : null;
+      const adjustedROEs = roeResults.map((x) => x.adjusted);
+      const avgAdjustedROE = adjustedROEs.length ? adjustedROEs.reduce((a, b) => a + b, 0) / adjustedROEs.length : null;
 
       // BPS/유통주식수/EPS는 "가장 최근 사업보고서"가 아니라 실제로 가장 최근 조회된 시점(분기 포함) 기준
       const latest = latestSnapshotRow(rows) || annualRows[annualRows.length - 1];
@@ -618,7 +647,8 @@ const HTML_PAGE = `<!doctype html>
       const equityForBps = latest.parent_equity != null ? latest.parent_equity : latest.total_equity;
       const bpsBasis = latest.parent_equity != null ? '지배주주지분' : (latest.fs_div === 'OFS' ? '총자본(개별재무제표)' : '총자본(지배주주지분 자료 없음)');
       const bps = (outstandingShares && equityForBps != null) ? equityForBps / outstandingShares : null;
-      const projected = (bps != null && avgROE != null) ? bps * Math.pow(1 + avgROE, 10) : null;
+      // 10년 후 예상 주가는 "배당으로 유출되지 않고 재투자된 몫"만 복리로 쌓인다고 보는 게 더 타당 → 조정 ROE 사용
+      const projected = (bps != null && avgAdjustedROE != null) ? bps * Math.pow(1 + avgAdjustedROE, 10) : null;
 
       // 예상 상승배수 및 연환산 기대수익률(CAGR): (예상가/현재가)^(1/10) - 1
       const expectedMultiple = (projected != null && priceInput) ? projected / priceInput : null;
@@ -640,6 +670,7 @@ const HTML_PAGE = `<!doctype html>
 
       return {
         avgROIC, roicN: roics.length, avgROE, roeN: roes.length, consolCnt,
+        avgPayout, payoutN: payoutKnownResults.length, avgAdjustedROE,
         latestLabel: latest.period_label, bpsBasis, bps, projected,
         priceInput, marketCap, expectedMultiple, annualizedReturn,
         eps, epsBasis: earningsBasis + '·' + earningsSrcBasis, per, pbr, earningsYield,
@@ -665,8 +696,10 @@ const HTML_PAGE = `<!doctype html>
       el.innerHTML = \`
         <div><b>10년 평균 ROIC:</b> \${pctStr(m.avgROIC)} (연도 \${m.roicN}개 평균) \${roicJudge}</div>
         <div><b>10년 평균 ROE:</b> \${pctStr(m.avgROE)} (\${m.roeN}개 연도 평균 · 지배주주순이익÷평균 지배주주자본\${m.consolCnt ? ', 지배주주 자료가 없는(개별재무제표 등) ' + m.consolCnt + '개 연도는 순이익÷평균 총자본' : ''})</div>
+        <div><b>10년 평균 배당성향:</b> \${pctStr(m.avgPayout)} (\${m.payoutN}개 연도 평균, 배당 미공시/무배당 연도는 유보율 100%로 간주)</div>
+        <div><b>배당 조정 ROE(=ROE×유보율, 10년 후 주가 예측에 사용):</b> \${pctStr(m.avgAdjustedROE)}</div>
         <div><b>최근 BPS(\${m.latestLabel} 기준, \${m.bpsBasis}÷보통주 유통주식):</b> \${wonStr(m.bps)}</div>
-        <div><b>10년 후 예상 주가 (BPS×(1+평균ROE)^10):</b> \${wonStr(m.projected)}</div>
+        <div><b>10년 후 예상 주가 (BPS×(1+배당조정ROE)^10):</b> \${wonStr(m.projected)}</div>
         \${valuationJudge ? \`<div><b>비교 결과:</b> \${valuationJudge} (현재가: \${m.priceInput.toLocaleString()}원)\` : '<div style="color:#888">현재 주가를 입력하면 비교 결과가 표시됩니다.</div>'}
         \${m.annualizedReturn != null ? \`<div><b>연환산 기대수익률(CAGR):</b> \${(m.annualizedReturn * 100).toFixed(2)}% (10년간 \${m.expectedMultiple.toFixed(2)}배 상승 가정)</div>\` : ''}
         \${m.marketCap != null ? \`<div><b>참고 시가총액:</b> \${wonStr(m.marketCap)}</div>\` : ''}
@@ -735,6 +768,8 @@ const HTML_PAGE = `<!doctype html>
       const rows = [
         ['10년 평균 ROIC', pctStr(mA.avgROIC), pctStr(mB.avgROIC)],
         ['10년 평균 ROE', pctStr(mA.avgROE), pctStr(mB.avgROE)],
+        ['10년 평균 배당성향', pctStr(mA.avgPayout), pctStr(mB.avgPayout)],
+        ['배당 조정 ROE(예측용)', pctStr(mA.avgAdjustedROE), pctStr(mB.avgAdjustedROE)],
         ['BPS 기준시점', mA.latestLabel, mB.latestLabel],
         ['BPS', wonStr(mA.bps), wonStr(mB.bps)],
         ['10년 후 예상주가', wonStr(mA.projected), wonStr(mB.projected)],
@@ -1225,7 +1260,7 @@ async function fetchPeriodRow(corpCode, stockCode, period, proxyUrl, db) {
       fs_div: null,
       total_shares: null, treasury_shares: null, dividend_per_share: null,
       filing_date: null, price_at_filing: null, price_at_period_end: null, per_at_filing: null, pbr_at_filing: null, fcf_yield_at_filing: null,
-      roa_at_filing: null, peg_at_filing: null,
+      roa_at_filing: null, peg_at_filing: null, eps_at_filing: null, eps_growth_at_filing: null,
       shares_source: null,
     };
     for (const item of ACCOUNT_ITEMS) row[item.key] = null;
@@ -1334,6 +1369,7 @@ async function fetchPeriodRow(corpCode, stockCode, period, proxyUrl, db) {
           row.pbr_at_filing = (bps && bps > 0) ? price / bps : null;
           row.fcf_yield_at_filing = fcfPerShare != null ? fcfPerShare / price : null;
         }
+        row.eps_at_filing = eps; // EPS(TTM) = TTM 순이익(지배주주 우선) ÷ 유통주식수
 
         // ROA(TTM) = TTM 연결순이익 ÷ 평균총자산 (평균: 이번 분기말 + 1년 전 같은 분기말)
         const totalAssetsNow = (vals.total_liabilities != null && vals.total_equity != null) ? vals.total_liabilities + vals.total_equity : null;
@@ -1344,14 +1380,19 @@ async function fetchPeriodRow(corpCode, stockCode, period, proxyUrl, db) {
         const avgAssets = (totalAssetsNow != null && totalAssetsPrior != null) ? (totalAssetsNow + totalAssetsPrior) / 2 : totalAssetsNow;
         row.roa_at_filing = (avgAssets && ttm && ttm.net_income != null) ? ttm.net_income / avgAssets : null;
 
-        // PEG(TTM) = PER(TTM) ÷ TTM EPS 성장률(%) — 성장률은 "1년 전 같은 시점" TTM EPS 대비 (주식수는 현재값으로 근사)
-        if (row.per_at_filing != null && outstanding) {
+        // EPS 성장률(TTM, YoY) = (EPS(현재 시점) - EPS(1년 전 같은 시점)) ÷ EPS(1년 전 같은 시점)
+        // — 1년 전 시점의 EPS도 "현재" 유통주식수로 나눠 근사(당시 실제 주식수는 안 씀 — 증자/감자가 있었으면 다소 부정확할 수 있음)
+        // PEG(TTM) = PER(TTM) ÷ EPS 성장률(%)
+        if (outstanding) {
           const ttmPrior = await getTTMFlow(db, corpCode, period.year - 1, quarterNum, ["net_income", "parent_net_income"]);
           const ttmEarningsPrior = ttmPrior ? (ttmPrior.parent_net_income != null ? ttmPrior.parent_net_income : ttmPrior.net_income) : null;
           const epsPrior = ttmEarningsPrior != null ? ttmEarningsPrior / outstanding : null;
           if (eps != null && epsPrior != null && epsPrior > 0) {
-            const growthPct = ((eps - epsPrior) / epsPrior) * 100;
-            row.peg_at_filing = growthPct > 0 ? row.per_at_filing / growthPct : null; // 역성장 구간은 PEG가 의미 없어 null 처리
+            const growthRatio = (eps - epsPrior) / epsPrior; // 소수(예: 0.12 = 12%)
+            row.eps_growth_at_filing = growthRatio;
+            if (row.per_at_filing != null && growthRatio > 0) {
+              row.peg_at_filing = row.per_at_filing / (growthRatio * 100); // 역성장 구간은 PEG가 의미 없어 null 유지
+            }
           }
         }
       } catch (e) { /* 주가 조회 실패해도 나머지 재무데이터는 살림 */ }
