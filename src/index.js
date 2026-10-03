@@ -1028,7 +1028,14 @@ function pickStockCounts(dart) {
   const norm = (s) => (s || "").replace(/\s/g, "");
   const row = dart.list.find((r) => norm(r.se) === "보통주");
   if (!row) return { total_shares: null, treasury_shares: null };
-  return { total_shares: parseAmount(row.istc_totqy), treasury_shares: parseAmount(row.tesstk_co) };
+  // 이 기간에 "보통주" 공시 행 자체는 존재함 → 그 안의 개별 값이 "-"/빈칸이면
+  // "미공시"가 아니라 "0주"라는 뜻(DART 표기 관행, 특히 자기주식이 없는 대다수 기업).
+  // 행 자체가 없는 경우(1·3분기 미공시 등)만 위에서 null,null로 빠져 이월 로직을 타도록 둔다.
+  const toCount = (v) => {
+    const n = parseAmount(v);
+    return n == null ? 0 : n;
+  };
+  return { total_shares: toCount(row.istc_totqy), treasury_shares: toCount(row.tesstk_co) };
 }
 
 function pickDividendPerShare(dart) {
@@ -1229,9 +1236,10 @@ async function fetchPeriodRow(corpCode, stockCode, period, proxyUrl, db) {
         const price = closeAsOf(prices, filingDate);
         row.price_at_filing = price;
 
-        const outstanding = (stockCounts.total_shares != null && stockCounts.treasury_shares != null)
+        const outstandingRaw = (stockCounts.total_shares != null && stockCounts.treasury_shares != null)
           ? stockCounts.total_shares - stockCounts.treasury_shares
           : null;
+        const outstanding = outstandingRaw > 0 ? outstandingRaw : null; // 0/음수(데이터 이상)는 나눗셈 방지용으로 null 처리
         const equityForBps = vals.parent_equity != null ? vals.parent_equity : vals.total_equity;
 
         // PER·FCF Yield·ROA·PEG는 그 분기 하나만의 값이 아니라 TTM(최근 4개 분기 합산)을 씀 — 1·2·3분기도 "1년치" 기준이 되도록
