@@ -60,7 +60,8 @@ const DB_COLUMNS = [
   "short_term_borrowings", "current_portion_lt_debt", "current_lease_liabilities",
   "tangible_assets", "intangible_assets", "right_of_use_assets",
   "parent_net_income", "pretax_income", "interest_expense", "parent_equity",
-  "filing_date", "price_at_filing", "per_at_filing", "pbr_at_filing", "fcf_yield_at_filing", "shares_source",
+  "filing_date", "price_at_filing", "per_at_filing", "pbr_at_filing", "fcf_yield_at_filing",
+  "roa_at_filing", "peg_at_filing", "shares_source",
   "updated_at",
 ];
 
@@ -195,6 +196,19 @@ const HTML_PAGE = `<!doctype html>
     <p style="font-size:12px; color:var(--text-muted); margin-top:6px;">표의 열 제목을 더블클릭하면 그 항목의 추이가 여기 표시됩니다.</p>
   </div>
 
+  <div class="card">
+    <div class="card-title">CB·BW 발행내역 (참고용 — 발행 시점 기준, 이후 상환·전환분은 반영 안 됨)</div>
+    <div class="row">
+      <label>시작일 <input id="cbwStart" type="text" placeholder="20150101" style="width:110px" /></label>
+      <label>종료일 <input id="cbwEnd" type="text" placeholder="오늘(YYYYMMDD)" style="width:110px" /></label>
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <button onclick="rawCheckCbBw('cvbdIsDecsn')">전환사채(CB) 발행내역</button>
+      <button onclick="rawCheckCbBw('bdwtIsDecsn')">신주인수권부사채(BW) 발행내역</button>
+    </div>
+    <pre id="cbwRaw" style="margin-top:8px; white-space:pre-wrap; background:#f1f5f9; padding:10px; font-size:11px; border-radius:8px; max-height:300px; overflow:auto;"></pre>
+  </div>
+
   <details>
     <summary>🔧 원본 데이터 확인 (디버깅용)</summary>
     <div class="card" style="margin-top:8px;">
@@ -289,38 +303,98 @@ const HTML_PAGE = `<!doctype html>
 
     function renderTable(rows) {
       currentRows = rows;
-      const cols = ['기간', 'fs_div', '매출액', '매출원가', '영업이익', '당기순이익', '총자본', '총부채', '현금및현금성자산', '단기금융자산', '영업활동현금흐름', 'CapEx', '잉여현금흐름', '매출채권', '재고자산', '매입채무', '총주식수', '자기주식수', '주당배당금', '기타채권', '단기대여금', '기타채무', '단기차입금', '유동성장기부채', '유동리스부채', '유형자산', '무형자산', '사용권자산', '지배주주순이익', '세전이익', '이자비용', '지배주주자기자본', '공시일자', '공시시점 주가', '공시시점 PER', '공시시점 PBR', '공시시점 FCF Yield', '주식수 출처', '비고'];
-      const keys = [null, null, 'revenue', 'cogs', 'operating_income', 'net_income', 'total_equity', 'total_liabilities', 'cash', 'st_financial_assets', 'ocf', 'capex', 'fcf', 'receivables', 'inventory', 'payables', 'total_shares', 'treasury_shares', 'dividend_per_share', 'other_receivables', 'short_term_loans', 'other_payables', 'short_term_borrowings', 'current_portion_lt_debt', 'current_lease_liabilities', 'tangible_assets', 'intangible_assets', 'right_of_use_assets', 'parent_net_income', 'pretax_income', 'interest_expense', 'parent_equity', 'filing_date', 'price_at_filing', 'per_at_filing', 'pbr_at_filing', 'fcf_yield_at_filing', 'shares_source', null];
-      let html = '<table><tr>' + cols.map((c, i) =>
-        keys[i]
-          ? \`<th ondblclick="showChart('\${keys[i]}','\${c}')" title="더블클릭하면 그래프">\${c}</th>\`
-          : \`<th>\${c}</th>\`
-      ).join('') + '</tr>';
-      for (const r of rows) {
-        const cells = [
-          r.period_label, r.fs_div ?? '-',
-          r.revenue, r.cogs, r.operating_income, r.net_income,
-          r.total_equity, r.total_liabilities, r.cash, r.st_financial_assets,
-          r.ocf, r.capex, r.fcf, r.receivables, r.inventory, r.payables,
-          r.total_shares, r.treasury_shares, r.dividend_per_share,
-          r.other_receivables, r.short_term_loans, r.other_payables,
-          r.short_term_borrowings, r.current_portion_lt_debt, r.current_lease_liabilities,
-          r.tangible_assets, r.intangible_assets, r.right_of_use_assets,
-          r.parent_net_income, r.pretax_income, r.interest_expense, r.parent_equity,
-          r.filing_date, r.price_at_filing, r.per_at_filing, r.pbr_at_filing, r.fcf_yield_at_filing,
-          r.shares_source,
-        ];
-        html += '<tr>' + cells.map((v, i) => {
-          if (i < 2) return \`<td>\${v}</td>\`;
-          const key = keys[i];
-          if (key === 'filing_date') return \`<td>\${v ?? 'N/A'}</td>\`;
-          if (key === 'fcf_yield_at_filing') return \`<td>\${v != null ? (v * 100).toFixed(2) + '%' : 'N/A'}</td>\`;
-          if (key === 'per_at_filing' || key === 'pbr_at_filing') return \`<td>\${v != null ? v.toFixed(2) : 'N/A'}</td>\`;
-          if (key === 'shares_source') return \`<td>\${v ?? '-'}</td>\`;
-          return \`<td>\${v != null ? Number(v).toLocaleString() : 'N/A'}</td>\`;
-        }).join('') + \`<td>\${r.error ?? ''}</td>\` + '</tr>';
+
+      // 열 정의: 관련 있는 항목끼리 묶어서 순서대로. type이 서식을 결정.
+      // key가 '_'로 시작하면 저장된 값이 아니라 그 자리에서 계산하는 파생값(매출총이익률 등).
+      const COLUMNS = [
+        { label: '기간', key: 'period_label', type: 'text' },
+        { label: 'fs_div', key: 'fs_div', type: 'text' },
+        // 손익
+        { label: '매출액', key: 'revenue', type: 'won' },
+        { label: '매출원가', key: 'cogs', type: 'won' },
+        { label: '매출총이익률', key: '_grossMargin', type: 'percent' },
+        { label: '영업이익', key: 'operating_income', type: 'won' },
+        { label: '영업이익률', key: '_opMargin', type: 'percent' },
+        { label: '당기순이익', key: 'net_income', type: 'won' },
+        { label: '지배주주순이익', key: 'parent_net_income', type: 'won' },
+        { label: '세전이익', key: 'pretax_income', type: 'won' },
+        { label: '이자비용', key: 'interest_expense', type: 'won' },
+        // 현금흐름
+        { label: '영업활동현금흐름', key: 'ocf', type: 'won' },
+        { label: 'CapEx', key: 'capex', type: 'won' },
+        { label: '잉여현금흐름', key: 'fcf', type: 'won' },
+        // 자본/부채
+        { label: '총자본', key: 'total_equity', type: 'won' },
+        { label: '지배주주자기자본', key: 'parent_equity', type: 'won' },
+        { label: '총부채', key: 'total_liabilities', type: 'won' },
+        // 현금성/금융자산
+        { label: '현금및현금성자산', key: 'cash', type: 'won' },
+        { label: '단기금융자산', key: 'st_financial_assets', type: 'won' },
+        { label: '단기매매증권', key: 'short_term_trading_securities', type: 'won' },
+        { label: '당기손익FV금융자산', key: 'fvpl_financial_assets', type: 'won' },
+        { label: '기타포괄손익FV금융자산', key: 'fvoci_financial_assets', type: 'won' },
+        { label: '단기대여금', key: 'short_term_loans', type: 'won' },
+        // 운전자본
+        { label: '매출채권', key: 'receivables', type: 'won' },
+        { label: '기타채권', key: 'other_receivables', type: 'won' },
+        { label: '재고자산', key: 'inventory', type: 'won' },
+        { label: '매입채무', key: 'payables', type: 'won' },
+        { label: '기타채무', key: 'other_payables', type: 'won' },
+        // 차입금/리스부채
+        { label: '단기차입금', key: 'short_term_borrowings', type: 'won' },
+        { label: '유동성장기부채', key: 'current_portion_lt_debt', type: 'won' },
+        { label: '유동리스부채', key: 'current_lease_liabilities', type: 'won' },
+        // 고정자산
+        { label: '유형자산', key: 'tangible_assets', type: 'won' },
+        { label: '무형자산', key: 'intangible_assets', type: 'won' },
+        { label: '사용권자산', key: 'right_of_use_assets', type: 'won' },
+        { label: '투자부동산', key: 'investment_property', type: 'won' },
+        // 주식/배당
+        { label: '총주식수', key: 'total_shares', type: 'won' },
+        { label: '자기주식수', key: 'treasury_shares', type: 'won' },
+        { label: '주식수 출처', key: 'shares_source', type: 'text' },
+        { label: '주당배당금', key: 'dividend_per_share', type: 'won' },
+        // 공시시점 밸류에이션·수익성 (모두 TTM: 과거 분기를 모아 연간화한 값)
+        { label: '공시일자', key: 'filing_date', type: 'text' },
+        { label: '공시시점 주가', key: 'price_at_filing', type: 'won' },
+        { label: '공시시점 PER(TTM)', key: 'per_at_filing', type: 'ratio' },
+        { label: '공시시점 PBR', key: 'pbr_at_filing', type: 'ratio' },
+        { label: '공시시점 ROA(TTM)', key: 'roa_at_filing', type: 'percent' },
+        { label: '공시시점 FCF Yield(TTM)', key: 'fcf_yield_at_filing', type: 'percent' },
+        { label: '공시시점 PEG(TTM)', key: 'peg_at_filing', type: 'ratio' },
+        { label: '비고', key: 'error', type: 'text' },
+      ];
+
+      function rawValue(r, col) {
+        if (col.key === '_grossMargin') return (r.revenue != null && r.cogs != null && r.revenue) ? (r.revenue - r.cogs) / r.revenue : null;
+        if (col.key === '_opMargin') return (r.operating_income != null && r.revenue) ? r.operating_income / r.revenue : null;
+        return r[col.key];
       }
-      document.getElementById('wrap').innerHTML = html + '</table>';
+
+      function formatCell(v, type, key) {
+        if (type === 'text') return v ?? (key === 'error' ? '' : 'N/A');
+        if (v == null) return 'N/A';
+        if (type === 'percent') return (v * 100).toFixed(2) + '%';
+        if (type === 'ratio') return v.toFixed(2);
+        return Number(v).toLocaleString();
+      }
+
+      let html = '<table><tr>' + COLUMNS.map((col) => {
+        const chartable = col.type !== 'text';
+        return chartable
+          ? \`<th ondblclick="showChart('\${col.key}','\${col.label}')" title="더블클릭하면 그래프">\${col.label}</th>\`
+          : \`<th>\${col.label}</th>\`;
+      }).join('') + '</tr>';
+
+      for (const r of rows) {
+        html += '<tr>' + COLUMNS.map((col) => \`<td>\${formatCell(rawValue(r, col), col.type, col.key)}</td>\`).join('') + '</tr>';
+      }
+      html += '</table>';
+      document.getElementById('wrap').innerHTML = html;
+
+      // showChart가 계산 파생값(_grossMargin 등)도 그릴 수 있도록 rawValue 함수를 전역에 노출
+      window.__columnDefs = COLUMNS;
+      window.__rawValue = rawValue;
     }
 
     function computeIC(r) {
@@ -724,10 +798,32 @@ const HTML_PAGE = `<!doctype html>
       }
     }
 
+    async function rawCheckCbBw(kind) {
+      const corpName = document.getElementById('corpName').value.trim();
+      const today = new Date();
+      const todayStr = today.getFullYear() + String(today.getMonth() + 1).padStart(2, '0') + String(today.getDate()).padStart(2, '0');
+      const start = document.getElementById('cbwStart').value.trim() || '20150101';
+      const end = document.getElementById('cbwEnd').value.trim() || todayStr;
+      const statusEl = document.getElementById('status');
+      const el = document.getElementById('cbwRaw');
+      statusEl.textContent = '조회 중...';
+      el.textContent = '';
+      try {
+        const res = await fetch(\`/api/raw?kind=\${kind}&corp_name=\${encodeURIComponent(corpName)}&bgn_de=\${start}&end_de=\${end}\`);
+        const data = await res.json();
+        statusEl.textContent = \`\${kind} 조회 완료 (\${start}~\${end})\`;
+        el.textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        statusEl.textContent = '오류: ' + e.message;
+      }
+    }
+
     function showChart(key, label) {
+      const col = (window.__columnDefs || []).find((c) => c.key === key) || { key };
+      const getVal = window.__rawValue || ((r, c) => r[c.key]);
       const points = currentRows
         .filter((r) => !r.error)
-        .map((r) => ({ x: r.period_label, y: r[key] }))
+        .map((r) => ({ x: r.period_label, y: getVal(r, col) }))
         .filter((p) => p.y != null);
       if (points.length === 0) { alert('표시할 데이터가 없습니다 (모두 N/A).'); return; }
       document.getElementById('chartTitle').textContent = label + ' 추이 (' + points.length + '개 기간)';
@@ -808,6 +904,23 @@ async function fetchDartGeneric(endpoint, corpCode, bsnsYear, reprtCode, proxyUr
   url.searchParams.set("corp_code", corpCode);
   url.searchParams.set("bsns_year", bsnsYear);
   url.searchParams.set("reprt_code", reprtCode);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(url.toString(), { signal: controller.signal });
+    return await resp.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchDartByDateRange(endpoint, corpCode, bgnDe, endDe, proxyUrl, timeoutMs = 15000) {
+  const url = new URL(proxyUrl);
+  url.searchParams.set("endpoint", endpoint);
+  url.searchParams.set("corp_code", corpCode);
+  url.searchParams.set("bgn_de", bgnDe);
+  url.searchParams.set("end_de", endDe);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -977,6 +1090,55 @@ async function getFallbackShareCounts(db, corpCode, beforeOrder) {
   return row || null;
 }
 
+const REPRT_CODE_BY_Q = { 1: "11013", 2: "11012", 3: "11014", 4: "11011" };
+
+async function getStoredPeriod(db, corpCode, year, reprtCode, keys) {
+  if (!db) return null;
+  const row = await db
+    .prepare(`SELECT ${keys.join(",")} FROM financial_raw WHERE corp_code = ? AND bsns_year = ? AND reprt_code = ?`)
+    .bind(corpCode, String(year), reprtCode)
+    .first();
+  return row || null;
+}
+
+// 사업보고서(연간)의 thstrm_amount는 "1년 누적"이라, 4분기만 떼어내려면
+// 연간 - (1분기+2분기+3분기 단독값)을 계산해야 한다 (화면 쪽 toQuarterlyRows와 같은 원리, DB 조회 버전)
+async function getIsolatedQ4(db, corpCode, year, keys) {
+  const annual = await getStoredPeriod(db, corpCode, year, "11011", keys);
+  if (!annual) return null;
+  const q1 = await getStoredPeriod(db, corpCode, year, "11013", keys);
+  const q2 = await getStoredPeriod(db, corpCode, year, "11012", keys);
+  const q3 = await getStoredPeriod(db, corpCode, year, "11014", keys);
+  const result = {};
+  for (const k of keys) {
+    if (annual[k] != null && q1 && q1[k] != null && q2 && q2[k] != null && q3 && q3[k] != null) {
+      result[k] = annual[k] - (q1[k] + q2[k] + q3[k]);
+    } else {
+      result[k] = null;
+    }
+  }
+  return result;
+}
+
+// 공시 시점(year, quarterNum) 기준 최근 4개 분기(TTM) 합산. quarterNum=4(사업보고서)면 그 해 자체가 이미 TTM.
+async function getTTMFlow(db, corpCode, year, quarterNum, keys) {
+  if (quarterNum === 4) return await getStoredPeriod(db, corpCode, year, "11011", keys);
+
+  const parts = [];
+  for (let k = 1; k <= quarterNum; k++) parts.push(await getStoredPeriod(db, corpCode, year, REPRT_CODE_BY_Q[k], keys));
+  for (let k = quarterNum + 1; k <= 4; k++) {
+    parts.push(k === 4 ? await getIsolatedQ4(db, corpCode, year - 1, keys) : await getStoredPeriod(db, corpCode, year - 1, REPRT_CODE_BY_Q[k], keys));
+  }
+  if (parts.some((p) => !p)) return null;
+
+  const result = {};
+  for (const k of keys) {
+    const vals = parts.map((p) => p[k]);
+    result[k] = vals.every((v) => v != null) ? vals.reduce((a, b) => a + b, 0) : null;
+  }
+  return result;
+}
+
 async function fetchPeriodRow(corpCode, stockCode, period, proxyUrl, db) {
   const emptyRow = (extra) => {
     const row = {
@@ -988,6 +1150,7 @@ async function fetchPeriodRow(corpCode, stockCode, period, proxyUrl, db) {
       fs_div: null,
       total_shares: null, treasury_shares: null, dividend_per_share: null,
       filing_date: null, price_at_filing: null, per_at_filing: null, pbr_at_filing: null, fcf_yield_at_filing: null,
+      roa_at_filing: null, peg_at_filing: null,
       shares_source: null,
     };
     for (const item of ACCOUNT_ITEMS) row[item.key] = null;
@@ -1069,16 +1232,42 @@ async function fetchPeriodRow(corpCode, stockCode, period, proxyUrl, db) {
         const outstanding = (stockCounts.total_shares != null && stockCounts.treasury_shares != null)
           ? stockCounts.total_shares - stockCounts.treasury_shares
           : null;
-        const earnings = vals.parent_net_income != null ? vals.parent_net_income : vals.net_income;
         const equityForBps = vals.parent_equity != null ? vals.parent_equity : vals.total_equity;
 
+        // PER·FCF Yield·ROA·PEG는 그 분기 하나만의 값이 아니라 TTM(최근 4개 분기 합산)을 씀 — 1·2·3분기도 "1년치" 기준이 되도록
+        const quarterNum = period.order;
+        const ttm = await getTTMFlow(db, corpCode, period.year, quarterNum, ["net_income", "parent_net_income", "fcf"]);
+        const ttmEarnings = ttm ? (ttm.parent_net_income != null ? ttm.parent_net_income : ttm.net_income) : null;
+        const ttmFcf = ttm ? ttm.fcf : null;
+
+        let eps = null, bps = null;
         if (price != null && outstanding) {
-          const eps = earnings != null ? earnings / outstanding : null;
-          const bps = equityForBps != null ? equityForBps / outstanding : null;
-          const fcfPerShare = fcf != null ? fcf / outstanding : null;
+          eps = ttmEarnings != null ? ttmEarnings / outstanding : null;
+          bps = equityForBps != null ? equityForBps / outstanding : null;
+          const fcfPerShare = ttmFcf != null ? ttmFcf / outstanding : null;
           row.per_at_filing = (eps && eps > 0) ? price / eps : null;
           row.pbr_at_filing = (bps && bps > 0) ? price / bps : null;
           row.fcf_yield_at_filing = fcfPerShare != null ? fcfPerShare / price : null;
+        }
+
+        // ROA(TTM) = TTM 연결순이익 ÷ 평균총자산 (평균: 이번 분기말 + 1년 전 같은 분기말)
+        const totalAssetsNow = (vals.total_liabilities != null && vals.total_equity != null) ? vals.total_liabilities + vals.total_equity : null;
+        const priorYearBS = await getStoredPeriod(db, corpCode, period.year - 1, period.code, ["total_liabilities", "total_equity"]);
+        const totalAssetsPrior = (priorYearBS && priorYearBS.total_liabilities != null && priorYearBS.total_equity != null)
+          ? priorYearBS.total_liabilities + priorYearBS.total_equity
+          : null;
+        const avgAssets = (totalAssetsNow != null && totalAssetsPrior != null) ? (totalAssetsNow + totalAssetsPrior) / 2 : totalAssetsNow;
+        row.roa_at_filing = (avgAssets && ttm && ttm.net_income != null) ? ttm.net_income / avgAssets : null;
+
+        // PEG(TTM) = PER(TTM) ÷ TTM EPS 성장률(%) — 성장률은 "1년 전 같은 시점" TTM EPS 대비 (주식수는 현재값으로 근사)
+        if (row.per_at_filing != null && outstanding) {
+          const ttmPrior = await getTTMFlow(db, corpCode, period.year - 1, quarterNum, ["net_income", "parent_net_income"]);
+          const ttmEarningsPrior = ttmPrior ? (ttmPrior.parent_net_income != null ? ttmPrior.parent_net_income : ttmPrior.net_income) : null;
+          const epsPrior = ttmEarningsPrior != null ? ttmEarningsPrior / outstanding : null;
+          if (eps != null && epsPrior != null && epsPrior > 0) {
+            const growthPct = ((eps - epsPrior) / epsPrior) * 100;
+            row.peg_at_filing = growthPct > 0 ? row.per_at_filing / growthPct : null; // 역성장 구간은 PEG가 의미 없어 null 처리
+          }
         }
       } catch (e) { /* 주가 조회 실패해도 나머지 재무데이터는 살림 */ }
     }
@@ -1116,13 +1305,20 @@ export default {
       const bsnsYear = searchParams.get("bsns_year");
       const reprtCode = searchParams.get("reprt_code") || "11011";
       const fsDiv = searchParams.get("fs_div");
+      const bgnDe = searchParams.get("bgn_de");
+      const endDe = searchParams.get("end_de");
 
       const corpRow = await env.DB.prepare("SELECT corp_code, corp_name FROM corp_master WHERE corp_name = ?").bind(corpName).first();
       if (!corpRow) return Response.json({ error: `'${corpName}' 종목을 corp_master에서 찾을 수 없습니다.` }, { status: 404 });
 
-      const raw = fsDiv
-        ? await fetchDart(corpRow.corp_code, bsnsYear, reprtCode, fsDiv, env.DART_PROXY_URL)
-        : await fetchDartGeneric(kind, corpRow.corp_code, bsnsYear, reprtCode, env.DART_PROXY_URL);
+      let raw;
+      if (bgnDe && endDe) {
+        raw = await fetchDartByDateRange(kind, corpRow.corp_code, bgnDe, endDe, env.DART_PROXY_URL);
+      } else if (fsDiv) {
+        raw = await fetchDart(corpRow.corp_code, bsnsYear, reprtCode, fsDiv, env.DART_PROXY_URL);
+      } else {
+        raw = await fetchDartGeneric(kind, corpRow.corp_code, bsnsYear, reprtCode, env.DART_PROXY_URL);
+      }
       return Response.json(raw);
     }
 
