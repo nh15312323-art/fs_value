@@ -60,7 +60,7 @@ const DB_COLUMNS = [
   "short_term_borrowings", "current_portion_lt_debt", "current_lease_liabilities",
   "tangible_assets", "intangible_assets", "right_of_use_assets",
   "parent_net_income", "pretax_income", "interest_expense", "parent_equity",
-  "filing_date", "price_at_filing", "per_at_filing", "pbr_at_filing", "fcf_yield_at_filing",
+  "filing_date", "price_at_filing", "price_at_period_end", "per_at_filing", "pbr_at_filing", "fcf_yield_at_filing",
   "roa_at_filing", "peg_at_filing", "shares_source",
   "updated_at",
 ];
@@ -167,7 +167,11 @@ const HTML_PAGE = `<!doctype html>
 
   <div class="card">
     <div class="card-title">5단계 ROE 분해</div>
-    <button onclick="renderFiveStep()">분해해서 보기</button>
+    <div class="row">
+      <button id="fsBtnAnnual" class="toggle-active" onclick="setFiveStepView('annual')">연도별</button>
+      <button id="fsBtnQuarterly" onclick="setFiveStepView('quarterly')">분기별</button>
+      <button onclick="renderFiveStep()">분해해서 보기</button>
+    </div>
     <div id="fiveStepWrap" style="display:none; margin-top:10px; overflow-x:auto;"></div>
   </div>
 
@@ -356,7 +360,9 @@ const HTML_PAGE = `<!doctype html>
         { label: '주당배당금', key: 'dividend_per_share', type: 'won' },
         // 공시시점 밸류에이션·수익성 (모두 TTM: 과거 분기를 모아 연간화한 값)
         { label: '공시일자', key: 'filing_date', type: 'text' },
+        { label: '기간말 주가', key: 'price_at_period_end', type: 'won' },
         { label: '공시시점 주가', key: 'price_at_filing', type: 'won' },
+        { label: '기간말→공시일 상승률', key: '_priceReturn', type: 'percent' },
         { label: '공시시점 PER(TTM)', key: 'per_at_filing', type: 'ratio' },
         { label: '공시시점 PBR', key: 'pbr_at_filing', type: 'ratio' },
         { label: '공시시점 ROA(TTM)', key: 'roa_at_filing', type: 'percent' },
@@ -368,6 +374,7 @@ const HTML_PAGE = `<!doctype html>
       function rawValue(r, col) {
         if (col.key === '_grossMargin') return (r.revenue != null && r.cogs != null && r.revenue) ? (r.revenue - r.cogs) / r.revenue : null;
         if (col.key === '_opMargin') return (r.operating_income != null && r.revenue) ? r.operating_income / r.revenue : null;
+        if (col.key === '_priceReturn') return priceReturnOf(r);
         return r[col.key];
       }
 
@@ -446,6 +453,12 @@ const HTML_PAGE = `<!doctype html>
       return { value: r.net_income / eq, basis: 'consolidated' };
     }
 
+    // 기간말(분기말/연말) 종가 → 공시일 종가까지의 등락률. 실적 발표 전후 주가 반응을 보기 위함.
+    function priceReturnOf(r) {
+      if (r.price_at_period_end == null || r.price_at_period_end <= 0 || r.price_at_filing == null) return null;
+      return r.price_at_filing / r.price_at_period_end - 1;
+    }
+
     function computeStepMetrics(r, prior) {
       prior = comparablePrior(r, prior);
       const totalAssets = (r.total_liabilities != null && r.total_equity != null) ? r.total_liabilities + r.total_equity : null;
@@ -466,7 +479,10 @@ const HTML_PAGE = `<!doctype html>
       const parentROE = computeParentROEAvg(r, prior);
       const roic = computeROIC(r);
 
-      return { label: r.period_label, isOFS: r.fs_div === 'OFS', taxBurden, interestBurden, ebitMargin, assetTurnover, leverage, roeCheck, parentROE, roic };
+      return {
+        label: r.period_label, isOFS: r.fs_div === 'OFS', taxBurden, interestBurden, ebitMargin, assetTurnover, leverage, roeCheck, parentROE, roic,
+        periodEndPrice: r.price_at_period_end, filingPrice: r.price_at_filing, priceReturn: priceReturnOf(r),
+      };
     }
 
     function compute5StepRows(annualRows) {
@@ -475,54 +491,99 @@ const HTML_PAGE = `<!doctype html>
       return annualRows.map((r) => computeStepMetrics(r, byYear[String(Number(r.bsns_year) - 1)]));
     }
 
+    // 특정 분기(r)를 끝점으로 하는 "최근 4개 분기 합산"(TTM, 연환산) 손익/현금흐름 값을 만든다.
+    // quarterlyRows 안에서 r 자신 + 그 전 분기들을 찾아 합산하며, 재무상태표 항목(자본·부채 등)과
+    // 주가·공시일 등 시점값은 r의 원래 값을 그대로 둔다(합산 대상은 FLOW_KEYS뿐).
+    function buildTTMFlowForQuarter(quarterlyRows, r) {
+      const Y = Number(r.bsns_year);
+      const N = Number(r.period_order) % 10;
+      if (!(N >= 1 && N <= 4)) return null;
+      const find = (year, q) => quarterlyRows.find((x) => x.bsns_year === String(year) && x.period_label === \`\${year} \${q}분기\`);
+
+      const needed = [];
+      for (let k = 1; k <= N; k++) needed.push(find(Y, k));
+      for (let k = N + 1; k <= 4; k++) needed.push(find(Y - 1, k));
+      if (needed.some((x) => !x)) return null; // 4개 분기가 다 모여야 TTM 계산 가능
+
+      const ttm = { ...r };
+      for (const key of FLOW_KEYS) {
+        const vals = needed.map((x) => x[key]);
+        ttm[key] = vals.every((v) => v != null) ? vals.reduce((a, b) => a + b, 0) : null;
+      }
+      return ttm;
+    }
+
     // 사업보고서가 아직 없는 최신 연도를 위한 TTM(최근 4개 분기 합산) 행 생성
     function buildTTMRow(quarterlyRows) {
       if (quarterlyRows.length === 0) return null;
       const latest = quarterlyRows.reduce((a, b) => (b.period_order > a.period_order ? b : a));
       // period_order = 연도*10 + 분기번호 (예: 20262 → 2026년 2분기)
       const N = Number(latest.period_order) % 10;
-      if (!(N >= 1 && N <= 4)) return null;
-      if (N === 4) return null; // 이미 사업보고서(연간) 데이터가 있음
+      if (!(N >= 1 && N <= 4) || N === 4) return null; // 4분기(이미 사업보고서 있음)는 TTM 불필요
+
+      const ttmFlow = buildTTMFlowForQuarter(quarterlyRows, latest);
+      if (!ttmFlow) return null;
 
       const Y = Number(latest.bsns_year);
-      const find = (year, q) => quarterlyRows.find((r) => r.bsns_year === String(year) && r.period_label === \`\${year} \${q}분기\`);
-
-      const needed = [];
-      for (let k = 1; k <= N; k++) needed.push(find(Y, k));
-      for (let k = N + 1; k <= 4; k++) needed.push(find(Y - 1, k));
-      if (needed.some((r) => !r)) return null; // 4개 분기가 다 모여야 TTM 계산 가능
-
-      const ttm = { ...latest, bsns_year: String(Y), period_label: \`\${Y} TTM (\${N}분기 기준)\` };
-      for (const key of FLOW_KEYS) {
-        const vals = needed.map((r) => r[key]);
-        ttm[key] = vals.every((v) => v != null) ? vals.reduce((a, b) => a + b, 0) : null;
-      }
-
-      const priorSameQ = find(Y - 1, N); // 평균자기자본/평균자산 계산용: 1년 전 같은 분기
+      const ttm = { ...ttmFlow, period_label: \`\${Y} TTM (\${N}분기 기준)\` };
+      const priorSameQ = quarterlyRows.find((x) => x.bsns_year === String(Y - 1) && x.period_label === \`\${Y - 1} \${N}분기\`);
       return { row: ttm, prior: priorSameQ };
     }
 
-    function renderFiveStep() {
-      const annualRows = toAnnualRows(rawRows);
-      const quarterlyRows = toQuarterlyRows(rawRows);
-      const ttm = buildTTMRow(quarterlyRows);
+    // 분기별 보기용 5단계 분석: 각 분기를 끝점으로 한 TTM(연환산) 손익 + 그 시점 재무상태표를 섞어서 계산.
+    // (분기 단독 손익 그대로 쓰면 자산회전율·마진 등이 1/4 수준으로 왜곡되어 연도간 비교가 안 됨)
+    function compute5StepRowsQuarterly(quarterlyRows) {
+      return quarterlyRows.map((r) => {
+        const N = Number(r.period_order) % 10;
+        const Y = Number(r.bsns_year);
+        const ttmFlow = buildTTMFlowForQuarter(quarterlyRows, r);
+        const priorSameQ = quarterlyRows.find((x) => x.bsns_year === String(Y - 1) && x.period_label === \`\${Y - 1} \${N}분기\`);
+        if (!ttmFlow) {
+          // TTM 계산에 필요한 과거 분기가 부족 — 비율은 N/A 처리하되 주가 정보는 그대로 보여줌
+          return { label: r.period_label + ' (TTM 자료 부족)', isOFS: r.fs_div === 'OFS', taxBurden: null, interestBurden: null, ebitMargin: null, assetTurnover: null, leverage: null, roeCheck: null, parentROE: null, roic: null, periodEndPrice: r.price_at_period_end, filingPrice: r.price_at_filing, priceReturn: priceReturnOf(r) };
+        }
+        return computeStepMetrics(ttmFlow, priorSameQ);
+      });
+    }
 
-      const steps = compute5StepRows(annualRows);
-      if (ttm) steps.push(computeStepMetrics(ttm.row, ttm.prior));
+    let fiveStepMode = 'annual';
+    function setFiveStepView(mode) {
+      fiveStepMode = mode;
+      document.getElementById('fsBtnAnnual').className = mode === 'annual' ? 'toggle-active' : '';
+      document.getElementById('fsBtnQuarterly').className = mode === 'quarterly' ? 'toggle-active' : '';
+      renderFiveStep();
+    }
+
+    function renderFiveStep() {
+      const quarterlyRows = toQuarterlyRows(rawRows);
+      let steps;
+      let noteLabel;
+
+      if (fiveStepMode === 'quarterly') {
+        steps = compute5StepRowsQuarterly(quarterlyRows);
+        noteLabel = '분기별 (손익·현금흐름은 해당 분기를 끝점으로 한 TTM 연환산값, 재무상태표는 해당 분기말 시점)';
+      } else {
+        const annualRows = toAnnualRows(rawRows);
+        const ttm = buildTTMRow(quarterlyRows);
+        steps = compute5StepRows(annualRows);
+        if (ttm) steps.push(computeStepMetrics(ttm.row, ttm.prior));
+        noteLabel = '연도별, 최신 연도는 사업보고서 없으면 TTM';
+      }
 
       if (steps.length === 0) { alert('분석할 데이터가 없습니다.'); return; }
 
       const pct = (v) => v != null ? (v * 100).toFixed(1) + '%' : 'N/A';
       const num = (v) => v != null ? v.toFixed(2) : 'N/A';
+      const won = (v) => v != null ? Math.round(v).toLocaleString() + '원' : 'N/A';
 
-      let html = '<table><tr><th>기간</th><th>세율부담<br/>(순이익/세전)</th><th>이자부담<br/>(세전/EBIT)</th><th>EBIT마진</th><th>자산회전율</th><th>레버리지</th><th>계산된 ROE<br/>(연결·평균자본)</th><th>지배주주 ROE<br/>(평균 지배자본)</th><th>ROIC</th></tr>';
+      let html = '<table><tr><th>기간</th><th>기간말 주가</th><th>공시일 주가</th><th>기간말→공시일<br/>상승률</th><th>세율부담<br/>(순이익/세전)</th><th>이자부담<br/>(세전/EBIT)</th><th>EBIT마진</th><th>자산회전율</th><th>레버리지</th><th>계산된 ROE<br/>(연결·평균자본)</th><th>지배주주 ROE<br/>(평균 지배자본)</th><th>ROIC</th></tr>';
       for (const s of steps) {
-        html += \`<tr><td>\${s.label}</td><td>\${pct(s.taxBurden)}</td><td>\${pct(s.interestBurden)}</td><td>\${pct(s.ebitMargin)}</td><td>\${num(s.assetTurnover)}</td><td>\${num(s.leverage)}</td><td>\${pct(s.roeCheck)}</td><td>\${s.parentROE == null && s.isOFS ? '해당없음(개별)' : pct(s.parentROE)}</td><td>\${pct(s.roic)}</td></tr>\`;
+        html += \`<tr><td>\${s.label}</td><td>\${won(s.periodEndPrice)}</td><td>\${won(s.filingPrice)}</td><td>\${pct(s.priceReturn)}</td><td>\${pct(s.taxBurden)}</td><td>\${pct(s.interestBurden)}</td><td>\${pct(s.ebitMargin)}</td><td>\${num(s.assetTurnover)}</td><td>\${num(s.leverage)}</td><td>\${pct(s.roeCheck)}</td><td>\${s.parentROE == null && s.isOFS ? '해당없음(개별)' : pct(s.parentROE)}</td><td>\${pct(s.roic)}</td></tr>\`;
       }
       html += '</table>';
       const el = document.getElementById('fiveStepWrap');
       el.style.display = 'block';
-      el.innerHTML = '<div class="card-title">5단계 ROE 분해 (연도별, 최신 연도는 사업보고서 없으면 TTM)</div>' + html;
+      el.innerHTML = \`<div class="card-title">5단계 ROE 분해 (\${noteLabel})</div>\` + html;
     }
 
     function latestSnapshotRow(rows) {
@@ -1044,6 +1105,13 @@ function pickDividendPerShare(dart) {
   return row ? parseAmount(row.thstrm) : null;
 }
 
+// 보고서 종류별 "회계기간 말일" (12월 결산 법인 기준 — 대다수가 해당. 변경결산기 법인은 다를 수 있음)
+const PERIOD_END_SUFFIX = { "11013": "0331", "11012": "0630", "11014": "0930", "11011": "1231" };
+function periodEndDateStr(year, reprtCode) {
+  const suffix = PERIOD_END_SUFFIX[reprtCode];
+  return suffix ? `${year}${suffix}` : null;
+}
+
 function addDaysStr(yyyymmdd, days) {
   const y = Number(yyyymmdd.slice(0, 4)), m = Number(yyyymmdd.slice(4, 6)), d = Number(yyyymmdd.slice(6, 8));
   const dt = new Date(Date.UTC(y, m - 1, d));
@@ -1156,7 +1224,7 @@ async function fetchPeriodRow(corpCode, stockCode, period, proxyUrl, db) {
       period_order: period.year * 10 + period.order,
       fs_div: null,
       total_shares: null, treasury_shares: null, dividend_per_share: null,
-      filing_date: null, price_at_filing: null, per_at_filing: null, pbr_at_filing: null, fcf_yield_at_filing: null,
+      filing_date: null, price_at_filing: null, price_at_period_end: null, per_at_filing: null, pbr_at_filing: null, fcf_yield_at_filing: null,
       roa_at_filing: null, peg_at_filing: null,
       shares_source: null,
     };
@@ -1225,6 +1293,15 @@ async function fetchPeriodRow(corpCode, stockCode, period, proxyUrl, db) {
     row.fcf = fcf;
     delete row.capex_ppe;
     delete row.capex_intangible;
+
+    // 회계기간 말일(분기말/반기말/연말) 종가 — 공시일 주가와 비교해 "실적 발표 전후 주가 상승률"을 보기 위함
+    try {
+      const periodEnd = periodEndDateStr(period.year, period.code);
+      if (periodEnd && stockCode) {
+        const pePrices = await fetchNaverPrices(stockCode, addDaysStr(periodEnd, -15), periodEnd, proxyUrl);
+        row.price_at_period_end = closeAsOf(pePrices, periodEnd);
+      }
+    } catch (e) { /* 실패해도 나머지는 살림 */ }
 
     // 공시일자(rcept_no 앞 8자리) 기준 종가로 그 시점 PER/PBR/FCF Yield 계산
     const rceptNo = dart.list[0] && dart.list[0].rcept_no;
