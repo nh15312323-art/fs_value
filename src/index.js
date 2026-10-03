@@ -9,6 +9,19 @@ const REPRT_CODES = [
   { code: "11011", label: "사업보고서", order: 4 },
 ];
 
+// Cron Trigger가 한 번 깨어날 때마다 큐에서 처리하는 기간 수.
+// 기간 1개당 DART/네이버 호출 + D1 조회·저장을 합쳐 최대 10여 개의 subrequest를 쓸 수 있어
+// 무료 플랜의 1회 호출당 50 subrequest 제한에 안전하게 걸리도록 보수적으로 잡음.
+const CRON_BATCH_SIZE = 4;
+
+function buildPeriodList(startYear, endYear) {
+  const list = [];
+  for (let y = startYear; y <= endYear; y++) {
+    for (const r of REPRT_CODES) list.push({ year: y, code: r.code, order: r.order, period_order: y * 10 + r.order });
+  }
+  return list;
+}
+
 // 분기 누적치 차감이 필요한 흐름(flow) 항목. 그 외는 시점(stock) 항목이라 그대로 둠.
 const FLOW_KEYS = ["revenue", "cogs", "operating_income", "net_income", "ocf", "capex", "fcf", "parent_net_income", "pretax_income", "interest_expense"];
 
@@ -146,6 +159,11 @@ const HTML_PAGE = `<!doctype html>
       <button class="primary" onclick="fetchAndSave()">DART에서 조회 + 저장</button>
       <button onclick="loadFromDb()">DB에서 조회</button>
     </div>
+    <div class="row" style="margin-top:8px;">
+      <button onclick="queueFetch()">백그라운드로 받기 (화면 꺼도 진행)</button>
+      <button onclick="checkQueueStatus()">진행 상황 확인</button>
+    </div>
+    <div id="queueStatus" style="font-size:13px; color:var(--text-muted); margin-top:4px;"></div>
   </div>
 
   <div class="card">
@@ -838,6 +856,47 @@ const HTML_PAGE = `<!doctype html>
       statusEl.textContent = \`저장 완료: \${savedCnt}개 기간 저장, \${pendingCnt}개는 아직 공시 전이거나 데이터 없음\` + (failed.length ? \`, \${failed.length}개 오류 (\${failed[0].period_label}: \${failed[0].error})\` : '');
     }
 
+    // 화면을 띄워둘 필요 없이, 서버(Worker)의 Cron Trigger가 1분마다 깨어나서 큐에 쌓인 기간을 몇 개씩
+    // 조금씩 받아 D1에 저장한다. 화면을 닫거나 태블릿을 다른 앱으로 전환해도 계속 진행된다.
+    async function queueFetch() {
+      const corpName = document.getElementById('corpName').value.trim();
+      const startYear = Number(document.getElementById('startYear').value);
+      const endYear = Number(document.getElementById('endYear').value);
+      const statusEl = document.getElementById('status');
+      const qEl = document.getElementById('queueStatus');
+      if (!corpName) { statusEl.textContent = '종목명을 입력해주세요.'; return; }
+      if (!startYear || !endYear || startYear > endYear) {
+        statusEl.textContent = '조회 기간을 올바르게 입력해주세요 (시작연도 ≤ 종료연도).';
+        return;
+      }
+      try {
+        const res = await fetch(\`/api/queue-fetch?corp_name=\${encodeURIComponent(corpName)}&start_year=\${startYear}&end_year=\${endYear}\`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '등록 실패');
+        statusEl.textContent = \`\${data.corp_name}: \${data.queued}개 기간을 백그라운드 큐에 등록했습니다. 1분마다 몇 개씩 자동으로 받아집니다. (화면을 닫아도 계속 진행됩니다)\`;
+        qEl.textContent = '잠시 후 "진행 상황 확인"을 눌러 남은 개수를 확인하세요.';
+      } catch (e) {
+        statusEl.textContent = '오류: ' + e.message;
+      }
+    }
+
+    async function checkQueueStatus() {
+      const corpName = document.getElementById('corpName').value.trim();
+      const qEl = document.getElementById('queueStatus');
+      if (!corpName) { qEl.textContent = '종목명을 입력해주세요.'; return; }
+      qEl.textContent = '확인 중...';
+      try {
+        const res = await fetch(\`/api/queue-status?corp_name=\${encodeURIComponent(corpName)}\`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '조회 실패');
+        qEl.textContent = data.remaining === 0
+          ? '큐가 비었습니다 — 모두 처리 완료되었습니다. "DB에서 조회"로 결과를 확인하세요.'
+          : \`아직 \${data.remaining}개 기간이 남아있습니다 (다음: \${data.next.map((p) => \`\${p.bsns_year} \${p.reprt_code}\`).join(', ')}).\`;
+      } catch (e) {
+        qEl.textContent = '오류: ' + e.message;
+      }
+    }
+
     async function loadFromDb() {
       const corpName = document.getElementById('corpName').value.trim();
       const statusEl = document.getElementById('status');
@@ -1481,6 +1540,40 @@ export default {
       return Response.json({ corp_name: corpRow.corp_name, corp_code: corpRow.corp_code, row });
     }
 
+    if (pathname === "/api/queue-fetch") {
+      const corpName = searchParams.get("corp_name");
+      const startYear = Number(searchParams.get("start_year"));
+      const endYear = Number(searchParams.get("end_year"));
+      if (!corpName || !startYear || !endYear || startYear > endYear) {
+        return Response.json({ error: "종목명과 조회 기간(시작연도 ≤ 종료연도)을 확인해주세요." }, { status: 400 });
+      }
+      const corpRow = await env.DB.prepare("SELECT corp_code, corp_name, stock_code FROM corp_master WHERE corp_name = ?").bind(corpName).first();
+      if (!corpRow) return Response.json({ error: `'${corpName}' 종목을 corp_master에서 찾을 수 없습니다.` }, { status: 404 });
+
+      const periods = buildPeriodList(startYear, endYear);
+      const now = new Date().toISOString();
+      // INSERT OR IGNORE: 이미 큐에 있는(아직 처리 안 된) 기간은 중복 등록하지 않음
+      const stmts = periods.map((p) => env.DB.prepare(
+        "INSERT OR IGNORE INTO fetch_queue (corp_code, corp_name, stock_code, bsns_year, reprt_code, period_order, queued_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      ).bind(corpRow.corp_code, corpRow.corp_name, corpRow.stock_code, String(p.year), p.code, p.period_order, now));
+      await env.DB.batch(stmts);
+
+      return Response.json({ corp_name: corpRow.corp_name, corp_code: corpRow.corp_code, queued: periods.length });
+    }
+
+    if (pathname === "/api/queue-status") {
+      const corpName = searchParams.get("corp_name");
+      const corpRow = await env.DB.prepare("SELECT corp_code, corp_name FROM corp_master WHERE corp_name = ?").bind(corpName).first();
+      if (!corpRow) return Response.json({ error: `'${corpName}' 종목을 corp_master에서 찾을 수 없습니다.` }, { status: 404 });
+
+      const { results } = await env.DB
+        .prepare("SELECT bsns_year, reprt_code FROM fetch_queue WHERE corp_code = ? ORDER BY period_order")
+        .bind(corpRow.corp_code)
+        .all();
+
+      return Response.json({ corp_name: corpRow.corp_name, remaining: results.length, next: results.slice(0, 5) });
+    }
+
     if (pathname === "/api/financial-history-db") {
       const corpName = searchParams.get("corp_name");
       const corpRow = await env.DB.prepare("SELECT corp_code, corp_name FROM corp_master WHERE corp_name = ?").bind(corpName).first();
@@ -1495,5 +1588,32 @@ export default {
     }
 
     return new Response("Not Found", { status: 404 });
+  },
+
+  // Cron Trigger: 1분마다 깨어나 fetch_queue에서 몇 개씩 꺼내 DART 조회 + D1 저장을 한다.
+  // 화면(브라우저 탭)이 닫혀 있어도 Cloudflare가 이 함수를 계속 호출해주기 때문에 백그라운드 처리가 된다.
+  async scheduled(event, env, ctx) {
+    const { results } = await env.DB
+      .prepare("SELECT corp_code, corp_name, stock_code, bsns_year, reprt_code FROM fetch_queue ORDER BY corp_code, period_order LIMIT ?")
+      .bind(CRON_BATCH_SIZE)
+      .all();
+
+    for (const item of results) {
+      const periodMeta = REPRT_CODES.find((r) => r.code === item.reprt_code);
+      if (periodMeta) {
+        try {
+          const row = await fetchPeriodRow(item.corp_code, item.stock_code, { year: Number(item.bsns_year), ...periodMeta }, env.DART_PROXY_URL, env.DB);
+          await saveRowsToDb(env.DB, [row]);
+        } catch (e) {
+          // 이 기간은 실패했지만 큐에서는 제거하고 다음 기간으로 넘어간다 (한 기간이 계속 실패해서 큐 전체가
+          // 막히는 것을 방지). 재시도가 필요하면 "백그라운드로 받기"를 다시 눌러 재등록하면 된다.
+          console.error("cron fetch-and-save 실패:", item.corp_code, item.bsns_year, item.reprt_code, e.message || e);
+        }
+      }
+      await env.DB
+        .prepare("DELETE FROM fetch_queue WHERE corp_code = ? AND bsns_year = ? AND reprt_code = ?")
+        .bind(item.corp_code, item.bsns_year, item.reprt_code)
+        .run();
+    }
   },
 };
