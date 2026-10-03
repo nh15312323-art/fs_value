@@ -9,10 +9,11 @@ const REPRT_CODES = [
   { code: "11011", label: "사업보고서", order: 4 },
 ];
 
-// Cron Trigger가 한 번 깨어날 때마다 큐에서 처리하는 기간 수.
-// 기간 1개당 DART/네이버 호출 + D1 조회·저장을 합쳐 최대 10여 개의 subrequest를 쓸 수 있어
-// 무료 플랜의 1회 호출당 50 subrequest 제한에 안전하게 걸리도록 보수적으로 잡음.
-const CRON_BATCH_SIZE = 4;
+// Cron Trigger가 한 번 깨어날 때마다(짝수 분) 재무데이터 큐에서 처리하는 기간 수.
+// 기간 1개당 DART 조회(CFS+실패시 OFS, 재시도 포함)+네이버 2회+D1 조회(TTM 계산용 여러 번)·저장을 합치면
+// 최악의 경우 기간당 15~20개 정도 subrequest를 쓸 수 있어 보수적으로 2로 설정
+// (무료 플랜 1회 호출당 50 subrequest 제한. 아래 모멘텀 큐는 홀수 분에 따로 처리해 예산을 분리했다).
+const CRON_BATCH_SIZE = 2;
 
 function buildPeriodList(startYear, endYear) {
   const list = [];
@@ -21,6 +22,18 @@ function buildPeriodList(startYear, endYear) {
   }
   return list;
 }
+
+// ============================================================
+// 모멘텀 스크리닝 (02_market_screening.md 명세, 무료 플랜 적용)
+// ============================================================
+const MARKET_MIN_TRADING_VALUE = 2_000_000_000; // 거래대금 20억원 미만 종목은 유니버스에서 제외(유동성 필터, data.go.kr beginTrPrc로 서버에서 바로 필터링)
+const MARKET_BACKFILL_CALENDAR_DAYS = 250;      // 120거래일 이상 확보 목적으로 달력일 기준 여유있게 요청(휴일/주말 포함)
+const MARKET_CRON_BATCH_SIZE = 5;               // 한 틱(홀수 분)에 처리하는 신규 통과 종목 수(종목당 1콜로 전체 이력을 받아오므로 가볍다)
+// 하루 최대 "신규 종목 백필" 수. 종목당 ~170행이라 가정하면 500×170=85,000행으로
+// D1 무료 쓰기 한도(10만행/일) 안에, 매일의 유니버스 갱신(기존 통과 종목 1일치 추가분) 여유분까지 감안해 맞춤.
+const MARKET_DAILY_WRITE_CAP = 500;
+// Momentum Score 가중치. §21: "역사적 연구가 이 가중치를 직접 입증한 것은 아니므로 하드코딩하지 말 것" → 설정값으로 분리
+const MOMENTUM_WEIGHTS = { rs20: 0.20, rs60: 0.35, rs120: 0.45 };
 
 // 분기 누적치 차감이 필요한 흐름(flow) 항목. 그 외는 시점(stock) 항목이라 그대로 둠.
 const FLOW_KEYS = ["revenue", "cogs", "operating_income", "net_income", "ocf", "capex", "fcf", "parent_net_income", "pretax_income", "interest_expense"];
@@ -143,6 +156,13 @@ const HTML_PAGE = `<!doctype html>
 <body>
   <h3>📊 DART 재무데이터</h3>
 
+  <div class="row" style="margin-bottom:14px;">
+    <button id="tabBtnFinancial" class="toggle-active" onclick="switchTab('financial')" style="flex:1;">재무분석</button>
+    <button id="tabBtnMomentum" onclick="switchTab('momentum')" style="flex:1;">모멘텀 스크리닝</button>
+  </div>
+
+  <div id="tabFinancial">
+
   <div class="card">
     <div class="card-title">종목 조회</div>
     <div class="row">
@@ -256,6 +276,41 @@ const HTML_PAGE = `<!doctype html>
       <pre id="raw" style="margin-top:8px;"></pre>
     </div>
   </details>
+
+  </div><!-- /tabFinancial -->
+
+  <div id="tabMomentum" style="display:none;">
+    <div class="card">
+      <div class="card-title">모멘텀 스크리닝 (실험적 기능)</div>
+      <p style="font-size:13px; color:var(--text-muted); line-height:1.5; margin-top:0;">
+        거래대금 20억원 이상 종목만 대상으로 60/120/20거래일 수익률의 순위를 매겨
+        모멘텀 스코어 상위 30종목을 보여줍니다. "유니버스 갱신"을 누르면 공공데이터포털 API로 오늘(또는
+        가장 최근 영업일) 기준 통과 종목을 바로 받아오고, 그중 처음 통과한 종목만 전체 가격이력을
+        백그라운드로 천천히 채웁니다(화면을 닫아도 서버에서 계속 진행됩니다). 매일 한 번씩 눌러주면
+        이미 채워진 종목은 하루치만 추가되고, 새로 통과한 종목만 백필 큐에 들어갑니다.
+      </p>
+      <div class="row">
+        <button class="primary" onclick="refreshMarketUniverse()">① 유니버스 갱신 (오늘자 통과 종목 받기)</button>
+        <button onclick="checkMarketStatus()">진행 상황 새로고침</button>
+      </div>
+      <div id="marketStatus" style="font-size:13px; color:var(--text-muted); margin-top:8px; white-space:pre-line;"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Top 30 모멘텀 종목</div>
+      <div class="row" style="font-size:13px; color:var(--text-muted);">
+        <label>RS20 가중치 <input id="wRs20" type="number" step="0.05" value="0.20" style="width:70px" /></label>
+        <label>RS60 가중치 <input id="wRs60" type="number" step="0.05" value="0.35" style="width:70px" /></label>
+        <label>RS120 가중치 <input id="wRs120" type="number" step="0.05" value="0.45" style="width:70px" /></label>
+        <span>(합이 1이 아니어도 계산은 되지만, 비교하려면 1에 맞추는 것을 권장)</span>
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <button class="primary" onclick="loadTop30()">② Top 30 계산하기</button>
+      </div>
+      <div id="top30Status" style="font-size:13px; color:var(--text-muted); margin-top:8px;"></div>
+      <div id="top30Wrap" style="display:none; margin-top:10px; overflow-x:auto;"></div>
+    </div>
+  </div><!-- /tabMomentum -->
 
   <script>
     // 조회기간 입력 기본값: 최근 10년
@@ -897,6 +952,69 @@ const HTML_PAGE = `<!doctype html>
       }
     }
 
+    function switchTab(tab) {
+      document.getElementById('tabFinancial').style.display = tab === 'financial' ? '' : 'none';
+      document.getElementById('tabMomentum').style.display = tab === 'momentum' ? '' : 'none';
+      document.getElementById('tabBtnFinancial').className = tab === 'financial' ? 'toggle-active' : '';
+      document.getElementById('tabBtnMomentum').className = tab === 'momentum' ? 'toggle-active' : '';
+      if (tab === 'momentum') checkMarketStatus();
+    }
+
+    async function refreshMarketUniverse() {
+      const el = document.getElementById('marketStatus');
+      el.textContent = '공공데이터포털에서 오늘자 통과 종목 받는 중...';
+      try {
+        const res = await fetch('/api/market/refresh-universe');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '갱신 실패');
+        el.textContent = \`\${data.bas_dt} 기준 \${data.universe_size}개 종목이 유동성 기준을 통과했습니다. 그중 \${data.newly_queued_for_backfill}개는 처음 통과한 종목이라 전체 가격이력을 백그라운드로 채우는 중입니다(화면을 닫아도 계속 진행됩니다).\`;
+        checkMarketStatus();
+      } catch (e) {
+        el.textContent = '오류: ' + e.message;
+      }
+    }
+
+    async function checkMarketStatus() {
+      const el = document.getElementById('marketStatus');
+      el.textContent = '확인 중...';
+      try {
+        const res = await fetch('/api/market/status');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '조회 실패');
+        el.textContent = \`유동성 통과: \${data.passed_total}개 (확인한 종목 총 \${data.checked_total}개)  |  백필 완료: \${data.backfilled_total}개  |  백필 대기: \${data.queue_remaining}개  |  오늘 백필: \${data.backfilled_today}/\${data.daily_cap}\`;
+      } catch (e) {
+        el.textContent = '오류: ' + e.message;
+      }
+    }
+
+    async function loadTop30() {
+      const statusEl = document.getElementById('top30Status');
+      const wrap = document.getElementById('top30Wrap');
+      const w20 = document.getElementById('wRs20').value;
+      const w60 = document.getElementById('wRs60').value;
+      const w120 = document.getElementById('wRs120').value;
+      statusEl.textContent = '계산 중...';
+      wrap.style.display = 'none';
+      try {
+        const res = await fetch(\`/api/market/top30?w20=\${w20}&w60=\${w60}&w120=\${w120}\`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '계산 실패');
+        statusEl.textContent = \`랭킹 계산 대상(120거래일 데이터 모두 확보된 종목): \${data.universe_size}개 중 상위 30개\`;
+        const pct = (v) => (v * 100).toFixed(1) + '%';
+        const rows = data.top30.map((r, i) => \`<tr>
+          <td>\${i + 1}</td><td>\${r.corp_name}</td><td>\${r.stock_code}</td>
+          <td>\${pct(r.rs20)}</td><td>\${pct(r.rs60)}</td><td>\${pct(r.rs120)}</td>
+          <td>\${r.momentumScore.toFixed(3)}</td>
+        </tr>\`).join('');
+        wrap.innerHTML = \`<table><thead><tr>
+          <th>순위</th><th>종목명</th><th>종목코드</th><th>20일</th><th>60일</th><th>120일</th><th>모멘텀 스코어</th>
+        </tr></thead><tbody>\${rows}</tbody></table>\`;
+        wrap.style.display = '';
+      } catch (e) {
+        statusEl.textContent = '오류: ' + e.message;
+      }
+    }
+
     async function loadFromDb() {
       const corpName = document.getElementById('corpName').value.trim();
       const statusEl = document.getElementById('status');
@@ -1240,7 +1358,7 @@ async function fetchNaverPrices(symbol, startDate, endDate, proxyUrl, timeoutMs 
   }
   if (!Array.isArray(arr) || arr.length < 2) return [];
   return arr.slice(1)
-    .map((row) => ({ date: String(row[0]), close: Number(row[4]) }))
+    .map((row) => ({ date: String(row[0]), close: Number(row[4]), volume: row[5] != null ? Number(row[5]) : null }))
     .filter((r) => /^\d{8}$/.test(r.date) && !Number.isNaN(r.close));
 }
 
@@ -1248,6 +1366,182 @@ async function fetchNaverPrices(symbol, startDate, endDate, proxyUrl, timeoutMs 
 function closeAsOf(prices, targetDate) {
   const candidates = prices.filter((p) => p.date <= targetDate).sort((a, b) => b.date.localeCompare(a.date));
   return candidates.length ? candidates[0].close : null;
+}
+
+// ============================================================
+// 모멘텀 스크리닝 - 핵심 함수 (02_market_screening.md 명세, 무료 플랜 적용)
+// ============================================================
+
+function todayStr() {
+  const d = new Date();
+  return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+// 오늘 00:00 UTC의 ISO 문자열. market_universe_status.checked_at(ISO)과 비교해 "오늘 처리한 개수"를 센다.
+function todayUtcMidnightIso() {
+  const d = new Date();
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())).toISOString();
+}
+
+// ------------------------------------------------------------
+// 공공데이터포털(data.go.kr) "금융위원회_주식시세정보" API (getStockPriceInfo_V2)
+// - basDt(기준일) + beginTrPrc(거래대금 이상)로 "그날 유동성 기준을 통과한 전체 종목"을 한 번에 조회 가능
+// - likeSrtnCd(종목코드) + beginBasDt~endBasDt(기간)로 "한 종목의 가격 이력"을 날짜범위로 한 번에 조회 가능
+// → 네이버 스크래핑(HTML 파싱, 중계기 경유) 없이 이 공식 API 하나로 유동성 필터 + 가격 백필을 모두 해결한다.
+// ------------------------------------------------------------
+const KRX_API_BASE = "https://apis.data.go.kr/1160100/GetStockSecuritiesInfoService_V2/getStockPriceInfo_V2";
+const KRX_PAGE_SIZE = 500; // 한 페이지에 받아올 행 수(여유있게 설정; 필요시 줄여도 됨)
+const KRX_MAX_PAGES = 20;  // 혹시 totalCount가 비정상적으로 커도 무한 루프에 빠지지 않도록 하는 안전장치
+
+// 응답 XML에서 <item>...</item> 블록들을 regex로 파싱한다(Workers 런타임엔 DOM 파서가 없고,
+// 필드가 단순 평면 구조라 regex로도 충분히 안전하게 뽑아낼 수 있다).
+function parseKrxXml(xmlText) {
+  const items = [];
+  const itemRe = /<item>([\s\S]*?)<\/item>/g;
+  const field = (block, tag) => {
+    const m = block.match(new RegExp(`<${tag}>([^<]*)<\\/${tag}>`));
+    return m ? m[1] : null;
+  };
+  const num = (v) => (v == null || v === "" ? null : Number(v));
+  let m;
+  while ((m = itemRe.exec(xmlText)) !== null) {
+    const block = m[1];
+    items.push({
+      basDt: field(block, "basDt"),
+      srtnCd: field(block, "srtnCd"),
+      isinCd: field(block, "isinCd"),
+      itmsNm: field(block, "itmsNm"),
+      mrktCtg: field(block, "mrktCtg"),
+      clpr: num(field(block, "clpr")),
+      trqu: num(field(block, "trqu")),
+      trPrc: num(field(block, "trPrc")),
+      mrktTotAmt: num(field(block, "mrktTotAmt")),
+    });
+  }
+  const totalMatch = xmlText.match(/<totalCount>(\d+)<\/totalCount>/);
+  const codeMatch = xmlText.match(/<resultCode>(\d+)<\/resultCode>/);
+  return {
+    items,
+    totalCount: totalMatch ? Number(totalMatch[1]) : items.length,
+    resultCode: codeMatch ? codeMatch[1] : null,
+  };
+}
+
+async function fetchKrxPage(params, apiKey, timeoutMs = 15000) {
+  const url = new URL(KRX_API_BASE);
+  url.searchParams.set("serviceKey", apiKey);
+  url.searchParams.set("numOfRows", String(params.numOfRows || KRX_PAGE_SIZE));
+  url.searchParams.set("pageNo", String(params.pageNo || 1));
+  if (params.basDt) url.searchParams.set("basDt", params.basDt);
+  if (params.beginBasDt) url.searchParams.set("beginBasDt", params.beginBasDt);
+  if (params.endBasDt) url.searchParams.set("endBasDt", params.endBasDt);
+  if (params.likeSrtnCd) url.searchParams.set("likeSrtnCd", params.likeSrtnCd);
+  if (params.beginTrPrc != null) url.searchParams.set("beginTrPrc", String(params.beginTrPrc));
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let text;
+  try {
+    const resp = await fetch(url.toString(), { signal: controller.signal });
+    text = await resp.text();
+  } finally {
+    clearTimeout(timer);
+  }
+  return parseKrxXml(text);
+}
+
+// 한 종목의 날짜범위 가격 이력 전체를 페이지를 넘기며 받아온다 (모멘텀 계산용 백필).
+async function fetchKrxStockHistory(stockCode, beginBasDt, endBasDt, apiKey) {
+  const all = [];
+  for (let pageNo = 1; pageNo <= KRX_MAX_PAGES; pageNo++) {
+    const { items, totalCount, resultCode } = await fetchKrxPage(
+      { likeSrtnCd: stockCode, beginBasDt, endBasDt, numOfRows: KRX_PAGE_SIZE, pageNo },
+      apiKey
+    );
+    if (resultCode && resultCode !== "00") break;
+    all.push(...items);
+    if (items.length === 0 || all.length >= totalCount) break;
+  }
+  // likeSrtnCd는 부분일치이므로 정확히 같은 종목코드만 남긴다.
+  return all
+    .filter((it) => it.srtnCd === stockCode)
+    .map((it) => ({ date: it.basDt, close: it.clpr, volume: it.trqu, tradingValue: it.trPrc }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// 특정 기준일(basDt)에 거래대금 조건(beginTrPrc 이상)을 만족하는 전체 종목을 페이지를 넘기며 받아온다.
+async function fetchKrxDailyUniverse(basDt, minTradingValue, apiKey) {
+  const all = [];
+  for (let pageNo = 1; pageNo <= KRX_MAX_PAGES; pageNo++) {
+    const { items, totalCount, resultCode } = await fetchKrxPage(
+      { basDt, beginTrPrc: minTradingValue, numOfRows: KRX_PAGE_SIZE, pageNo },
+      apiKey
+    );
+    if (resultCode && resultCode !== "00") break;
+    all.push(...items);
+    if (items.length === 0 || all.length >= totalCount) break;
+  }
+  return all;
+}
+
+// 퍼센타일 랭크(0~1): 값이 작을수록 0에 가깝고 클수록 1에 가깝다. 동점은 평균 순위 사용.
+// (명세: Momentum Score는 원시 수익률이 아니라 순위 기반으로 계산해 이상치 왜곡을 방지)
+function percentileRanks(values) {
+  const n = values.length;
+  if (n === 0) return [];
+  if (n === 1) return [0.5];
+  const idx = values.map((v, i) => i).sort((a, b) => values[a] - values[b]);
+  const ranks = new Array(n);
+  let i = 0;
+  while (i < n) {
+    let j = i;
+    while (j + 1 < n && values[idx[j + 1]] === values[idx[i]]) j++;
+    const avgRank = (i + j) / 2; // 동점 구간의 평균 순위(0-based)
+    const pct = avgRank / (n - 1);
+    for (let k = i; k <= j; k++) ranks[idx[k]] = pct;
+    i = j + 1;
+  }
+  return ranks;
+}
+
+// sortedRows: market_date 오름차순으로 정렬된 {market_date, close_price} 배열
+// n거래일 수익률 = 최신종가/n거래일전종가 - 1. 데이터가 부족하면 null(0으로 채우지 않음 — 명세 §원칙).
+function nDayReturn(sortedRows, n) {
+  const len = sortedRows.length;
+  if (len < n + 1) return null;
+  const latest = sortedRows[len - 1].close_price;
+  const past = sortedRows[len - 1 - n].close_price;
+  if (latest == null || past == null || past === 0) return null;
+  return latest / past - 1;
+}
+
+// stockRowsMap: Map<stock_code, 정렬된 일별 행 배열> → RS20/60/120 + 퍼센타일 랭크 + Momentum Score 계산.
+// weights는 하드코딩하지 않고 인자로 받는다(명세: 20/35/45는 가설이며 설정 가능해야 함).
+function computeMomentumTable(stockRowsMap, weights = MOMENTUM_WEIGHTS) {
+  const rows = [];
+  for (const [stockCode, sortedRows] of stockRowsMap.entries()) {
+    const rs20 = nDayReturn(sortedRows, 20);
+    const rs60 = nDayReturn(sortedRows, 60);
+    const rs120 = nDayReturn(sortedRows, 120);
+    // 셋 중 하나라도 계산 불가하면 랭킹에서 제외(0으로 채우지 않음)
+    if (rs20 == null || rs60 == null || rs120 == null) continue;
+    rows.push({ stock_code: stockCode, rs20, rs60, rs120 });
+  }
+  if (rows.length === 0) return [];
+
+  const rank20 = percentileRanks(rows.map((r) => r.rs20));
+  const rank60 = percentileRanks(rows.map((r) => r.rs60));
+  const rank120 = percentileRanks(rows.map((r) => r.rs120));
+
+  rows.forEach((r, i) => {
+    r.rank20 = rank20[i];
+    r.rank60 = rank60[i];
+    r.rank120 = rank120[i];
+    r.momentumScore = weights.rs20 * rank20[i] + weights.rs60 * rank60[i] + weights.rs120 * rank120[i];
+  });
+
+  rows.sort((a, b) => b.momentumScore - a.momentumScore);
+  return rows;
 }
 
 async function getFallbackShareCounts(db, corpCode, beforeOrder) {
@@ -1587,33 +1881,181 @@ export default {
       return Response.json({ corp_name: corpRow.corp_name, corp_code: corpRow.corp_code, rows: results });
     }
 
+    if (pathname === "/api/market/refresh-universe") {
+      // data.go.kr API로 "오늘(또는 가장 최근 영업일) 기준 거래대금 20억 이상인 전체 종목"을 한 번에 받아온다.
+      // 받아온 응답 자체가 당일 종가·거래량·거래대금을 담고 있으므로, 그대로 market_raw_daily에도 하루치를 적립한다
+      // (이미 이력이 쌓인 종목은 이렇게 매일 호출만 하면 자동으로 최신 하루가 추가된다).
+      if (!env.DATA_GO_KR_KEY) {
+        return Response.json({ error: "DATA_GO_KR_KEY 환경변수(시크릿)가 설정되지 않았습니다. Cloudflare Workers 설정에서 추가해주세요." }, { status: 500 });
+      }
+
+      let basDt = null;
+      let universe = [];
+      const today = new Date();
+      for (let back = 0; back <= 7; back++) {
+        const d = new Date(today);
+        d.setUTCDate(d.getUTCDate() - back);
+        const ds = `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}`;
+        const result = await fetchKrxDailyUniverse(ds, MARKET_MIN_TRADING_VALUE, env.DATA_GO_KR_KEY);
+        if (result.length > 0) { basDt = ds; universe = result; break; }
+      }
+      if (!basDt) {
+        return Response.json({ error: "최근 7일 내 거래일 데이터를 찾지 못했습니다(주말/공휴일이 겹쳤을 수 있습니다)." }, { status: 502 });
+      }
+
+      const now = new Date().toISOString();
+      // subrequest 예산(요청당 50건) 안에 넉넉히 들어오도록 한 번의 batch()에 여러 statement를 크게 묶는다.
+      const CHUNK = 300;
+
+      // market_universe_status: 오늘 통과 종목 전부 upsert.
+      // backfilled/backfilled_at은 신규 행일 때만 0/NULL로 들어가고, 이미 있는 행이면 ON CONFLICT 경로가
+      // 그 두 컬럼을 건드리지 않으므로 기존 값(백필 완료 여부)이 그대로 보존된다.
+      const statusStmts = universe.map((it) => env.DB.prepare(
+        `INSERT INTO market_universe_status (stock_code, corp_name, passed, avg_trading_value, days_fetched, checked_at, backfilled, backfilled_at)
+         VALUES (?, ?, 1, ?, NULL, ?, 0, NULL)
+         ON CONFLICT(stock_code) DO UPDATE SET corp_name = excluded.corp_name, passed = 1, avg_trading_value = excluded.avg_trading_value, checked_at = excluded.checked_at`
+      ).bind(it.srtnCd, it.itmsNm, it.trPrc, now));
+      for (let i = 0; i < statusStmts.length; i += CHUNK) await env.DB.batch(statusStmts.slice(i, i + CHUNK));
+
+      // market_raw_daily: 오늘자(basDt) 종가/거래량/거래대금을 바로 적립
+      const priceStmts = universe.map((it) => env.DB.prepare(
+        "INSERT OR REPLACE INTO market_raw_daily (market_date, stock_code, close_price, volume, trading_value) VALUES (?, ?, ?, ?, ?)"
+      ).bind(it.basDt, it.srtnCd, it.clpr, it.trqu, it.trPrc));
+      for (let i = 0; i < priceStmts.length; i += CHUNK) await env.DB.batch(priceStmts.slice(i, i + CHUNK));
+
+      // 아직 전체 이력을 백필한 적 없는(backfilled=0) 종목만 백필 큐에 등록.
+      // 종목별로 한 번씩 SELECT하면 subrequest가 너무 많아지므로, CHUNK 단위 IN절로 한 번에 조회한다.
+      const codes = universe.map((it) => it.srtnCd);
+      const backfilledSet = new Set();
+      for (let i = 0; i < codes.length; i += CHUNK) {
+        const chunk = codes.slice(i, i + CHUNK);
+        const placeholders = chunk.map(() => "?").join(",");
+        const { results } = await env.DB
+          .prepare(`SELECT stock_code FROM market_universe_status WHERE backfilled = 1 AND stock_code IN (${placeholders})`)
+          .bind(...chunk)
+          .all();
+        for (const r of results) backfilledSet.add(r.stock_code);
+      }
+      const needsBackfill = universe.filter((it) => !backfilledSet.has(it.srtnCd));
+      const queueStmts = needsBackfill.map((it) => env.DB.prepare(
+        "INSERT OR IGNORE INTO market_fetch_queue (stock_code, corp_name, queued_at) VALUES (?, ?, ?)"
+      ).bind(it.srtnCd, it.itmsNm, now));
+      for (let i = 0; i < queueStmts.length; i += CHUNK) await env.DB.batch(queueStmts.slice(i, i + CHUNK));
+
+      return Response.json({ bas_dt: basDt, universe_size: universe.length, newly_queued_for_backfill: queueStmts.length });
+    }
+
+    if (pathname === "/api/market/status") {
+      const [queueRow, checkedRow, passedRow, backfilledRow, todayRow] = await Promise.all([
+        env.DB.prepare("SELECT COUNT(*) AS c FROM market_fetch_queue").first(),
+        env.DB.prepare("SELECT COUNT(*) AS c FROM market_universe_status").first(),
+        env.DB.prepare("SELECT COUNT(*) AS c FROM market_universe_status WHERE passed = 1").first(),
+        env.DB.prepare("SELECT COUNT(*) AS c FROM market_universe_status WHERE backfilled = 1").first(),
+        env.DB.prepare("SELECT COUNT(*) AS c FROM market_universe_status WHERE backfilled_at >= ?").bind(todayUtcMidnightIso()).first(),
+      ]);
+      return Response.json({
+        queue_remaining: queueRow?.c ?? 0,
+        checked_total: checkedRow?.c ?? 0,
+        passed_total: passedRow?.c ?? 0,
+        backfilled_total: backfilledRow?.c ?? 0,
+        backfilled_today: todayRow?.c ?? 0,
+        daily_cap: MARKET_DAILY_WRITE_CAP,
+        min_trading_value: MARKET_MIN_TRADING_VALUE,
+      });
+    }
+
+    if (pathname === "/api/market/top30") {
+      const { results: passedStocks } = await env.DB
+        .prepare("SELECT stock_code, corp_name FROM market_universe_status WHERE passed = 1")
+        .all();
+      if (passedStocks.length === 0) {
+        return Response.json({ error: "아직 유동성 기준을 통과한 종목이 없습니다. 먼저 '유니버스 갱신'을 진행해주세요." }, { status: 400 });
+      }
+
+      const { results: rawRows } = await env.DB
+        .prepare("SELECT stock_code, market_date, close_price FROM market_raw_daily ORDER BY stock_code, market_date")
+        .all();
+
+      const map = new Map();
+      for (const r of rawRows) {
+        if (!map.has(r.stock_code)) map.set(r.stock_code, []);
+        map.get(r.stock_code).push(r);
+      }
+
+      const weights = {
+        rs20: Number(searchParams.get("w20")) || MOMENTUM_WEIGHTS.rs20,
+        rs60: Number(searchParams.get("w60")) || MOMENTUM_WEIGHTS.rs60,
+        rs120: Number(searchParams.get("w120")) || MOMENTUM_WEIGHTS.rs120,
+      };
+
+      const nameByCode = new Map(passedStocks.map((s) => [s.stock_code, s.corp_name]));
+      const table = computeMomentumTable(map, weights);
+      const top30 = table.slice(0, 30).map((r) => ({ ...r, corp_name: nameByCode.get(r.stock_code) || r.stock_code }));
+
+      return Response.json({ universe_size: table.length, weights, top30 });
+    }
+
     return new Response("Not Found", { status: 404 });
   },
 
-  // Cron Trigger: 1분마다 깨어나 fetch_queue에서 몇 개씩 꺼내 DART 조회 + D1 저장을 한다.
-  // 화면(브라우저 탭)이 닫혀 있어도 Cloudflare가 이 함수를 계속 호출해주기 때문에 백그라운드 처리가 된다.
+  // Cron Trigger: 1분마다 깨어난다. 재무데이터 큐와 모멘텀 유니버스 큐가 subrequest 예산(요청당 50건)을
+  // 같이 나눠 쓰면 한도를 넘길 수 있어, 짝수 분/홀수 분으로 번갈아 처리해 완전히 분리한다.
   async scheduled(event, env, ctx) {
-    const { results } = await env.DB
-      .prepare("SELECT corp_code, corp_name, stock_code, bsns_year, reprt_code FROM fetch_queue ORDER BY corp_code, period_order LIMIT ?")
-      .bind(CRON_BATCH_SIZE)
+    const minute = new Date(event.scheduledTime).getUTCMinutes();
+
+    if (minute % 2 === 0) {
+      // 짝수 분: 재무데이터(fetch_queue) 처리
+      const { results } = await env.DB
+        .prepare("SELECT corp_code, corp_name, stock_code, bsns_year, reprt_code FROM fetch_queue ORDER BY corp_code, period_order LIMIT ?")
+        .bind(CRON_BATCH_SIZE)
+        .all();
+
+      for (const item of results) {
+        const periodMeta = REPRT_CODES.find((r) => r.code === item.reprt_code);
+        if (periodMeta) {
+          try {
+            const row = await fetchPeriodRow(item.corp_code, item.stock_code, { year: Number(item.bsns_year), ...periodMeta }, env.DART_PROXY_URL, env.DB);
+            await saveRowsToDb(env.DB, [row]);
+          } catch (e) {
+            // 이 기간은 실패했지만 큐에서는 제거하고 다음 기간으로 넘어간다 (한 기간이 계속 실패해서 큐 전체가
+            // 막히는 것을 방지). 재시도가 필요하면 "백그라운드로 받기"를 다시 눌러 재등록하면 된다.
+            console.error("cron fetch-and-save 실패:", item.corp_code, item.bsns_year, item.reprt_code, e.message || e);
+          }
+        }
+        await env.DB
+          .prepare("DELETE FROM fetch_queue WHERE corp_code = ? AND bsns_year = ? AND reprt_code = ?")
+          .bind(item.corp_code, item.bsns_year, item.reprt_code)
+          .run();
+      }
+      return;
+    }
+
+    // 홀수 분: 모멘텀 유니버스(market_fetch_queue) 처리 — 아직 전체 가격이력을 못 받은 신규 통과 종목을
+    // data.go.kr API로 백필한다. D1 무료 쓰기 한도(10만행/일)를 지키기 위해 오늘 이미 백필 완료한 종목 수를
+    // 세어 MARKET_DAILY_WRITE_CAP을 넘지 않는 만큼만 처리한다.
+    if (!env.DATA_GO_KR_KEY) return; // 키 미설정 시 조용히 건너뜀(재무데이터 큐는 짝수 분에 계속 처리됨)
+
+    const todayRow = await env.DB
+      .prepare("SELECT COUNT(*) AS c FROM market_universe_status WHERE backfilled_at >= ?")
+      .bind(todayUtcMidnightIso())
+      .first();
+    const remainingCap = MARKET_DAILY_WRITE_CAP - (todayRow?.c ?? 0);
+    if (remainingCap <= 0) return;
+
+    const batchSize = Math.min(MARKET_CRON_BATCH_SIZE, remainingCap);
+    const { results: marketItems } = await env.DB
+      .prepare("SELECT stock_code, corp_name FROM market_fetch_queue LIMIT ?")
+      .bind(batchSize)
       .all();
 
-    for (const item of results) {
-      const periodMeta = REPRT_CODES.find((r) => r.code === item.reprt_code);
-      if (periodMeta) {
-        try {
-          const row = await fetchPeriodRow(item.corp_code, item.stock_code, { year: Number(item.bsns_year), ...periodMeta }, env.DART_PROXY_URL, env.DB);
-          await saveRowsToDb(env.DB, [row]);
-        } catch (e) {
-          // 이 기간은 실패했지만 큐에서는 제거하고 다음 기간으로 넘어간다 (한 기간이 계속 실패해서 큐 전체가
-          // 막히는 것을 방지). 재시도가 필요하면 "백그라운드로 받기"를 다시 눌러 재등록하면 된다.
-          console.error("cron fetch-and-save 실패:", item.corp_code, item.bsns_year, item.reprt_code, e.message || e);
-        }
-      }
-      await env.DB
-        .prepare("DELETE FROM fetch_queue WHERE corp_code = ? AND bsns_year = ? AND reprt_code = ?")
-        .bind(item.corp_code, item.bsns_year, item.reprt_code)
-        .run();
-    }
-  },
-};
+    const end = todayStr();
+    const begin = addDaysStr(end, -MARKET_BACKFILL_CALENDAR_DAYS);
+    const backfilledAt = new Date().toISOString();
+
+    for (const item of marketItems) {
+      try {
+        const history = await fetchKrxStockHistory(item.stock_code, begin, end, env.DATA_GO_KR_KEY);
+        if (history.length) {
+          const stmts = history.map((p) => env.DB.prepare(
+            "INSERT OR REPLACE INTO market_raw_daily (market_date, stock_code, close_price, volume, trading_value) VALUES (?, ?, ?, ?, ?)"
+          ).bind(p.date, item.stoc
