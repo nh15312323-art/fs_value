@@ -185,7 +185,7 @@ const HTML_PAGE = `<!doctype html>
     .topbar .brand { font-size: 19px; font-weight: 800; letter-spacing: -.01em; }
     .topbar .tagline { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
     .nav { display: flex; gap: 6px; position: sticky; top: 0; z-index: 20; background: var(--bg); padding: 6px 0 8px; margin-bottom: 8px; border-bottom: 1px solid var(--border); }
-    .nav button { flex: 1; padding: 10px 6px; font-size: 14px; font-weight: 600; }
+    .nav button { flex: 1; padding: 10px 6px; font-size: 14px; font-weight: 600; white-space: nowrap; }
     .pfl { display: flex; flex-direction: column; font-size: 12px; color: var(--text-muted); gap: 3px; flex: 1; min-width: 150px; }
     .pfl input { width: 100%; }
     textarea { font-size: 14px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-family: inherit; }
@@ -200,7 +200,7 @@ const HTML_PAGE = `<!doctype html>
     #chartDock.folded #priceBox, #chartDock.folded #chartWrap, #chartDock.folded #dockViewRow { display: none !important; }
     #analysis > * { scroll-margin-top: calc(var(--navh) + var(--subh) + 52px); }
     #fabTop { position: fixed; right: 12px; bottom: 16px; z-index: 40; width: 44px; height: 44px; border-radius: 50%; padding: 0; font-size: 18px; box-shadow: 0 4px 14px rgba(15,23,42,.25); display: none; background: #0f172a; color: #fff; border: 0; }
-    @media (max-width: 560px) { #priceCanvas { height: 250px !important; } }
+    @media (max-width: 560px) { #priceCanvas { height: 340px !important; } }
     /* ---- 내 계좌 ---- */
     .pf-kpi { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
     .pf-kpi > div { background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
@@ -380,6 +380,11 @@ const HTML_PAGE = `<!doctype html>
     #lkMsg { font-size: 13px; color: var(--danger); min-height: 18px; margin-top: 8px; text-align: center; line-height: 1.5; }
     #privCover { position: fixed; inset: 0; z-index: 110; background: #0f172a; color: #fff; display: none; align-items: center; justify-content: center; font-size: 18px; font-weight: 800; }
     .stickybtn { position: sticky; bottom: 0; background: #fff; padding: 10px 0 2px; z-index: 2; }
+    /* 태블릿 등 터치 기기(폭이 넓어 위 모바일 규칙이 안 걸리는 경우): 입력은 16px(자동 확대 방지)·터치 가능한 크기 */
+    @media (pointer: coarse) and (min-width: 761px) {
+      input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea { font-size: 16px; min-height: 42px; }
+      button { min-height: 40px; }
+    }
     @media (max-width: 760px) {
       #bnav { display: flex; }
       #mainNav { display: none; }
@@ -411,10 +416,16 @@ const HTML_PAGE = `<!doctype html>
     @media (max-width: 380px) { #bnav button { font-size: 11px; } .pf-kpi { grid-template-columns: repeat(2, 1fr); } }
     /* ===== 표 도구 · 스크리닝 카드 · 종목 비교 ===== */
     .tblbar { display: none; align-items: center; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
-    .tblbar button { padding: 4px 12px; font-size: 14px; min-height: 36px; }
+    .tblbar button { padding: 4px 12px; font-size: 14px; min-height: 40px; }
     .tblbar span { font-size: 12.5px; color: var(--text-muted); }
     .tfull { position: fixed !important; inset: 0; z-index: 95; max-height: none !important; margin: 0 !important; border-radius: 0 !important; border: 0 !important; background: #fff; padding-top: env(safe-area-inset-top); overflow: auto; }
     #tblClose { position: fixed; right: 12px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 96; display: none; background: #0f172a; color: #fff; border: 0; border-radius: 999px; padding: 12px 20px; font-size: 15px; font-weight: 700; box-shadow: 0 6px 18px rgba(15,23,42,.35); }
+    #dbBanner { display: none; background: #7f1d1d; color: #fff; padding: 10px 12px; border-radius: 10px; margin: 0 0 8px; font-size: 14px; line-height: 1.5; align-items: center; gap: 8px; flex-wrap: wrap; }
+    #dbBanner button { min-height: 40px; padding: 2px 12px; font-size: 14px; border-radius: 999px; }
+    .db-bar { height: 16px; background: #e2e8f0; border-radius: 8px; overflow: hidden; margin: 6px 0; }
+    .db-bar i { display: block; height: 100%; background: #16a34a; border-radius: 8px; }
+    .db-bar i.warn { background: #f59e0b; } .db-bar i.bad { background: #dc2626; }
+    .db-big { font-size: 22px; font-weight: 800; }
     .sc-cards { display: none; }
     .sc-card { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-top: 8px; }
     .sc-h { display: flex; align-items: center; gap: 8px; }
@@ -479,6 +490,7 @@ const HTML_PAGE = `<!doctype html>
       <button id="mn_macro" onclick="switchTab('macro')">🌐 ③ 거시·상관</button>
       <button id="mn_data" onclick="switchTab('data')">🗄️ ④ 데이터 관리</button>
       <button id="mn_bt" onclick="switchTab('bt')">🧪 ⑤ 백테스트</button>
+      <button id="mn_db" onclick="switchTab('db')">💾 ⑦ DB 용량 관리</button>
       <button onclick="closeMore(); appLock('잠겼습니다. 키를 입력하면 다시 열립니다.')">🔒 지금 잠그기</button>
     </div>
   </div>
@@ -504,6 +516,7 @@ const HTML_PAGE = `<!doctype html>
     <div class="tagline">DART 공시 · 공공데이터포털 시세 · 한국은행(ECOS)/FRED 거시지표</div>
   </div>
 
+  <div id="dbBanner" role="alert"><span id="dbBannerTxt"></span> <button onclick="switchTab('db')">DB 용량 열기</button> <button onclick="dbBannerHide()" title="이번 접속 동안 숨기기">✕</button></div>
   <div class="nav" id="mainNav">
     <button id="tabBtnMomentum" onclick="switchTab('momentum')">① 스크리닝</button>
     <button id="tabBtnFinancial" class="toggle-active" onclick="switchTab('financial')">② 종목분석</button>
@@ -511,6 +524,7 @@ const HTML_PAGE = `<!doctype html>
     <button id="tabBtnData" onclick="switchTab('data')">④ 데이터 관리</button>
     <button id="tabBtnBt" onclick="switchTab('bt')">⑤ 백테스트</button>
     <button id="tabBtnPf" onclick="switchTab('pf')">⑥ 내 계좌</button>
+    <button id="tabBtnDb" onclick="switchTab('db')">⑦ DB 용량</button>
   </div>
 
   <!-- ===================== ② 종목분석 ===================== -->
@@ -603,7 +617,11 @@ const HTML_PAGE = `<!doctype html>
             <label style="font-size:12.5px;"><input type="checkbox" id="chkMa50" checked onchange="drawPrice()" /> 50일선</label>
             <label style="font-size:12.5px;"><input type="checkbox" id="chkMa200" checked onchange="drawPrice()" /> 200일선</label>
           </div>
-          <canvas id="priceCanvas" style="width:100%; height:330px; touch-action:pan-y;"></canvas>
+          <div class="row" style="margin:0 0 6px; gap:6px;"><span style="font-size:12.5px; color:var(--text-muted);">하단 막대</span>
+            <button id="volBtn_tv" class="toggle-active" onclick="setVolMode('tv')" style="padding:4px 10px; font-size:12.5px;">거래대금</button>
+            <button id="volBtn_vol" onclick="setVolMode('vol')" style="padding:4px 10px; font-size:12.5px;">거래량</button>
+            <button id="volBtn_off" onclick="setVolMode('off')" style="padding:4px 10px; font-size:12.5px;">끄기</button></div>
+          <canvas id="priceCanvas" style="width:100%; height:400px; touch-action:pan-y;"></canvas>
           <p id="pxNote" style="font-size:12px; color:var(--text-muted); margin-top:6px;"></p>
         </div>
         <div id="chartWrap" style="display:none; margin-top:10px;">
@@ -818,6 +836,48 @@ const HTML_PAGE = `<!doctype html>
       </tbody></table></div>
       <div style="font-size:11.5px; color:var(--text-muted); margin-top:6px;">논문 인용은 이 앱에서 온라인으로 재확인하지 못했습니다. 중요한 판단 전에 원문을 확인하세요. 백테스트 결과는 미래 수익을 보장하지 않습니다.</div>
     </details>
+  </div>
+
+
+  <!-- ===================== ⑦ DB 용량 ===================== -->
+  <div id="tabDb" style="display:none;">
+    <div class="card">
+      <div class="card-title">DB 용량 현황</div>
+      <div id="dbGauge" class="meta-line">불러오는 중…</div>
+      <div id="dbMsg" class="meta-line"></div>
+      <div class="row" style="margin-top:8px;"><button onclick="dbLoad(true)">🔄 새로고침 (행 수 다시 계산)</button></div>
+      <details class="adv"><summary>용량 한도 · 알림 기준 설정</summary>
+        <div class="row" style="margin-top:8px;">
+          <label style="font-size:13px;">DB 용량 한도(MB) <input id="dbLimitMb" type="number" inputmode="numeric" min="50" style="width:110px;" /></label>
+          <label style="font-size:13px;">알림 기준(%) <input id="dbWarnPct" type="number" inputmode="numeric" min="50" max="99" style="width:90px;" /></label>
+          <button onclick="dbSaveSettings()">저장</button>
+        </div>
+        <div class="meta-line">한도는 요금제마다 다릅니다(무료 플랜은 DB 1개당 500MB로 알고 있으나, 정확한 값은 Cloudflare 대시보드에서 확인하세요). 사용량이 알림 기준을 넘으면 모든 화면 위쪽에 경고가 뜹니다.</div>
+      </details>
+    </div>
+    <div class="card">
+      <div class="card-title">테이블별 사용량 <span id="dbMeasured" style="text-transform:none;"></span></div>
+      <div class="tblbar"><button onclick="tblZoom(-1)">A−</button><button onclick="tblZoom(1)">A＋</button><button onclick="tblFull('dbTables')">⤢ 전체화면</button></div>
+      <div id="dbTables" class="tscroll"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">용량 확보 — 조건을 정해 데이터 삭제</div>
+      <div class="meta-line" style="margin:0 0 8px;">삭제도 D1 쓰기 한도를 쓰므로 <b id="dbCapTxt">하루 20,000행</b>까지만 지울 수 있고, 큰 삭제는 며칠에 나눠 진행됩니다. 삭제한 데이터는 되돌릴 수 없으니 먼저 <b>미리보기</b>로 개수를 확인하세요.</div>
+      <select id="dbKind" onchange="dbKindChange()" style="width:100%;">
+        <option value="price_old">일별 시세: 지정일 이전 삭제</option>
+        <option value="price_inactive">일별 시세: 현재 저장 기준 미통과 종목 삭제</option>
+        <option value="screen_old">주간 스크리닝 결과: 오래된 것 삭제</option>
+        <option value="fin_company">재무데이터: 특정 종목 삭제</option>
+        <option value="fin_old">재무데이터: 지정 연도 이전 삭제(전 종목)</option>
+        <option value="opincome_cache">영업이익 조회 캐시 삭제</option>
+      </select>
+      <div id="dbKindHelp" class="meta-line"></div>
+      <div id="dbParam" class="row" style="margin-top:6px;"></div>
+      <div class="row" style="margin-top:10px;"><button onclick="dbPreview()" style="flex:1;">① 미리보기 (몇 행 지워지나)</button></div>
+      <div id="dbPreviewBox" class="meta-line"></div>
+      <div class="row" style="margin-top:6px;"><button id="dbRunBtn" class="primary" onclick="dbRun()" style="flex:1; display:none;">② 삭제 실행</button><button id="dbStopBtn" onclick="dbStop()" style="display:none;">중단</button></div>
+      <div id="dbRunBox" class="meta-line"></div>
+    </div>
   </div>
 
   <!-- ===================== ⑥ 내 계좌 ===================== -->
@@ -1155,6 +1215,7 @@ const HTML_PAGE = `<!doctype html>
         if (!d.ok) { msg.textContent = '키가 맞지 않습니다.'; return; }
         keySave(k, document.getElementById('lkRem').checked);
         document.getElementById('lockScreen').style.display = 'none'; document.getElementById('lkKey').value = '';
+        initLists();
         if (!appBooted) { appBooted = true; bootRoute(); }
         else {
           try { if (document.getElementById('tabPf').style.display !== 'none' && PFU.inited && !PFU.key) { document.getElementById('pfuKey').value = k; pfuUnlock(); } } catch (e) {}
@@ -1186,14 +1247,14 @@ const HTML_PAGE = `<!doctype html>
     window.addEventListener('pageshow', function () { const cv = document.getElementById('privCover'); if (cv) cv.style.display = 'none'; });
 
     // ===== 메뉴 이동: 하단 메뉴바 · 더보기 · 뒤로가기/링크(#탭) · 마지막 탭 기억 =====
-    const TAB_IDS = ['momentum', 'financial', 'macro', 'data', 'bt', 'pf'];
+    const TAB_IDS = ['momentum', 'financial', 'macro', 'data', 'bt', 'pf', 'db'];
     let curTab = 'financial';
     function toggleMore() { const e = document.getElementById('moreSheet'); e.style.display = e.style.display === 'block' ? 'none' : 'block'; }
     function closeMore() { const e = document.getElementById('moreSheet'); if (e) e.style.display = 'none'; }
     function updateBnav(tab) {
       ['momentum', 'financial', 'pf'].forEach(function (k) { const b = document.getElementById('bn_' + k); if (b) b.className = k === tab ? 'on' : ''; });
-      const more = ['macro', 'data', 'bt'].indexOf(tab) >= 0; const mb = document.getElementById('bn_more'); if (mb) mb.className = more ? 'on' : '';
-      ['macro', 'data', 'bt'].forEach(function (k) { const b = document.getElementById('mn_' + k); if (b) b.className = k === tab ? 'on' : ''; });
+      const more = ['macro', 'data', 'bt', 'db'].indexOf(tab) >= 0; const mb = document.getElementById('bn_more'); if (mb) mb.className = more ? 'on' : '';
+      ['macro', 'data', 'bt', 'db'].forEach(function (k) { const b = document.getElementById('mn_' + k); if (b) b.className = k === tab ? 'on' : ''; });
     }
     function navRecord(tab, mode) {
       try { if (mode === 'replace') history.replaceState({ tab: tab }, '', '#' + tab); else if (mode !== 'none') history.pushState({ tab: tab }, '', '#' + tab); } catch (e) {}
@@ -1210,6 +1271,104 @@ const HTML_PAGE = `<!doctype html>
       if (TAB_IDS.indexOf(t) >= 0 && t !== curTab) switchTab(t, 'none');
     });
 
+
+    // ===== ⑦ DB 용량 =====
+    function fmtBytes(b) { if (b == null) return 'N/A'; if (b >= 1073741824) return (b / 1073741824).toFixed(2) + ' GB'; if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB'; if (b >= 1024) return (b / 1024).toFixed(0) + ' KB'; return b + ' B'; }
+    let dbUse = null, dbPrev = null, dbStopFlag = false, dbRunning = false;
+    function dbBannerApply(u) {
+      const el = document.getElementById('dbBanner'); if (!el) return;
+      let hide = false; try { hide = sessionStorage.getItem('dbBnrHide') === '1'; } catch (e) {}
+      if (u && u.warn && !hide) { document.getElementById('dbBannerTxt').textContent = '⚠ DB 용량 ' + u.pct.toFixed(1) + '% 사용 중 (' + fmtBytes(u.sizeBytes) + ' / ' + fmtBytes(u.limitBytes) + ') — 가득 차면 새 데이터 저장이 실패합니다. 정리가 필요합니다.'; el.style.display = 'flex'; }
+      else el.style.display = 'none';
+    }
+    function dbBannerHide() { try { sessionStorage.setItem('dbBnrHide', '1'); } catch (e) {} document.getElementById('dbBanner').style.display = 'none'; }
+    async function dbBannerCheck() {
+      try { const res = await fetch('/api/db/usage?light=1', { cache: 'no-store' }); if (!res.ok) return; dbBannerApply(await res.json()); } catch (e) { /* 알림 실패는 조용히 */ }
+    }
+    async function dbLoad(refresh) {
+      const g = document.getElementById('dbGauge'); g.textContent = '불러오는 중…';
+      try {
+        const res = await fetch('/api/db/usage' + (refresh ? '?refresh=1' : ''), { cache: 'no-store' }); const d = await res.json();
+        if (!res.ok) throw new Error(d.error || '조회 실패');
+        dbUse = d; dbRender(); dbBannerApply(d);
+      } catch (e) { g.textContent = '용량을 불러오지 못했습니다: ' + e.message; }
+    }
+    function dbRender() {
+      const d = dbUse; if (!d) return;
+      const g = document.getElementById('dbGauge');
+      if (d.sizeBytes == null) { g.innerHTML = '이 환경에서는 DB 크기를 알 수 없습니다(D1이 크기를 알려주지 않음). 아래 행 수만 참고하세요.'; }
+      else {
+        const cls = d.pct >= d.warnPct ? 'bad' : (d.pct >= d.warnPct - 20 ? 'warn' : '');
+        g.innerHTML = '<div class="db-big">' + d.pct.toFixed(1) + '%</div><div class="db-bar"><i class="' + cls + '" style="width:' + Math.min(100, d.pct).toFixed(1) + '%"></i></div>' + fmtBytes(d.sizeBytes) + ' 사용 / 한도 ' + fmtBytes(d.limitBytes) + ' · 알림 기준 ' + d.warnPct + '%' + (d.warn ? '<br /><b style="color:#b91c1c;">⚠ 알림 기준을 넘었습니다. 아래에서 데이터를 정리하세요.</b>' : '');
+      }
+      document.getElementById('dbLimitMb').value = d.limitMb; document.getElementById('dbWarnPct').value = d.warnPct;
+      document.getElementById('dbMeasured').textContent = d.measured ? '(실측)' : '(행 수 기반 추정치 — 정확한 값이 아님)';
+      const tot = d.sizeBytes || (d.tables || []).reduce(function (a, t) { return a + (t.bytes || 0); }, 0) || 1;
+      document.getElementById('dbTables').innerHTML = '<table><thead><tr><th>테이블</th><th>행 수</th><th>용량</th><th>비중</th></tr></thead><tbody>' + (d.tables || []).map(function (t) { return '<tr><td>' + escHtml(t.name) + '</td><td>' + (t.rows == null ? 'N/A' : t.rows.toLocaleString('ko-KR')) + '</td><td>' + fmtBytes(t.bytes) + '</td><td>' + (t.bytes == null ? 'N/A' : (t.bytes / tot * 100).toFixed(1) + '%') + '</td></tr>'; }).join('') + '</tbody></table>';
+      document.getElementById('dbCapTxt').textContent = '하루 ' + d.purgeCap.perDay.toLocaleString('ko-KR') + '행 (오늘 남은 한도 ' + d.purgeCap.left.toLocaleString('ko-KR') + '행)';
+      document.getElementById('dbMsg').textContent = '표의 행 수는 읽기 한도를 쓰므로 1시간 동안 저장된 값을 보여줍니다' + (d.tablesAt ? ' (계산: ' + new Date(d.tablesAt).toLocaleString('ko-KR') + ')' : '') + '. ' + (d.protected ? '' : '※ 접근 키(PF_KEY)가 없어 삭제 기능은 잠겨 있습니다.');
+      dbKindChange();
+    }
+    async function dbSaveSettings() {
+      const r = await adminFetch('/api/db/settings', { limit_mb: Number(document.getElementById('dbLimitMb').value), warn_pct: Number(document.getElementById('dbWarnPct').value) });
+      document.getElementById('dbMsg').textContent = r.ok ? '저장했습니다.' : ('저장 실패: ' + ((r.data && r.data.error) || r.status));
+      if (r.ok) dbLoad(false);
+    }
+    const DB_KIND_HELP = {
+      price_old: '지정한 날짜 이전의 일별 시세(종가·거래량)를 지웁니다. 모멘텀·52주 계산에 필요한 최근 약 1년 치(380일)는 지울 수 없습니다. 날짜는 YYYYMMDD입니다.',
+      price_inactive: '현재 ④에서 정한 저장 기준(거래대금·시가총액)을 통과하지 못하는 종목의 과거 시세를 지웁니다. 기준을 높인 뒤 용량을 줄일 때 씁니다.',
+      screen_old: '저장된 주간 스크리닝 결과 중 최근 N회만 남기고 지웁니다(결과는 다시 계산할 수 있습니다).',
+      fin_company: '한 종목의 저장된 DART 재무데이터를 모두 지웁니다. 다시 필요하면 종목분석에서 새로 받을 수 있습니다.',
+      fin_old: '전 종목에서 지정 연도 미만의 재무데이터를 지웁니다. 10년 추세·백테스트에 쓰이므로 신중히 정하세요.',
+      opincome_cache: '스크리닝 화면에 쓰는 영업이익 조회 캐시를 비웁니다. 다음 스크리닝 때 필요한 만큼 다시 조회합니다.',
+    };
+    function dbKindChange() {
+      const k = document.getElementById('dbKind').value; document.getElementById('dbKindHelp').textContent = DB_KIND_HELP[k] || '';
+      const box = document.getElementById('dbParam'); const prevK = box.getAttribute('data-k'); if (prevK === k) return; box.setAttribute('data-k', k);
+      const dt = new Date(Date.now() - 420 * 86400000).toISOString().slice(0, 10).replace(/-/g, '');
+      box.innerHTML = k === 'price_old' ? '<input id="dbP" type="text" inputmode="numeric" maxlength="8" value="' + dt + '" placeholder="기준일 YYYYMMDD" style="flex:1;" />'
+        : k === 'screen_old' ? '<label style="font-size:13px;">최근 <input id="dbP" type="number" inputmode="numeric" min="1" max="104" value="8" style="width:80px;" /> 회만 남김</label>'
+        : k === 'fin_company' ? '<span class="combo"><input id="dbP" placeholder="종목명" autocomplete="off" /></span>'
+        : k === 'fin_old' ? '<label style="font-size:13px;"><input id="dbP" type="number" inputmode="numeric" min="2000" value="2015" style="width:100px;" /> 년 미만 삭제</label>' : '';
+      if (k === 'fin_company') attachCombo(document.getElementById('dbP'));
+      dbPrev = null; document.getElementById('dbPreviewBox').textContent = ''; document.getElementById('dbRunBtn').style.display = 'none';
+    }
+    function dbBody() {
+      const k = document.getElementById('dbKind').value; const e = document.getElementById('dbP'); const v = e ? e.value.trim() : '';
+      const param = k === 'price_old' ? { before: v } : k === 'screen_old' ? { keep: Number(v) } : k === 'fin_company' ? { corp_name: v } : k === 'fin_old' ? { before_year: Number(v) } : {};
+      return { kind: k, param: param };
+    }
+    async function dbPreview() {
+      const box = document.getElementById('dbPreviewBox'); document.getElementById('dbRunBtn').style.display = 'none'; dbPrev = null;
+      box.style.color = ''; box.textContent = '계산 중…';
+      const b = dbBody(); b.preview = true;
+      const r = await adminFetch('/api/db/purge', b);
+      if (!r.ok) { box.style.color = '#b91c1c'; box.textContent = (r.data && r.data.error) || ('오류 ' + r.status); return; }
+      const d = r.data; dbPrev = { body: dbBody(), count: d.count, label: d.label };
+      if (!d.count) { box.textContent = '「' + d.label + '」 — 지울 데이터가 없습니다.'; return; }
+      box.innerHTML = '「' + escHtml(d.label) + '」 <b>' + d.count.toLocaleString('ko-KR') + '행</b> 삭제 대상 · 쓰기 약 ' + d.estWrites.toLocaleString('ko-KR') + '건 · 하루 ' + d.perDay.toLocaleString('ko-KR') + '행씩 지우면 약 <b>' + d.daysNeeded + '일</b> (오늘 남은 한도 ' + d.capLeft.toLocaleString('ko-KR') + '행)';
+      document.getElementById('dbRunBtn').style.display = '';
+    }
+    function dbStop() { dbStopFlag = true; }
+    async function dbRun() {
+      if (!dbPrev || dbRunning) return;
+      if (!window.confirm('「' + dbPrev.label + '」 약 ' + dbPrev.count.toLocaleString('ko-KR') + '행을 삭제합니다. 되돌릴 수 없습니다. 계속할까요?')) return;
+      dbRunning = true; dbStopFlag = false; const out = document.getElementById('dbRunBox'); out.style.color = '';
+      document.getElementById('dbRunBtn').style.display = 'none'; document.getElementById('dbStopBtn').style.display = '';
+      const before = dbUse ? dbUse.sizeBytes : null; let total = 0, last = null, msg = '';
+      try {
+        for (let i = 0; i < 400; i++) {
+          if (dbStopFlag) { msg = '중단했습니다.'; break; }
+          const r = await adminFetch('/api/db/purge', dbPrev.body);
+          if (!r.ok) { out.style.color = '#b91c1c'; msg = (r.data && r.data.error) || ('오류 ' + r.status); break; }
+          total += r.data.deleted; last = r.data; out.textContent = '삭제 중… ' + total.toLocaleString('ko-KR') + '행';
+          if (r.data.done || r.data.deleted === 0) { msg = r.data.done ? '완료.' : ''; break; }
+        }
+      } catch (e) { out.style.color = '#b91c1c'; msg = '오류: ' + e.message; }
+      dbRunning = false; document.getElementById('dbStopBtn').style.display = 'none';
+      out.textContent = msg + ' 총 ' + total.toLocaleString('ko-KR') + '행 삭제' + (last && last.sizeAfter != null && before != null ? ' · 용량 ' + fmtBytes(before) + ' → ' + fmtBytes(last.sizeAfter) + ' (SQLite는 빈 공간을 재사용하므로 표시 용량이 바로 줄지 않을 수 있습니다)' : '') + '.';
+      dbPrev = null; dbLoad(true);
+    }
     // ===== 표 도구: 글자 크기 · 전체화면 =====
     let tblFs = 13; try { tblFs = Number(localStorage.getItem('tblFs')) || 13; } catch (e) {}
     function tblApply() { document.documentElement.style.setProperty('--tfs', tblFs + 'px'); }
@@ -1342,7 +1501,7 @@ const HTML_PAGE = `<!doctype html>
     function loadStockList() {
       if (STOCK_LIST) return Promise.resolve(STOCK_LIST);
       if (STOCK_LIST_P) return STOCK_LIST_P;
-      STOCK_LIST_P = fetch('/api/stock/list').then((r) => r.json()).then((d) => {
+      STOCK_LIST_P = fetch('/api/stock/list').then((r) => { if (!r.ok) throw new Error('stock list ' + r.status); return r.json(); }).then((d) => {
         STOCK_LIST = (d.stocks || []).map((x) => ({ n: x.n, c: x.c, nl: x.n.toLowerCase(), cho: choseongOf(x.n) }));
         return STOCK_LIST;
       }).catch(() => { STOCK_LIST_P = null; return null; });
@@ -4733,8 +4892,8 @@ async function pfuExport() {
     function switchTab(tab, navMode) {
       const prevTab = curTab; curTab = tab; try { tblFullClose(); } catch (e) {}
       navRecord(tab, navMode || (tab === prevTab ? 'replace' : 'push')); updateBnav(tab); closeMore();
-      const tabs = { financial: 'tabFinancial', momentum: 'tabMomentum', macro: 'tabMacro', data: 'tabData', bt: 'tabBt', pf: 'tabPf' };
-      const btns = { financial: 'tabBtnFinancial', momentum: 'tabBtnMomentum', macro: 'tabBtnMacro', data: 'tabBtnData', bt: 'tabBtnBt', pf: 'tabBtnPf' };
+      const tabs = { financial: 'tabFinancial', momentum: 'tabMomentum', macro: 'tabMacro', data: 'tabData', bt: 'tabBt', pf: 'tabPf', db: 'tabDb' };
+      const btns = { financial: 'tabBtnFinancial', momentum: 'tabBtnMomentum', macro: 'tabBtnMacro', data: 'tabBtnData', bt: 'tabBtnBt', pf: 'tabBtnPf', db: 'tabBtnDb' };
       Object.keys(tabs).forEach(function (k) {
         document.getElementById(tabs[k]).style.display = k === tab ? '' : 'none';
         document.getElementById(btns[k]).className = k === tab ? 'toggle-active' : '';
@@ -4742,6 +4901,7 @@ async function pfuExport() {
       if (tab === 'momentum' && !screenAutoLoaded) { screenAutoLoaded = true; loadScreen('top', true); }
       if (tab === 'data') { loadDataSummary(); checkMarketStatus(); loadMarketCfg(); rangeStatusShow(); }
       if (tab === 'bt') { btInitUi(); }
+      if (tab === 'db') { dbLoad(false); }
       if (tab === 'pf') { pfuInit(); }
       if (tab === 'macro' && macroCorrDirty && rawRows.length) computeMacroCorrelation();
       if (tab === 'financial' && subTab === 'table' && chartSel.length) renderChartPanel(false);
@@ -5240,7 +5400,18 @@ async function pfuExport() {
       const dd = drawdownSeries(w);
       return { last: last, hi: hi, lo: lo, fromHi: last / hi - 1, fromLo: last / lo - 1, vsM50: m50 ? last / m50 - 1 : null, vsM200: m200 ? last / m200 - 1 : null, maxDD: Math.min.apply(null, dd), nWin: w.length };
     }
-    let PRICE = { name: null, data: null, err: null, range: 252, hover: null, geom: null, m50: [], m200: [], listeners: false };
+    let PRICE = { name: null, data: null, err: null, range: 252, hover: null, geom: null, m50: [], m200: [], listeners: false, vm: 'tv' };
+    try { const vm = localStorage.getItem('pxVm'); if (vm === 'tv' || vm === 'vol' || vm === 'off') PRICE.vm = vm; } catch (e) {}
+    function setVolMode(m) {
+      PRICE.vm = m; try { localStorage.setItem('pxVm', m); } catch (e) {}
+      ['tv', 'vol', 'off'].forEach((k) => { const b = document.getElementById('volBtn_' + k); if (b) b.className = k === m ? 'toggle-active' : ''; });
+      drawPrice();
+    }
+    function fmtVol(v, mode) {
+      if (v == null) return 'N/A';
+      if (mode === 'tv') { const e = v / 1e8; return e >= 10000 ? (e / 10000).toFixed(1) + '조' : (e >= 100 ? Math.round(e).toLocaleString() : e.toFixed(1)) + '억'; }
+      return v >= 1e6 ? (v / 1e4).toLocaleString(undefined, { maximumFractionDigits: 0 }) + '만' : (v >= 1e4 ? (v / 1e4).toFixed(1) + '만' : Math.round(v).toLocaleString());
+    }
     function setPriceRange(n) {
       PRICE.range = n; PRICE.hover = null;
       [126, 252, 9999].forEach((k) => { document.getElementById('rngBtn_' + k).className = k === n ? 'toggle-active' : ''; });
@@ -5289,7 +5460,9 @@ async function pfuExport() {
       const dd = drawdownSeries(c);
       const showM50 = document.getElementById('chkMa50').checked, showM200 = document.getElementById('chkMa200').checked;
       const FONT = '-apple-system, "Segoe UI", "Noto Sans KR", sans-serif';
-      const padL = 54, padR = 10, mainTop = 8, mainH = Math.round(H * 0.66), ddTop = mainTop + mainH + 20, ddH = H - ddTop - 20;
+      const vmode = (PRICE.vm === 'off') ? 'off' : ((PRICE.vm === 'tv' && full.tv && full.tv.some((x) => x != null)) ? 'tv' : (full.v && full.v.some((x) => x != null) ? 'vol' : 'off'));
+      const volSrc = vmode === 'tv' ? full.tv : full.v, vol = vmode === 'off' ? [] : volSrc.slice(from);
+      const padL = 54, padR = 10, mainTop = 8, mainH = Math.round(H * (vmode === 'off' ? 0.66 : 0.5)), volTop = mainTop + mainH + 18, volH = vmode === 'off' ? 0 : Math.round(H * 0.15), ddTop = vmode === 'off' ? mainTop + mainH + 20 : volTop + volH + 16, ddH = H - ddTop - 20;
       const plotW = W - padL - padR, step = k > 1 ? plotW / (k - 1) : 0;
       const xs = (i) => padL + i * step;
       PRICE.geom = { padL: padL, step: step, k: k };
@@ -5311,6 +5484,16 @@ async function pfuExport() {
       priceJumps(c).forEach((i) => { ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(xs(i), mainTop); ctx.lineTo(xs(i), mainTop + mainH); ctx.stroke(); });
       ctx.textAlign = 'left'; ctx.font = '11px ' + FONT; let lx = padL + 4;
       [['종가', '#2563eb', true], ['50일선', '#ea580c', showM50], ['200일선', '#7c3aed', showM200]].forEach((l) => { if (!l[2]) return; ctx.fillStyle = l[1]; ctx.fillRect(lx, mainTop + mainH + 3, 10, 3); ctx.fillStyle = '#475569'; ctx.fillText(l[0], lx + 14, mainTop + mainH + 8); lx += 14 + ctx.measureText(l[0]).width + 12; });
+      if (vmode !== 'off') {
+        const vmax = Math.max.apply(null, vol.filter((x) => x != null).concat([1]));
+        const yv = (v) => volTop + volH - v / vmax * volH, bw = Math.max(1, Math.min(8, step * 0.7));
+        ctx.strokeStyle = '#eef2f7'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(padL, volTop + volH); ctx.lineTo(padL + plotW, volTop + volH); ctx.stroke();
+        vol.forEach((v, i) => { if (v == null) return; const up = i > 0 ? c[i] >= c[i - 1] : true; ctx.fillStyle = up ? 'rgba(220,38,38,0.55)' : 'rgba(37,99,235,0.55)'; ctx.fillRect(xs(i) - bw / 2, yv(v), bw, volTop + volH - yv(v)); });
+        const va = []; for (let i = 0; i < vol.length; i++) { if (i < 19) { va.push(null); continue; } let sum = 0, cn = 0; for (let j = i - 19; j <= i; j++) if (vol[j] != null) { sum += vol[j]; cn++; } va.push(cn >= 15 ? sum / cn : null); }
+        ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 1.3; ctx.beginPath(); let s1 = false; va.forEach((v, i) => { if (v == null) { s1 = false; return; } if (!s1) { ctx.moveTo(xs(i), yv(v)); s1 = true; } else ctx.lineTo(xs(i), yv(v)); }); ctx.stroke();
+        ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'right'; ctx.font = '10px ' + FONT; ctx.fillText(fmtVol(vmax, vmode), padL - 6, volTop + 8); ctx.fillText('0', padL - 6, volTop + volH);
+        ctx.textAlign = 'left'; ctx.fillStyle = '#64748b'; ctx.fillText((vmode === 'tv' ? '거래대금' : '거래량') + ' · 주황=20일평균 · 빨강↑ 파랑↓', padL + 3, volTop + volH + 12);
+      }
       const minDD = Math.min.apply(null, dd), ddLo = Math.min(minDD * 1.1, -0.02);
       const yd = (v) => ddTop + v / ddLo * ddH;
       ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'right'; ctx.font = '10px ' + FONT; ctx.fillText('0%', padL - 6, ddTop + 3); ctx.fillText((ddLo * 100).toFixed(0) + '%', padL - 6, ddTop + ddH + 3);
@@ -5324,7 +5507,7 @@ async function pfuExport() {
         const i = PRICE.hover, x = xs(i);
         ctx.strokeStyle = '#64748b'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(x, mainTop); ctx.lineTo(x, ddTop + ddH); ctx.stroke(); ctx.setLineDash([]);
         ctx.fillStyle = '#2563eb'; ctx.beginPath(); ctx.arc(x, ys(c[i]), 3.5, 0, 6.3); ctx.fill();
-        const lines = [d[i].slice(0, 4) + '-' + d[i].slice(4, 6) + '-' + d[i].slice(6, 8), '종가 ' + Math.round(c[i]).toLocaleString() + '원', m50[i] != null ? '50일선 ' + Math.round(m50[i]).toLocaleString() : '', m200[i] != null ? '200일선 ' + Math.round(m200[i]).toLocaleString() : '', '낙폭 ' + (dd[i] * 100).toFixed(1) + '%'].filter(Boolean);
+        const lines = [d[i].slice(0, 4) + '-' + d[i].slice(4, 6) + '-' + d[i].slice(6, 8), '종가 ' + Math.round(c[i]).toLocaleString() + '원', m50[i] != null ? '50일선 ' + Math.round(m50[i]).toLocaleString() : '', m200[i] != null ? '200일선 ' + Math.round(m200[i]).toLocaleString() : '', vmode !== 'off' ? ((vmode === 'tv' ? '거래대금 ' : '거래량 ') + fmtVol(vol[i], vmode)) : '', '낙폭 ' + (dd[i] * 100).toFixed(1) + '%'].filter(Boolean);
         ctx.font = '11px ' + FONT; const bw = Math.max.apply(null, lines.map((t) => ctx.measureText(t).width)) + 14, bh = lines.length * 15 + 8;
         let bx = x + 10; if (bx + bw > W - 2) bx = x - 10 - bw;
         ctx.fillStyle = 'rgba(15,23,42,0.88)'; ctx.fillRect(bx, mainTop + 4, bw, bh);
@@ -6089,8 +6272,17 @@ async function pfuExport() {
       wrapEl.style.display = 'block';
       macroCorrDirty = false;
     }
+    // 종목 검색 목록·DB 저장 종목은 접근 키가 확인된 뒤에 불러와야 한다(잠금 상태에서 먼저 요청하면 401로 실패하고 다시 불러오지 않던 문제).
+    function initLists() {
+      STOCK_LIST_P = STOCK_LIST ? STOCK_LIST_P : null;
+      loadStockList();
+      const sm = document.getElementById('savedSummary'); if (!dbCompanies) sm.textContent = '📁 DB에 저장된 종목 (불러오는 중…)';
+      loadDbCompanies(true).then(renderSavedBox).catch(function () { sm.textContent = '📁 DB 저장 종목 목록을 불러오지 못했습니다 — 여기를 눌러 다시 시도'; });
+      dbBannerCheck();
+    }
+    document.getElementById('savedBox').addEventListener('toggle', function () { if (this.open && !dbCompanies) initLists(); });
     tuneInputs(); cmpTrayRender();
-    bootAuth().then(function (ok) { if (ok) { appBooted = true; bootRoute(); } });
+    bootAuth().then(function (ok) { if (ok) { appBooted = true; bootRoute(); initLists(); } });
   </script>
 </body>
 </html>`;
@@ -6731,6 +6923,160 @@ async function processRangeJobTick(env) {
   await save();
   return true;
 }
+
+// ===== DB 용량 관리 =====
+// D1은 쿼리 결과의 meta.size_after로 현재 DB 크기(바이트)를 알려 준다. 한도는 요금제마다 달라(무료 플랜 DB당 500MB) 사용자가 바꿀 수 있게 둔다.
+const DB_LIMIT_DEFAULT_MB = 500, DB_WARN_DEFAULT_PCT = 90;
+const PURGE_CHUNK = 2000;             // 한 번 호출에서 지우는 최대 행 수
+const PURGE_DAILY_ROW_CAP = 20000;    // 삭제도 D1 쓰기 한도(무료 10만행/일)를 쓰므로 하루 삭제 상한을 둔다(행 1개 ≈ 쓰기 2건, 수집 작업 몫을 남김)
+const PRICE_KEEP_DAYS = 380;          // 12-1 모멘텀·52주 계산에 약 253거래일(≈365일)이 필요해 최근 이만큼은 지우지 못하게 한다
+const DB_TABLE_CACHE_MS = 60 * 60 * 1000;
+async function dbSizeBytes(env) {
+  try { const r = await env.DB.prepare("SELECT 1").run(); const n = r && r.meta && r.meta.size_after; return Number.isFinite(n) ? n : null; } catch (e) { return null; }
+}
+async function getDbCapCfg(env) {
+  let limitMb = DB_LIMIT_DEFAULT_MB, warnPct = DB_WARN_DEFAULT_PCT;
+  try {
+    await ensureAppSettings(env.DB);
+    const r = await env.DB.prepare("SELECT v FROM app_settings WHERE k = 'db_cap'").first();
+    if (r && r.v) { const o = JSON.parse(r.v); if (Number.isFinite(o.limitMb) && o.limitMb >= 50) limitMb = o.limitMb; if (Number.isFinite(o.warnPct) && o.warnPct >= 50 && o.warnPct <= 99) warnPct = o.warnPct; }
+  } catch (e) { /* 기본값 */ }
+  return { limitMb: limitMb, warnPct: warnPct };
+}
+async function dbUsageLight(env) {
+  const size = await dbSizeBytes(env), cfg = await getDbCapCfg(env), limit = cfg.limitMb * 1048576;
+  const pct = size == null ? null : size / limit * 100;
+  return { sizeBytes: size, limitBytes: limit, limitMb: cfg.limitMb, warnPct: cfg.warnPct, pct: pct, warn: pct != null && pct >= cfg.warnPct };
+}
+async function dbTableStats(env, refresh) {
+  await ensureAppSettings(env.DB);
+  if (!refresh) {
+    try { const r = await env.DB.prepare("SELECT v FROM app_settings WHERE k = 'db_tables'").first(); if (r && r.v) { const o = JSON.parse(r.v); if (o && Date.now() - o.t < DB_TABLE_CACHE_MS) return Object.assign({ cached: true }, o); } } catch (e) { /* 새로 계산 */ }
+  }
+  const { results: objs } = await env.DB.prepare("SELECT name, type, tbl_name FROM sqlite_master WHERE type IN ('table','index') AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '\\_cf\\_%' ESCAPE '\\'").all();
+  const tables = objs.filter((o) => o.type === "table").map((o) => ({ name: o.name, rows: null, bytes: null }));
+  for (const t of tables) {
+    try { const r = await env.DB.prepare('SELECT COUNT(*) AS n FROM "' + t.name.replace(/"/g, '""') + '"').first(); t.rows = r ? r.n : null; } catch (e) { t.rows = null; }
+  }
+  let measured = false;
+  try { // 일부 환경에서만 지원되는 dbstat(실측). 안 되면 추정으로 대체한다.
+    const { results: st } = await env.DB.prepare("SELECT name, SUM(pgsize) AS b FROM dbstat GROUP BY name").all();
+    const owner = {}; objs.forEach((o) => { owner[o.name] = o.tbl_name; });
+    const by = {}; st.forEach((x) => { const tb = owner[x.name] || x.name; by[tb] = (by[tb] || 0) + x.b; });
+    tables.forEach((t) => { t.bytes = by[t.name] != null ? by[t.name] : null; });
+    measured = tables.some((t) => t.bytes != null);
+  } catch (e) { measured = false; }
+  if (!measured) {
+    const size = await dbSizeBytes(env);
+    let sl = 0; try { const r = await env.DB.prepare("SELECT COALESCE(SUM(LENGTH(payload)),0) AS n FROM screen_lists").first(); sl = r ? r.n : 0; } catch (e) { sl = 0; }
+    const w = tables.map((t) => (t.rows || 0) * 60 + (t.name === "screen_lists" ? sl : 0));
+    const tot = w.reduce((a, b) => a + b, 0) || 1;
+    tables.forEach((t, i) => { t.bytes = size != null ? Math.round(size * w[i] / tot) : null; });
+  }
+  tables.sort((a, b) => (b.bytes || 0) - (a.bytes || 0));
+  const out = { t: Date.now(), measured: measured, tables: tables };
+  try { await env.DB.prepare("INSERT OR REPLACE INTO app_settings (k, v, updated_at) VALUES ('db_tables', ?, ?)").bind(JSON.stringify(out), new Date().toISOString()).run(); } catch (e) { /* 캐시 실패는 무시 */ }
+  return Object.assign({ cached: false }, out);
+}
+// 삭제 종류별 조건. cond는 WHERE 뒤에 붙는 조건, binds는 그 값. 지울 수 없게 막아야 하면 error를 돌려준다.
+async function purgeSpec(env, kind, p) {
+  p = p || {};
+  if (kind === "price_old") {
+    const before = String(p.before || "");
+    if (!ymdOk(before)) return { error: "기준일(YYYYMMDD)이 올바르지 않습니다." };
+    const m = await env.DB.prepare("SELECT MAX(market_date) AS m FROM market_raw_daily").first();
+    if (!m || !m.m) return { error: "저장된 시세가 없습니다." };
+    const cutoff = addDaysStr(m.m, -PRICE_KEEP_DAYS);
+    if (before > cutoff) return { error: "최근 " + PRICE_KEEP_DAYS + "일(" + cutoff + " 이후)의 시세는 모멘텀·52주 계산에 필요해 지울 수 없습니다. 기준일은 " + cutoff + " 이하로 지정하세요." };
+    return { table: "market_raw_daily", cond: "market_date < ?", binds: [before], label: before + " 이전 일별 시세" };
+  }
+  if (kind === "price_inactive") {
+    const r = await env.DB.prepare("SELECT COUNT(*) AS n FROM market_universe_status WHERE passed = 1").first();
+    if (!r || !(r.n > 0)) return { error: "현재 기준을 통과한 종목 목록이 비어 있어 안전을 위해 실행하지 않습니다(④ 데이터 관리에서 유니버스를 먼저 갱신하세요)." };
+    return { table: "market_raw_daily", cond: "stock_code NOT IN (SELECT stock_code FROM market_universe_status WHERE passed = 1)", binds: [], label: "현재 저장 기준을 통과하지 못한 종목의 일별 시세" };
+  }
+  if (kind === "screen_old") {
+    const keep = Math.floor(Number(p.keep));
+    if (!(keep >= 1 && keep <= 104)) return { error: "남길 주간 결과 수는 1~104입니다." };
+    let thr = null;
+    try { const r = await env.DB.prepare("SELECT DISTINCT snap_date AS d FROM screen_lists ORDER BY snap_date DESC LIMIT 1 OFFSET ?").bind(keep - 1).first(); thr = r ? r.d : null; } catch (e) { thr = null; }
+    if (!thr) return { table: "screen_lists", cond: "1 = 0", binds: [], label: "오래된 주간 스크리닝 결과(지울 것 없음)" };
+    return { table: "screen_lists", cond: "snap_date < ?", binds: [thr], label: "최근 " + keep + "회를 뺀 이전 주간 스크리닝 결과" };
+  }
+  if (kind === "fin_company") {
+    const name = String(p.corp_name || "").trim();
+    if (!name) return { error: "종목명을 입력하세요." };
+    const c = await env.DB.prepare("SELECT corp_code FROM corp_master WHERE corp_name = ?").bind(name).first();
+    if (!c) return { error: "'" + name + "' 종목을 찾을 수 없습니다." };
+    return { table: "financial_raw", cond: "corp_code = ?", binds: [c.corp_code], label: name + " 의 저장된 재무데이터 전체" };
+  }
+  if (kind === "fin_old") {
+    const y = Math.floor(Number(p.before_year));
+    if (!(y >= 2000 && y <= 2100)) return { error: "연도(예: 2015)가 올바르지 않습니다." };
+    return { table: "financial_raw", cond: "bsns_year < ?", binds: [String(y)], label: y + "년 이전 재무데이터(전 종목)" };
+  }
+  if (kind === "opincome_cache") return { table: "op_income_cache", cond: "1 = 1", binds: [], label: "영업이익 조회 캐시(필요하면 다시 자동 조회)" };
+  return { error: "알 수 없는 삭제 종류입니다." };
+}
+async function purgeCapLeft(env) {
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS market_job (k TEXT PRIMARY KEY, v TEXT)").run();
+  const day = new Date().toISOString().slice(0, 10);
+  let used = 0;
+  try { const r = await env.DB.prepare("SELECT v FROM market_job WHERE k = 'purge_day'").first(); if (r) { const o = JSON.parse(r.v); if (o.day === day) used = o.rows || 0; } } catch (e) { used = 0; }
+  return { day: day, used: used, left: Math.max(0, PURGE_DAILY_ROW_CAP - used) };
+}
+async function handleDbCapacity(request, env, pathname, searchParams) {
+  try {
+    if (pathname === "/api/db/usage") {
+      const light = await dbUsageLight(env);
+      if (searchParams.get("light") === "1") return Response.json(light);
+      const st = await dbTableStats(env, searchParams.get("refresh") === "1");
+      const cap = await purgeCapLeft(env);
+      return Response.json(Object.assign({}, light, { tables: st.tables, measured: st.measured, tablesAt: st.t, protected: pfKeyOn(env), purgeCap: { perDay: PURGE_DAILY_ROW_CAP, left: cap.left, chunk: PURGE_CHUNK }, priceKeepDays: PRICE_KEEP_DAYS }));
+    }
+    if (pathname === "/api/db/settings" && request.method === "POST") {
+      const bad = await adminAuthError(request, env); if (bad) return bad;
+      const b = await request.json().catch(() => null) || {};
+      const limitMb = Number(b.limit_mb), warnPct = Number(b.warn_pct);
+      if (!(limitMb >= 50 && limitMb <= 102400)) return Response.json({ error: "용량 한도는 50~102400MB 사이로 입력하세요." }, { status: 400 });
+      if (!(warnPct >= 50 && warnPct <= 99)) return Response.json({ error: "알림 기준은 50~99% 사이로 입력하세요." }, { status: 400 });
+      await ensureAppSettings(env.DB);
+      await env.DB.prepare("INSERT OR REPLACE INTO app_settings (k, v, updated_at) VALUES ('db_cap', ?, ?)").bind(JSON.stringify({ limitMb: limitMb, warnPct: warnPct }), new Date().toISOString()).run();
+      return Response.json(await dbUsageLight(env));
+    }
+    if (pathname === "/api/db/purge" && request.method === "POST") {
+      if (!pfKeyOn(env)) return Response.json({ error: "데이터 삭제는 접근 키(PF_KEY)가 설정된 상태에서만 쓸 수 있습니다(공개 주소에서 누구나 지우는 것을 막기 위해)." }, { status: 403 });
+      const bad = await adminAuthError(request, env); if (bad) return bad;
+      const b = await request.json().catch(() => null) || {};
+      let spec;
+      try { spec = await purgeSpec(env, String(b.kind || ""), b.param); }
+      catch (e) { return Response.json({ error: "조건을 확인하지 못했습니다: " + ((e && e.message) || e) }, { status: 400 }); }
+      if (spec.error) return Response.json({ error: spec.error }, { status: 400 });
+      const cap = await purgeCapLeft(env);
+      const T = spec.table;
+      if (b.preview) {
+        let n = 0; try { const r = await env.DB.prepare("SELECT COUNT(*) AS n FROM " + T + " WHERE " + spec.cond).bind(...spec.binds).first(); n = r ? r.n : 0; } catch (e) { n = 0; }
+        return Response.json({ label: spec.label, count: n, estWrites: n * 2, daysNeeded: n ? Math.ceil(n / PURGE_DAILY_ROW_CAP) : 0, capLeft: cap.left, perDay: PURGE_DAILY_ROW_CAP });
+      }
+      const lim = Math.min(PURGE_CHUNK, cap.left);
+      if (lim <= 0) return Response.json({ error: "오늘 삭제 한도(" + PURGE_DAILY_ROW_CAP.toLocaleString("ko-KR") + "행)를 모두 썼습니다. 한국시간 오전 9시 이후(UTC 날짜가 바뀐 뒤) 이어서 지우세요.", capLeft: 0, done: false }, { status: 429 });
+      let r;
+      try { r = await env.DB.prepare("DELETE FROM " + T + " WHERE rowid IN (SELECT rowid FROM " + T + " WHERE " + spec.cond + " LIMIT ?)").bind(...spec.binds, lim).run(); }
+      catch (e) { return Response.json({ error: "삭제하지 못했습니다: " + ((e && e.message) || e) }, { status: 500 }); }
+      const deleted = (r && r.meta && Number(r.meta.changes)) || 0;
+      if (T === "financial_raw" && spec.binds.length && spec.cond === "corp_code = ?") { try { await env.DB.prepare("DELETE FROM corp_fiscal WHERE corp_code = ?").bind(spec.binds[0]).run(); } catch (e) { /* 보조 테이블 */ } }
+      await env.DB.prepare("INSERT OR REPLACE INTO market_job (k, v) VALUES ('purge_day', ?)").bind(JSON.stringify({ day: cap.day, rows: cap.used + deleted })).run();
+      let more = false; try { const x = await env.DB.prepare("SELECT 1 AS x FROM " + T + " WHERE " + spec.cond + " LIMIT 1").bind(...spec.binds).first(); more = !!x; } catch (e) { more = false; }
+      try { await env.DB.prepare("DELETE FROM app_settings WHERE k = 'db_tables'").run(); } catch (e) { /* 캐시 무효화 */ }
+      const sizeAfter = (r && r.meta && Number.isFinite(r.meta.size_after)) ? r.meta.size_after : await dbSizeBytes(env);
+      return Response.json({ deleted: deleted, done: !more, capLeft: Math.max(0, cap.left - deleted), sizeAfter: sizeAfter, label: spec.label });
+    }
+    return Response.json({ error: "알 수 없는 DB 용량 요청입니다." }, { status: 404 });
+  } catch (e) {
+    return Response.json({ error: "서버 오류: " + ((e && e.message) || String(e)) }, { status: 500 });
+  }
+}
+// ===== /DB 용량 관리 =====
 
 async function handleMarketCfg(request, env, pathname, searchParams) {
   try {
@@ -7899,7 +8245,7 @@ async function handleRequest(request, env) {
       if (!hist.length) return Response.json({ error: "data.go.kr에서 이 종목의 시세를 받지 못했습니다." }, { status: 502 });
       return new Response(JSON.stringify({
         corp_name: corpRow.corp_name, stock_code: corpRow.stock_code, n: hist.length, from: hist[0].date, to: hist[hist.length - 1].date,
-        d: hist.map((x) => x.date), c: hist.map((x) => x.close), v: hist.map((x) => x.volume == null ? null : x.volume),
+        d: hist.map((x) => x.date), c: hist.map((x) => x.close), v: hist.map((x) => x.volume == null ? null : x.volume), tv: hist.map((x) => x.tradingValue == null ? null : x.tradingValue),
       }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "private, max-age=300" } });
     }
 
@@ -8106,6 +8452,7 @@ async function handleRequest(request, env) {
     }
 
     if (pathname === "/api/market/config" || pathname === "/api/market/preview" || pathname === "/api/market/range") return handleMarketCfg(request, env, pathname, searchParams);
+    if (pathname === "/api/db/usage" || pathname === "/api/db/settings" || pathname === "/api/db/purge") return handleDbCapacity(request, env, pathname, searchParams);
 
     if (pathname === "/api/market/refresh-universe") {
       // 실제 로직은 scheduled()의 일일 자동 갱신과 공유하는 runUniverseRefresh()에 있다.

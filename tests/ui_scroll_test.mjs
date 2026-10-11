@@ -51,7 +51,7 @@ await pg.click('#dockFold'); const h1 = await pg.$eval('#chartDock', (e) => e.ge
 ok('차트 접기 → 차트 영역 높이 크게 감소', h1 < h0 * 0.4, h0 + ' → ' + h1);
 await pg.click('#dockFold'); ok('펼치기 → 원래대로', (await pg.$eval('#chartDock', (e) => e.getBoundingClientRect().height)) > h1 * 2);
 await pg.click('#dockFold'); await pg.click('#dockBtn_growth'); ok('다른 차트 탭을 누르면 자동으로 펼쳐짐', !(await pg.$eval('#chartDock', (e) => e.classList.contains('folded'))));
-ok('좁은 화면에서 주가 차트 높이 축소(250px)', await pg.evaluate(() => { document.getElementById('dockBtn_price').click(); return getComputedStyle(document.getElementById('priceCanvas')).height === '250px'; }));
+ok('좁은 화면에서 주가 차트 높이(340px: 거래대금 막대 포함)', await pg.evaluate(() => { document.getElementById('dockBtn_price').click(); return getComputedStyle(document.getElementById('priceCanvas')).height === '340px'; }));
 await pg.evaluate(() => showFunnel()); await pg.waitForTimeout(300);
 const fb = await pg.innerText('#funnelBox');
 ok('유니버스 깔때기: 단계별 종목 수와 제외 수, 하루 거래대금 기준 주의 문구', fb.includes('2,700') && fb.includes('1,300') && fb.includes('778') && fb.includes('제외 1,400개') && fb.includes('제외 522개') && fb.includes('하루'), fb);
