@@ -350,6 +350,41 @@ const HTML_PAGE = `<!doctype html>
         <button id="subBtn_compare" onclick="setSubTab('compare')">2종목 비교</button>
       </div>
 
+      <div id="chartDock" class="card" style="margin-bottom:12px;">
+        <div class="row" id="dockBtns" style="gap:6px;">
+          <button id="dockBtn_price" class="toggle-active" onclick="setDock('price')" style="padding:6px 11px; font-size:13px;">📈 주가</button>
+          <button id="dockBtn_growth" onclick="setDock('growth')" style="padding:6px 11px; font-size:13px;">성장</button>
+          <button id="dockBtn_margin" onclick="setDock('margin')" style="padding:6px 11px; font-size:13px;">마진</button>
+          <button id="dockBtn_cash" onclick="setDock('cash')" style="padding:6px 11px; font-size:13px;">현금흐름</button>
+          <button id="dockBtn_value" onclick="setDock('value')" style="padding:6px 11px; font-size:13px;">밸류에이션</button>
+          <button id="dockBtn_safety" onclick="setDock('safety')" style="padding:6px 11px; font-size:13px;">재무안정</button>
+          <button id="dockBtn_holder" onclick="setDock('holder')" style="padding:6px 11px; font-size:13px;">주주환원</button>
+        </div>
+        <div id="dockViewRow" class="row" style="margin-top:8px; display:none;">
+          <span style="font-size:12.5px; color:var(--text-muted);">기간 단위</span>
+          <button id="dockQ" class="toggle-active" onclick="setView('quarterly')" style="padding:4px 10px; font-size:12.5px;">분기</button>
+          <button id="dockA" onclick="setView('annual')" style="padding:4px 10px; font-size:12.5px;">연간(+TTM)</button>
+        </div>
+        <div id="priceBox" style="margin-top:10px;">
+          <div id="priceStats" style="font-size:12.5px; line-height:1.7;"></div>
+          <div class="row" style="margin:6px 0; gap:6px;">
+            <button id="rngBtn_126" onclick="setPriceRange(126)" style="padding:4px 10px; font-size:12.5px;">6개월</button>
+            <button id="rngBtn_252" class="toggle-active" onclick="setPriceRange(252)" style="padding:4px 10px; font-size:12.5px;">1년</button>
+            <button id="rngBtn_9999" onclick="setPriceRange(9999)" style="padding:4px 10px; font-size:12.5px;">전체(약 3년)</button>
+            <label style="font-size:12.5px;"><input type="checkbox" id="chkMa50" checked onchange="drawPrice()" /> 50일선</label>
+            <label style="font-size:12.5px;"><input type="checkbox" id="chkMa200" checked onchange="drawPrice()" /> 200일선</label>
+          </div>
+          <canvas id="priceCanvas" style="width:100%; height:330px; touch-action:pan-y;"></canvas>
+          <p id="pxNote" style="font-size:12px; color:var(--text-muted); margin-top:6px;"></p>
+        </div>
+        <div id="chartWrap" style="display:none; margin-top:10px;">
+          <div id="chartTitle" style="font-weight:600; margin-bottom:6px;"></div>
+          <div id="chartChips" class="chart-chips"></div>
+          <canvas id="chartCanvas" style="width:100%; height:220px; touch-action:pan-y;"></canvas>
+          <p id="chartNote" style="font-size:12px; color:var(--text-muted); margin-top:6px;"></p>
+        </div>
+      </div>
+
       <div id="sub_summary">
         <div class="card">
           <div class="row">
@@ -373,12 +408,6 @@ const HTML_PAGE = `<!doctype html>
           <div class="meta-line">표의 첫 행(머리글)과 첫 열(기간)은 스크롤해도 고정됩니다. 머리글을 더블클릭하면 그래프가 열립니다.</div>
         </div>
         <div id="wrap"></div>
-        <div id="chartWrap" style="display:none; margin-top:14px;" class="card">
-          <div id="chartTitle" style="font-weight:600; margin-bottom:6px;"></div>
-          <div id="chartChips" class="chart-chips"></div>
-          <canvas id="chartCanvas" style="width:100%; height:220px; touch-action:pan-y;"></canvas>
-          <p id="chartNote" style="font-size:12px; color:var(--text-muted); margin-top:6px;"></p>
-        </div>
       </div>
 
       <div id="sub_five" style="display:none;">
@@ -949,6 +978,7 @@ const HTML_PAGE = `<!doctype html>
       renderTable(rows);
       ensureMacroForTable();
       if (chartSel.length) renderChartPanel(false); // 모드/데이터가 바뀌면 열려 있는 차트도 다시 그림
+      syncDockView();
     }
 
     // 표의 거시경제 열을 채우기 위해 macro_data를 (한 번만) 받아온다. 받자마자 표를 다시 그려 값이 채워지게 하고,
@@ -4079,6 +4109,163 @@ function renderAnalysis() {
     // ===== 종목분석: "분석하기" 한 번으로 조회 → (없으면 DART 자동 수집) → 현재가 → 요약·분류·밸류에이션 → ROE 분해까지 =====
     let subTab = 'summary';
     let analyzeSeq = 0;
+    // ===== 차트 독(주가 + 재무 추이 프리셋): 어느 하위 탭에서든 맨 위에 보인다 =====
+    const DOCK_PRESETS = {
+      growth: ['revenue', 'operating_income', '_opMargin'],
+      margin: ['_grossMargin', '_opMargin'],
+      cash: ['ocf', 'capex', 'fcf'],
+      value: ['per_at_filing', 'pbr_at_filing', 'fcf_yield_at_filing'],
+      safety: ['total_liabilities', 'total_equity', 'cash'],
+      holder: ['dividend_per_share', '_payoutRatio', 'total_shares'],
+    };
+    let dockMode = 'price';
+    function syncDockView() {
+      document.getElementById('dockQ').className = viewMode === 'quarterly' ? 'toggle-active' : '';
+      document.getElementById('dockA').className = viewMode === 'annual' ? 'toggle-active' : '';
+    }
+    function setDock(mode) {
+      dockMode = mode;
+      ['price', 'growth', 'margin', 'cash', 'value', 'safety', 'holder'].forEach((k) => { document.getElementById('dockBtn_' + k).className = k === mode ? 'toggle-active' : ''; });
+      syncDockView();
+      const isPrice = mode === 'price';
+      document.getElementById('priceBox').style.display = isPrice ? '' : 'none';
+      document.getElementById('dockViewRow').style.display = isPrice ? 'none' : '';
+      if (isPrice) { document.getElementById('chartWrap').style.display = 'none'; drawPrice(); return; }
+      if (DOCK_PRESETS[mode]) {
+        chartSel = DOCK_PRESETS[mode].map((key) => { const col = COLUMNS.filter((c) => c.key === key)[0]; return { key: key, label: col ? col.label : key }; });
+        chartOverlay = false; chartHoverIdx = null;
+      }
+      renderChartPanel(false);
+    }
+
+    // ----- 일별 주가 차트 -----
+    function smaSeries(arr, n) {
+      const out = new Array(arr.length).fill(null);
+      let sum = 0;
+      for (let i = 0; i < arr.length; i++) {
+        sum += arr[i];
+        if (i >= n) sum -= arr[i - n];
+        if (i >= n - 1) out[i] = sum / n;
+      }
+      return out;
+    }
+    function drawdownSeries(arr) {
+      let peak = -Infinity;
+      return arr.map((v) => { if (v > peak) peak = v; return v / peak - 1; });
+    }
+    // 하루 ±30% 초과 변동이 난 인덱스(액면분할·병합 등으로 가격이 끊겼을 가능성). 상·하한가 한계가 30%라 이를 넘으면 시장 움직임이 아니다.
+    function priceJumps(arr, limit) {
+      const lim = limit || 0.3, out = [];
+      for (let i = 1; i < arr.length; i++) { const r = arr[i] / arr[i - 1] - 1; if (r > lim || r < -lim) out.push(i); }
+      return out;
+    }
+    function priceStats(c) {
+      const n = c.length; if (n < 2) return null;
+      const last = c[n - 1], w = c.slice(Math.max(0, n - 252));
+      const hi = Math.max.apply(null, w), lo = Math.min.apply(null, w);
+      const m50 = n >= 50 ? smaSeries(c, 50)[n - 1] : null, m200 = n >= 200 ? smaSeries(c, 200)[n - 1] : null;
+      const dd = drawdownSeries(w);
+      return { last: last, hi: hi, lo: lo, fromHi: last / hi - 1, fromLo: last / lo - 1, vsM50: m50 ? last / m50 - 1 : null, vsM200: m200 ? last / m200 - 1 : null, maxDD: Math.min.apply(null, dd), nWin: w.length };
+    }
+    let PRICE = { name: null, data: null, err: null, range: 252, hover: null, geom: null, m50: [], m200: [], listeners: false };
+    function setPriceRange(n) {
+      PRICE.range = n; PRICE.hover = null;
+      [126, 252, 9999].forEach((k) => { document.getElementById('rngBtn_' + k).className = k === n ? 'toggle-active' : ''; });
+      drawPrice();
+    }
+    async function loadPriceSeries() {
+      const name = document.getElementById('corpName').value.trim();
+      if (!name) return;
+      if (PRICE.name === name && PRICE.data) { renderPriceStats(); drawPrice(); return; }
+      PRICE.name = name; PRICE.data = null; PRICE.err = null;
+      document.getElementById('priceStats').textContent = '일별 주가를 불러오는 중…';
+      document.getElementById('pxNote').textContent = '';
+      const cv = document.getElementById('priceCanvas'); cv.getContext('2d').clearRect(0, 0, cv.width, cv.height);
+      try {
+        const res = await fetch('/api/price/series?corp_name=' + encodeURIComponent(name));
+        const data = await res.json();
+        if (PRICE.name !== name) return;
+        if (!res.ok) throw new Error(data.error || '조회 실패');
+        PRICE.data = data; PRICE.m50 = smaSeries(data.c, 50); PRICE.m200 = smaSeries(data.c, 200);
+      } catch (e) { if (PRICE.name !== name) return; PRICE.err = e.message || String(e); }
+      renderPriceStats(); drawPrice();
+    }
+    function renderPriceStats() {
+      const el = document.getElementById('priceStats'), note = document.getElementById('pxNote');
+      if (PRICE.err) { el.innerHTML = '<span style="color:var(--danger);">일별 주가를 불러오지 못했습니다: ' + escHtml(PRICE.err) + '</span>'; note.textContent = ''; return; }
+      if (!PRICE.data) return;
+      const st = priceStats(PRICE.data.c);
+      if (!st) { el.textContent = '주가 데이터가 너무 적어 차트를 그리지 못합니다.'; return; }
+      const pc = (v) => v == null ? 'N/A' : '<b style="color:' + (v >= 0 ? '#dc2626' : '#2563eb') + ';">' + (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%</b>';
+      el.innerHTML = '<b>' + escHtml(PRICE.data.corp_name) + '</b> ' + PRICE.data.to + ' 종가 <b>' + Math.round(st.last).toLocaleString() + '원</b><br />' +
+        '52주 고가 대비 ' + pc(st.fromHi) + ' (' + Math.round(st.hi).toLocaleString() + '원) · 52주 저가 대비 ' + pc(st.fromLo) + ' · 50일선 대비 ' + pc(st.vsM50) + ' · 200일선 대비 ' + pc(st.vsM200) + ' · 최근 ' + st.nWin + '거래일 최대낙폭 ' + pc(st.maxDD);
+      const jumps = priceJumps(PRICE.data.c);
+      note.innerHTML = '종가 기준(장중 고저가 아님), 수정주가가 아니라 액면분할·병합·감자가 있으면 가격이 끊겨 보입니다' +
+        (jumps.length ? ' — <span style="color:#b45309;">⚠ 하루 ±30% 초과 변동 ' + jumps.length + '회(' + jumps.slice(0, 3).map((i) => PRICE.data.d[i]).join(', ') + (jumps.length > 3 ? ' 등' : '') + '): 해당 구간의 낙폭·이동평균은 왜곡됐을 수 있습니다</span>' : '') +
+        '. 이동평균·52주 고가 같은 추세 지표가 한국 시장에서 초과수익을 낸다는 점은 검증되지 않았습니다(참고용). 마우스를 올리거나 손가락으로 훑으면 값이 보입니다.';
+    }
+    function drawPrice() {
+      const cv = document.getElementById('priceCanvas');
+      if (!cv || !PRICE.data || dockMode !== 'price') return;
+      const ctx = cv.getContext('2d'), dpr = window.devicePixelRatio || 1;
+      const W = cv.clientWidth, H = cv.clientHeight;
+      if (!W || !H) return;
+      cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+      const full = PRICE.data, n = full.c.length, k = Math.min(n, PRICE.range), from = n - k;
+      const c = full.c.slice(from), d = full.d.slice(from), m50 = PRICE.m50.slice(from), m200 = PRICE.m200.slice(from);
+      const dd = drawdownSeries(c);
+      const showM50 = document.getElementById('chkMa50').checked, showM200 = document.getElementById('chkMa200').checked;
+      const FONT = '-apple-system, "Segoe UI", "Noto Sans KR", sans-serif';
+      const padL = 54, padR = 10, mainTop = 8, mainH = Math.round(H * 0.66), ddTop = mainTop + mainH + 20, ddH = H - ddTop - 20;
+      const plotW = W - padL - padR, step = k > 1 ? plotW / (k - 1) : 0;
+      const xs = (i) => padL + i * step;
+      PRICE.geom = { padL: padL, step: step, k: k };
+      const st = priceStats(full.c);
+      let lo = Infinity, hi = -Infinity;
+      const feed = (v) => { if (v != null) { if (v < lo) lo = v; if (v > hi) hi = v; } };
+      c.forEach(feed); if (showM50) m50.forEach(feed); if (showM200) m200.forEach(feed); feed(st.hi); feed(st.lo);
+      const pad = (hi - lo) * 0.06; lo -= pad; hi += pad;
+      const ys = (v) => mainTop + mainH - (v - lo) / (hi - lo) * mainH;
+      ctx.font = '10px ' + FONT; ctx.textAlign = 'right'; ctx.fillStyle = '#94a3b8'; ctx.strokeStyle = '#eef2f7'; ctx.lineWidth = 1;
+      for (let g = 0; g <= 3; g++) { const v = lo + (hi - lo) * g / 3, y = ys(v); ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + plotW, y); ctx.stroke(); ctx.fillText(Math.round(v).toLocaleString(), padL - 6, y + 3); }
+      ctx.setLineDash([5, 4]); ctx.lineWidth = 1;
+      [[st.hi, '#dc2626', '52주 고가'], [st.lo, '#2563eb', '52주 저가']].forEach((l) => { const y = ys(l[0]); ctx.strokeStyle = l[1]; ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + plotW, y); ctx.stroke(); ctx.fillStyle = l[1]; ctx.textAlign = 'left'; ctx.fillText(l[2], padL + 3, y - 3); });
+      ctx.setLineDash([]);
+      const line = (arr, color, w) => { ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineJoin = 'round'; ctx.beginPath(); let s0 = false; arr.forEach((v, i) => { if (v == null) { s0 = false; return; } if (!s0) { ctx.moveTo(xs(i), ys(v)); s0 = true; } else ctx.lineTo(xs(i), ys(v)); }); ctx.stroke(); };
+      if (showM200) line(m200, '#7c3aed', 1.4);
+      if (showM50) line(m50, '#ea580c', 1.4);
+      line(c, '#2563eb', 1.8);
+      priceJumps(c).forEach((i) => { ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(xs(i), mainTop); ctx.lineTo(xs(i), mainTop + mainH); ctx.stroke(); });
+      ctx.textAlign = 'left'; ctx.font = '11px ' + FONT; let lx = padL + 4;
+      [['종가', '#2563eb', true], ['50일선', '#ea580c', showM50], ['200일선', '#7c3aed', showM200]].forEach((l) => { if (!l[2]) return; ctx.fillStyle = l[1]; ctx.fillRect(lx, mainTop + mainH + 3, 10, 3); ctx.fillStyle = '#475569'; ctx.fillText(l[0], lx + 14, mainTop + mainH + 8); lx += 14 + ctx.measureText(l[0]).width + 12; });
+      const minDD = Math.min.apply(null, dd), ddLo = Math.min(minDD * 1.1, -0.02);
+      const yd = (v) => ddTop + v / ddLo * ddH;
+      ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'right'; ctx.font = '10px ' + FONT; ctx.fillText('0%', padL - 6, ddTop + 3); ctx.fillText((ddLo * 100).toFixed(0) + '%', padL - 6, ddTop + ddH + 3);
+      ctx.strokeStyle = '#eef2f7'; ctx.beginPath(); ctx.moveTo(padL, ddTop); ctx.lineTo(padL + plotW, ddTop); ctx.stroke();
+      ctx.fillStyle = 'rgba(220,38,38,0.18)'; ctx.beginPath(); ctx.moveTo(xs(0), ddTop); dd.forEach((v, i) => ctx.lineTo(xs(i), yd(v))); ctx.lineTo(xs(k - 1), ddTop); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#dc2626'; ctx.lineWidth = 1.2; ctx.beginPath(); dd.forEach((v, i) => { if (i === 0) ctx.moveTo(xs(i), yd(v)); else ctx.lineTo(xs(i), yd(v)); }); ctx.stroke();
+      ctx.fillStyle = '#64748b'; ctx.textAlign = 'left'; ctx.fillText('고점 대비 낙폭(표시 구간 기준) · 최대 ' + (minDD * 100).toFixed(1) + '%', padL + 3, ddTop + ddH + 12);
+      ctx.fillStyle = '#94a3b8';
+      [0, Math.floor((k - 1) / 2), k - 1].forEach((i, j) => { ctx.textAlign = j === 0 ? 'left' : (j === 2 ? 'right' : 'center'); ctx.fillText(d[i].slice(0, 4) + '-' + d[i].slice(4, 6) + '-' + d[i].slice(6, 8), j === 0 ? padL : (j === 2 ? padL + plotW : xs(i)), H - 2); });
+      if (PRICE.hover != null && PRICE.hover >= 0 && PRICE.hover < k) {
+        const i = PRICE.hover, x = xs(i);
+        ctx.strokeStyle = '#64748b'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(x, mainTop); ctx.lineTo(x, ddTop + ddH); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = '#2563eb'; ctx.beginPath(); ctx.arc(x, ys(c[i]), 3.5, 0, 6.3); ctx.fill();
+        const lines = [d[i].slice(0, 4) + '-' + d[i].slice(4, 6) + '-' + d[i].slice(6, 8), '종가 ' + Math.round(c[i]).toLocaleString() + '원', m50[i] != null ? '50일선 ' + Math.round(m50[i]).toLocaleString() : '', m200[i] != null ? '200일선 ' + Math.round(m200[i]).toLocaleString() : '', '낙폭 ' + (dd[i] * 100).toFixed(1) + '%'].filter(Boolean);
+        ctx.font = '11px ' + FONT; const bw = Math.max.apply(null, lines.map((t) => ctx.measureText(t).width)) + 14, bh = lines.length * 15 + 8;
+        let bx = x + 10; if (bx + bw > W - 2) bx = x - 10 - bw;
+        ctx.fillStyle = 'rgba(15,23,42,0.88)'; ctx.fillRect(bx, mainTop + 4, bw, bh);
+        ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; lines.forEach((t, li) => ctx.fillText(t, bx + 7, mainTop + 18 + li * 15));
+      }
+      if (!PRICE.listeners) {
+        const mv = (ev) => { if (!PRICE.geom) return; const r = cv.getBoundingClientRect(), t = ev.touches && ev.touches.length ? ev.touches[0] : ev; let i = Math.round((t.clientX - r.left - PRICE.geom.padL) / (PRICE.geom.step || 1)); i = Math.max(0, Math.min(PRICE.geom.k - 1, i)); if (i !== PRICE.hover) { PRICE.hover = i; drawPrice(); } };
+        cv.addEventListener('mousemove', mv); cv.addEventListener('touchmove', mv, { passive: true }); cv.addEventListener('touchstart', mv, { passive: true });
+        cv.addEventListener('mouseleave', () => { PRICE.hover = null; drawPrice(); });
+        window.addEventListener('resize', () => { drawPrice(); });
+        PRICE.listeners = true;
+      }
+    }
+
     function setSubTab(k) {
       subTab = k;
       ['summary', 'table', 'five', 'compare'].forEach(function (x) {
@@ -4122,6 +4309,7 @@ function renderAnalysis() {
       await fetchLatestPrice();
       if (seq != null && seq !== analyzeSeq) return;
       pushRecent(document.getElementById('corpName').value.trim());
+      loadPriceSeries();
       loadDbCompanies(true).catch(() => {}); // 새로 저장된 종목이 있을 수 있어 목록 갱신(저장 종목 패널·배지)
       renderSummary();
       renderFiveStep();
@@ -4275,6 +4463,7 @@ function renderAnalysis() {
         chartSel.push({ key: key, label: label });
       }
       chartHoverIdx = null;
+      if (dockMode === 'price') { setDock('custom'); return; } // 표 머리글 더블클릭으로 고른 항목을 위쪽 차트 독에 보여준다
       renderChartPanel(true);
     }
     function removeChartItem(key) {
@@ -4335,7 +4524,7 @@ function renderAnalysis() {
 
     function renderChartPanel(scroll) {
       const wrap = document.getElementById('chartWrap');
-      if (chartSel.length === 0) { wrap.style.display = 'none'; return; }
+      if (chartSel.length === 0 || dockMode === 'price') { wrap.style.display = 'none'; return; }
       wrap.style.display = 'block';
       document.getElementById('chartTitle').textContent = '항목 추이 비교 (' + chartSel.length + '/' + CHART_MAX + ')';
       let chips = chartSel.map((s, i) =>
@@ -5985,6 +6174,24 @@ async function handleRequest(request, env) {
         out.kospi[key] = rk;
       }
       return Response.json(out);
+    }
+
+    // 일별 종가 시계열(차트용). 최대 약 3년. 수정주가가 아니라서 액면분할·병합이 있으면 가격이 끊겨 보이므로 화면에서 ±30% 초과 변동일을 알려준다.
+    if (pathname === "/api/price/series") {
+      const corpName = searchParams.get("corp_name");
+      const corpRow = await env.DB.prepare("SELECT corp_name, stock_code FROM corp_master WHERE corp_name = ?").bind(corpName).first();
+      if (!corpRow) return Response.json({ error: `'${corpName}' 종목을 corp_master에서 찾을 수 없습니다.` }, { status: 404 });
+      if (!corpRow.stock_code) return Response.json({ error: "종목코드가 없어 주가를 조회할 수 없습니다." }, { status: 400 });
+      if (!env.DATA_GO_KR_KEY) return Response.json({ error: "DATA_GO_KR_KEY 미설정" }, { status: 500 });
+      const days = Math.min(Math.max(Number(searchParams.get("days")) || 1100, 90), 1200);
+      const ymd = (d) => d.toISOString().slice(0, 10).replace(/-/g, "");
+      const kstNow = new Date(Date.now() + 9 * 3600 * 1000);
+      const hist = (await fetchKrxStockHistory(corpRow.stock_code, ymd(new Date(kstNow.getTime() - days * 86400000)), ymd(kstNow), env.DATA_GO_KR_KEY)).filter((x) => x.close > 0);
+      if (!hist.length) return Response.json({ error: "data.go.kr에서 이 종목의 시세를 받지 못했습니다." }, { status: 502 });
+      return new Response(JSON.stringify({
+        corp_name: corpRow.corp_name, stock_code: corpRow.stock_code, n: hist.length, from: hist[0].date, to: hist[hist.length - 1].date,
+        d: hist.map((x) => x.date), c: hist.map((x) => x.close), v: hist.map((x) => x.volume == null ? null : x.volume),
+      }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "private, max-age=300" } });
     }
 
     if (pathname === "/api/trend/stock") {

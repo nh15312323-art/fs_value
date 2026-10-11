@@ -18,8 +18,9 @@ const lineOf = (prefix) => { const l = text.split('\n').find((x) => x.startsWith
 const fcfSrc = between('function anFcfType(c) {', '// ---------- 전체 컨텍스트');
 const screenExtra = between('const SCREEN_MOM_DAYS', 'const SCREEN_LIST_KEYS');
 const fiscalClient = unescapeTpl(between('function btSplitFiscal(comps) {', 'async function checkFiscalMonths'));
+const priceFns = between('function smaSeries(arr, n) {', 'let PRICE = {');
 const code = [
-  screenExtra,
+  screenExtra, priceFns,
   keys, server, nextDay, fiscalClient, // server 구간에 결산월 함수가 이미 포함됨
   [lineOf('const AN_TH ='), lineOf('const anFin ='), lineOf('const anDiv ='), lineOf('const anPct ='), lineOf('const anMean ='), lineOf('const anWin ='), 'const anFmt = (k, v) => String(v);'].join('\n'),
   fcfSrc,
@@ -29,7 +30,7 @@ const code = [
   'const anBuildSeries = (rows) => { const ys = rows.filter((r) => r.reprt_code === "11011").map((r) => Number(r.bsns_year)); return ys.length ? [{ year: Math.max(...ys) }] : []; };',
   'const BT_FACTORS = { f: { fn: () => 1 } }; const btRankAvg = (a) => a.map((_, i) => i / a.length);',
   annualSrc,
-  'return { SCREEN_EXTRA_SQL, SCREEN_JUMP_LIMIT, screenExtraMetric, getTTMFlow, getIsolatedQ4, toQuarterlyRows, firstCloseAfter, btBuildAnnual, anFcfType, parseAccMt, fiscalSkipDates, btSplitFiscal, fiscalBanner, setStocks: (s) => { BT.stocks = s; }, getBT: () => BT };',
+  'return { smaSeries, drawdownSeries, priceJumps, priceStats, SCREEN_EXTRA_SQL, SCREEN_JUMP_LIMIT, screenExtraMetric, getTTMFlow, getIsolatedQ4, toQuarterlyRows, firstCloseAfter, btBuildAnnual, anFcfType, parseAccMt, fiscalSkipDates, btSplitFiscal, fiscalBanner, setStocks: (s) => { BT.stocks = s; }, getBT: () => BT };',
 ].join('\n');
 const T = new Function(code)();
 
@@ -177,6 +178,16 @@ for (const y of [2024, 2025]) {
     r = await fetchPeriodRow('C_KNOWN', '000004', PERIOD, 'https://proxy.example/exec', db);
     check('이미 9월 결산으로 저장됨: 회사개요를 다시 조회하지 않고 날짜 기반 값 생략', !calls.company && r.price_at_filing == null && !calls.naver, JSON.stringify(calls));
   } finally { globalThis.fetch = realFetch; }
+  // ⑥ 주가 차트 계산(이동평균·낙폭·불연속·52주 통계)
+  const sm = T.smaSeries([1, 2, 3, 4, 5, 6], 3);
+  check('이동평균: 처음 n-1개는 null, 이후 평균', sm[0] === null && sm[1] === null && near(sm[2], 2) && near(sm[5], 5), JSON.stringify(sm));
+  const ddn = T.drawdownSeries([100, 120, 90, 130, 65]);
+  check('낙폭: 고점 대비(120→90 = -25%, 130→65 = -50%)', near(ddn[0], 0) && near(ddn[2], -0.25) && near(ddn[3], 0) && near(ddn[4], -0.5), JSON.stringify(ddn));
+  check('불연속: -50%·+40%는 감지, 29%는 아님', JSON.stringify(T.priceJumps([100, 50, 70, 90, 116.1])) === JSON.stringify([1, 2]), JSON.stringify(T.priceJumps([100, 50, 70, 90, 116.1])));
+  const series = Array.from({ length: 300 }, (_, i) => 100 + i);   // 단조 상승 300일
+  const ps = T.priceStats(series);
+  check('52주 통계: 신고가 → 고가 대비 0%, 저가는 최근 252일 최소값', near(ps.fromHi, 0) && ps.lo === 100 + 300 - 252 && ps.nWin === 252 && ps.vsM200 > 0 && near(ps.maxDD, 0), JSON.stringify(ps));
+  check('데이터 200일 미만이면 200일선 대비 = null(만들지 않음)', T.priceStats(series.slice(0, 120)).vsM200 === null);
   console.log(fail ? '\n실패 ' + fail + '건' : '\n전체 통과');
   process.exit(fail ? 1 : 0);
 })();
