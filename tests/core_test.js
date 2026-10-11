@@ -14,15 +14,19 @@ const server = between('const REPRT_CODE_BY_Q', 'async function fetchPeriodRow')
 const nextDay = between('function firstCloseAfter', 'function closeAsOf');
 let client = unescapeTpl(between('function toQuarterlyRows(rows) {', 'function toAnnualRows'));
 const annualSrc = unescapeTpl(between('function btBuildAnnual(keys, o) {', '// 분기 모멘텀:'));
+const lineOf = (prefix) => { const l = text.split('\n').find((x) => x.startsWith(prefix)); if (!l) throw new Error('소스에서 줄을 찾지 못했습니다: ' + prefix); return l; };
+const fcfSrc = between('function anFcfType(c) {', '// ---------- 전체 컨텍스트');
 const code = [
   keys, server, nextDay,
+  [lineOf('const AN_TH ='), lineOf('const anFin ='), lineOf('const anDiv ='), lineOf('const anPct ='), lineOf('const anMean ='), lineOf('const anWin ='), 'const anFmt = (k, v) => String(v);'].join('\n'),
+  fcfSrc,
   'const FLOW_KEYS_ = FLOW_KEYS; const CF_CUM_KEYS = CF_CUMULATIVE_KEYS; const isUsable = (r) => !r.error && r.fs_div != null;',
   client.replace(/\bFLOW_KEYS\b/g, 'FLOW_KEYS_'),
-  'let BT = { stocks: [] }; const anFin = (v) => typeof v === "number" && isFinite(v);',
+  'let BT = { stocks: [] };',
   'const anBuildSeries = (rows) => { const ys = rows.filter((r) => r.reprt_code === "11011").map((r) => Number(r.bsns_year)); return ys.length ? [{ year: Math.max(...ys) }] : []; };',
   'const BT_FACTORS = { f: { fn: () => 1 } }; const btRankAvg = (a) => a.map((_, i) => i / a.length);',
   annualSrc,
-  'return { getTTMFlow, getIsolatedQ4, toQuarterlyRows, firstCloseAfter, btBuildAnnual, setStocks: (s) => { BT.stocks = s; }, getBT: () => BT };',
+  'return { getTTMFlow, getIsolatedQ4, toQuarterlyRows, firstCloseAfter, btBuildAnnual, anFcfType, setStocks: (s) => { BT.stocks = s; }, getBT: () => BT };',
 ].join('\n');
 const T = new Function(code)();
 
@@ -79,6 +83,25 @@ for (const y of [2024, 2025]) {
   const item = periods.length ? periods[0].items.find((x) => x.id === 'A') : null;
   check('수익률 = next_day 기준 1210/1100-1 (공시일 가격 1500/1000-1 아님)', item && near(item.f, 1210 / 1100 - 1), item ? 'f=' + item.f : 'no item');
   check('다음 거래일 가격 없는 종목은 제외·집계', !periods[0].items.some((x) => x.id === 'B') && T.getBT().skipNoNext === 1, 'skip=' + T.getBT().skipNoNext);
+  // ④ FCF 유형 분류
+  const pt = (year, ocf, capex, revenue, shares) => ({ year, ocf, capex, fcf: (ocf != null && capex != null) ? ocf - capex : null, revenue, shares: shares || 1000,
+    fcfm: (ocf != null && capex != null) ? (ocf - capex) / revenue : null, capexRev: capex != null ? capex / revenue : null, cfoni: 1.0 });
+  const mkc = (list, o) => Object.assign({ list, growthRev: 0.08, fcfDown: false, fcfm3: 0.10, fcfm5: 0.09 }, o || {});
+  const names = (r) => (r.head.text || '');
+  const comp = T.anFcfType(mkc([pt(2021, 100, 40, 1000), pt(2022, 110, 40, 1100), pt(2023, 125, 45, 1200), pt(2024, 140, 50, 1300), pt(2025, 160, 55, 1400)]));
+  check('꾸준한 FCF 흑자·매출 성장 → Compounder', names(comp).includes('FCF Compounder') && !names(comp).includes('Emerging'), comp.head.text);
+  const emer = T.anFcfType(mkc([pt(2021, 20, 60, 500), pt(2022, 30, 70, 600), pt(2023, 40, 60, 700), pt(2024, 60, 55, 800), pt(2025, 90, 50, 900)], { fcfm3: 0.01, fcfm5: -0.03, fcfDown: false }));
+  check('적자 후 흑자 전환·CFO 개선 → Emerging (FCF Compounder 아님)', names(emer).includes('Emerging') && !names(emer).includes('FCF Compounder'), emer.head.text);
+  const reinv = T.anFcfType(mkc([pt(2021, 100, 85, 1000), pt(2022, 120, 105, 1200), pt(2023, 150, 135, 1500), pt(2024, 190, 175, 1900), pt(2025, 240, 225, 2400)], { growthRev: 0.25, fcfm3: 0.01, fcfm5: 0.012, fcfDown: true }));
+  check('CFO 증가·CAPEX 과다·FCF 낮음 → Growth Reinvestment', names(reinv).includes('Growth Reinvestment'), reinv.head.text);
+  check('CFO 마진이 매년 같으면 악화로 보지 않음(소수점 오차 방어)', reinv.types.find((t) => t.name === 'Growth Reinvestment').conds[5][1] === true);
+  const trap = T.anFcfType(mkc([pt(2021, 50, 20, 1000, 1000), pt(2022, -10, 25, 1200, 1050), pt(2023, 5, 30, 1400, 1150), pt(2024, -20, 35, 1600, 1250), pt(2025, -30, 40, 1800, 1400)], { growthRev: 0.15, fcfm3: -0.04, fcfm5: -0.01, fcfDown: true }));
+  check('매출 성장·CFO 적자·희석 → Growth Trap', names(trap).includes('Growth Trap'), trap.head.text);
+  check('Trap의 반대 근거에 희석 경고 포함', trap.counters.some((t) => t.includes('희석')), JSON.stringify(trap.counters));
+  const thin = T.anFcfType(mkc([pt(2024, 100, 40, 1000), pt(2025, 110, 40, 1100)]));
+  check('FCF 연도 부족(2개) → 판정 보류, 유형 없음', thin.types.length === 0 && thin.head.text.includes('판정 보류'), thin.head.text);
+  const nocx = T.anFcfType(mkc([pt(2021, 100, null, 1000), pt(2022, 110, null, 1100), pt(2023, 125, null, 1200), pt(2024, 140, null, 1300), pt(2025, 160, null, 1400)]));
+  check('CAPEX 미확인(FCF 없음)이면 흑자로 가정하지 않고 판정 보류', nocx.types.length === 0 && nocx.nF === 0, nocx.head.text);
   console.log(fail ? '\n실패 ' + fail + '건' : '\n전체 통과');
   process.exit(fail ? 1 : 0);
 })();
