@@ -14,7 +14,10 @@ const state = { policy, trades: [{ id: 1, trade_date: '20250102', side: 'buy', c
 const srv = http.createServer((q, r) => {
   if (q.url === '/') { r.setHeader('content-type', 'text/html;charset=utf-8'); return r.end(HTML_PAGE); }
   r.setHeader('content-type', 'application/json');
+  if (q.url.startsWith('/api/stock/list')) return r.end(JSON.stringify({ stocks: [{ n: '테스트전자', c: '111111' }, { n: '가나다', c: '222222' }] }));
+  if (q.url.startsWith('/api/db/companies')) return r.end(JSON.stringify({ companies: [] }));
   if (q.url.startsWith('/api/pf/')) {
+    if (q.url.startsWith('/api/pf/quote')) return r.end(JSON.stringify({ corp_name: '테스트전자', stock_code: '111111', close: 11000, date: '20250102', adv20: 5e9, advN: 20 }));
     if (q.headers['x-pf-key'] !== KEY) { r.statusCode = 401; return r.end(JSON.stringify({ error: '접근 키가 맞지 않습니다.' })); }
     if (q.url.startsWith('/api/pf/ping')) return r.end('{"ok":true}');
     if (q.url.startsWith('/api/pf/state')) return r.end(JSON.stringify(state));
@@ -33,18 +36,34 @@ ok('탭 전환: 키 입력 칸만 보이고 본문은 숨김', await pg.isVisibl
 await pg.fill('#pfuKey', 'wrongwrongwrong'); await pg.click('#pfuGate button'); await pg.waitForTimeout(200);
 ok('틀린 키 → 오류 문구, 본문 안 열림', (await pg.innerText('#pfuGateMsg')).includes('맞지 않') && !(await pg.isVisible('#pfuMain')));
 await pg.fill('#pfuKey', KEY); await pg.click('#pfuGate button'); await pg.waitForTimeout(400);
-ok('올바른 키 → 현황 표시', await pg.isVisible('#pfuMain') && (await pg.innerText('#pfuSummary')).includes('10,100,000'));
-ok('서버 경고 문구가 그대로 표시', (await pg.innerText('#pfuSummary')).includes('현금 경고 테스트'));
-ok('보유 종목 표에 비중·업종', (await pg.innerText('#pfuHold')).includes('테스트전자') && (await pg.innerText('#pfuHold')).includes('전자'));
-await pg.click('#pfuNb_trade'); await pg.fill('#pftName', '테스트전자'); await pg.fill('#pftQty', '10'); await pg.fill('#pftPrice', '9000');
-await pg.click('#pfuP_trade button:has-text("기록")'); await pg.waitForTimeout(300);
+ok('올바른 키 → 현황 표시', await pg.isVisible('#pfuMain') && (await pg.innerText('#pfuSummary')).includes('10,100,000') && (await pg.innerText('#pfuSummary')).includes('+10.0%'));
+ok('현황: 보유 종목이 카드로, 막대와 한도선 표시', (await pg.$$('.pfc')).length === 1 && (await pg.$$('.pfc-bar u')).length === 1);
+ok('현황: 위험 기준가 미이탈이면 해당 경고 없음, 서버 경고는 "확인할 것"에 표시', (await pg.innerText('#pfuAlerts')).includes('현금 경고 테스트') && !(await pg.innerText('#pfuAlerts')).includes('위험관리 기준가'));
+ok('플로팅 [＋ 기록] 버튼이 보임', await pg.isVisible('#pfuFab'));
+await pg.click('.pfc button[data-act="buy"]'); await pg.waitForTimeout(500);
+ok('카드의 [매수] → 시트가 열리고 종목명·현재가가 자동 입력', await pg.isVisible('#pfuSheet') && (await pg.inputValue('#pftName')) === '테스트전자' && (await pg.inputValue('#pftPrice')) === '11000');
+ok('시트에 종가·보유·계획 상태 문구', (await pg.innerText('#pftCtx')).includes('보유 100주') && (await pg.innerText('#pftCtx')).includes('계획 보유'));
+await pg.fill('#pftQty', '10'); await pg.fill('#pftPrice', '9000'); await pg.waitForTimeout(100);
+ok('체결 후 비중·현금 미리보기', (await pg.innerText('#pftPrev')).includes('체결 후 비중') && (await pg.innerText('#pftPrev')).includes('현금'), await pg.innerText('#pftPrev'));
+await pg.click('#pftEmo button:has-text("불안")');
+ok('감정 칩 선택 표시', (await pg.$$eval('#pftEmo button.on', (e) => e.map((x) => x.textContent))).join() === '불안');
+await pg.click('#pftGo'); await pg.waitForTimeout(300);
 ok('409 → 경고 박스 + 점검표 6개 + 이유 칸', (await pg.innerText('#pftWarn')).includes('추가 매수 테스트') && (await pg.$$('.pftChk')).length === 6);
 await pg.fill('#pftAck', '충분히 적은 이유'); await pg.click('#pftWarn button:has-text("알고 기록")'); await pg.waitForTimeout(200);
 ok('점검표를 다 체크하지 않으면 전송하지 않음', posted.length === 1);
 for (const c of await pg.$$('.pftChk')) await c.check();
-await pg.click('#pftWarn button:has-text("알고 기록")'); await pg.waitForTimeout(400);
-ok('모두 체크·이유 입력 후 ack 전송', posted.length === 2 && posted[1].ack === true && posted[1].checks.length === 6 && posted[1].ack_reason === '충분히 적은 이유');
-await pg.click('#pfuNb_plan'); await pg.fill('#pfcName', '테스트전자'); await pg.fill('#pfcBuy', '10000'); await pg.fill('#pfcRisk', '9000'); await pg.fill('#pfcAdv', '5000000000'); await pg.click('#pfuP_plan button:has-text("계산")'); await pg.waitForTimeout(100);
+await pg.click('#pftWarn button:has-text("알고 기록")'); await pg.waitForTimeout(600);
+ok('모두 체크·이유 입력 후 ack 전송(감정 포함)', posted.length === 2 && posted[1].ack === true && posted[1].checks.length === 6 && posted[1].emotion === '불안' && posted[1].ack_reason === '충분히 적은 이유');
+ok('기록 후 시트가 닫히고 현황 화면에서 토스트로 결과 확인', !(await pg.isVisible('#pfuSheet')) && (await pg.innerText('#pfuToast')).includes('기록 완료'), await pg.innerText('#pfuToast'));
+await pg.click('#pfuFab'); await pg.waitForTimeout(100);
+await pg.click('#pftSeg button[data-side="deposit"]');
+ok('입금 모드: 종목·수량 칸 숨김, 금액 안내', !(await pg.isVisible('#pftName')) && !(await pg.isVisible('#pftQty')) && (await pg.getAttribute('#pftPrice', 'placeholder')) === '금액(원)');
+await pg.click('#pftSeg button[data-side="sell"]'); await pg.fill('#pftName', '테스트전자'); await pg.keyboard.press('Enter'); await pg.waitForTimeout(500);
+ok('매도 모드: 종목명 입력(Enter) → 25/50/전량 빠른 버튼', (await pg.innerText('#pftQuick')).includes('전량'), await pg.innerText('#pftQuick'));
+await pg.click('#pftQuick button:has-text("전량")');
+ok('전량 버튼 → 보유 수량 자동 입력', (await pg.inputValue('#pftQty')) === '100');
+await pg.click('#pfuSheet .pf-sheet-body button:has-text("✕")');
+await pg.click('#pfuNb_plan'); await pg.fill('#pfcName', '테스트전자'); await pg.waitForTimeout(300); await pg.fill('#pfcBuy', '10000'); await pg.fill('#pfcRisk', '9000'); await pg.fill('#pfcAdv', '5000000000'); await pg.click('#pfuP_plan button:has-text("계산")'); await pg.waitForTimeout(100);
 const co = await pg.innerText('#pfcOut');
 // 총자산 10.1M, 위험예산 0.5% = 50,500 / 주당손실 1000 = 50주. 집중도: 15% = 1,515,000 − 1,100,000 = 415,000/10000 = 41주 → 최소 41
 ok('계산기: 한도 중 최소(집중도 41주) 채택', co.includes('41주') && co.includes('집중도'), co.slice(0, 120));

@@ -180,6 +180,51 @@ const HTML_PAGE = `<!doctype html>
     .pfl { display: flex; flex-direction: column; font-size: 12px; color: var(--text-muted); gap: 3px; flex: 1; min-width: 150px; }
     .pfl input { width: 100%; }
     textarea { font-size: 14px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-family: inherit; }
+    /* ---- 화면 이동 최소화(스크롤 줄이기) ---- */
+    :root { --navh: 48px; --subh: 0px; }
+    .subnav.sticky { position: sticky; top: var(--navh); z-index: 16; background: var(--bg); padding: 6px 0; margin: 0 0 8px; overflow-x: auto; flex-wrap: nowrap; border-bottom: 1px solid var(--border); }
+    .subnav.sticky button { white-space: nowrap; flex: 0 0 auto; }
+    #searchCard.compact #comboHint_corpName:empty, #searchCard.compact #watchlistWrap, #searchCard.compact #savedBox, #searchCard.compact .adv, #searchCard.compact #stockMeta { display: none; }
+    #searchCard.compact { padding: 8px 10px; margin-bottom: 8px; }
+    .an-sticky { position: sticky; top: calc(var(--navh) + var(--subh)); z-index: 12; display: flex; flex-wrap: nowrap; gap: 6px; align-items: center; overflow-x: auto; padding: 6px 8px; margin: 0 0 8px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; font-size: 12px; }
+    .an-sticky button { white-space: nowrap; flex: 0 0 auto; }
+    #chartDock.folded #priceBox, #chartDock.folded #chartWrap, #chartDock.folded #dockViewRow { display: none !important; }
+    #analysis > * { scroll-margin-top: calc(var(--navh) + var(--subh) + 52px); }
+    #fabTop { position: fixed; right: 12px; bottom: 16px; z-index: 40; width: 44px; height: 44px; border-radius: 50%; padding: 0; font-size: 18px; box-shadow: 0 4px 14px rgba(15,23,42,.25); display: none; background: #0f172a; color: #fff; border: 0; }
+    @media (max-width: 560px) { #priceCanvas { height: 250px !important; } }
+    /* ---- 내 계좌 ---- */
+    .pf-kpi { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .pf-kpi > div { background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+    .pf-kpi small { display: block; font-size: 11px; color: var(--text-muted); }
+    .pf-kpi b { font-size: 17px; }
+    .pf-pos { color: #16a34a; } .pf-neg { color: #dc2626; }
+    .pf-chip { display: inline-block; font-size: 12.5px; padding: 5px 10px; border-radius: 999px; margin: 3px 4px 3px 0; background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; }
+    .pf-chip.bad { background: #fef2f2; border-color: #fca5a5; color: #991b1b; }
+    .pf-chip.info { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
+    .pfc { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; background: #fff; }
+    .pfc.flash { animation: pfflash 2.2s ease-out; }
+    @keyframes pfflash { 0% { background: #dcfce7; } 100% { background: #fff; } }
+    .pfc-h { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .pfc-bar { position: relative; height: 8px; background: #e2e8f0; border-radius: 4px; margin: 8px 0 4px; }
+    .pfc-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: #2563eb; border-radius: 4px; }
+    .pfc-bar i.over { background: #dc2626; }
+    .pfc-bar u { position: absolute; top: -3px; bottom: -3px; width: 2px; background: #0f172a; }
+    .pfc-m { font-size: 12.5px; color: var(--text-muted); line-height: 1.55; }
+    .pfc .row button { padding: 6px 12px; font-size: 13px; }
+    #pfuFab { position: fixed; right: 14px; bottom: 70px; z-index: 45; border-radius: 999px; padding: 12px 18px; font-size: 15px; font-weight: 700; background: var(--primary); color: #fff; border: 0; box-shadow: 0 6px 18px rgba(37,99,235,.4); display: none; }
+    .pf-sheet { position: fixed; inset: 0; z-index: 60; display: none; }
+    .pf-sheet-bg { position: absolute; inset: 0; background: rgba(15,23,42,.45); }
+    .pf-sheet-body { position: absolute; left: 0; right: 0; bottom: 0; max-width: 640px; margin: 0 auto; max-height: 92vh; overflow-y: auto; background: #fff; border-radius: 16px 16px 0 0; padding: 14px 14px 22px; }
+    .seg { display: flex; gap: 6px; margin: 8px 0; }
+    .seg button { flex: 1; padding: 9px 4px; font-size: 14px; font-weight: 700; }
+    .seg button.on.buy { background: #dc2626; color: #fff; border-color: #dc2626; }
+    .seg button.on.sell { background: #2563eb; color: #fff; border-color: #2563eb; }
+    .seg button.on.cash { background: #0f172a; color: #fff; border-color: #0f172a; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+    .chips button { padding: 5px 10px; font-size: 13px; border-radius: 999px; }
+    .chips button.on { background: #0f172a; color: #fff; border-color: #0f172a; }
+    .pf-prev { font-size: 13px; line-height: 1.6; background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin: 8px 0; min-height: 20px; }
+    #pfuToast { position: fixed; left: 12px; right: 12px; bottom: 24px; max-width: 520px; margin: 0 auto; z-index: 70; background: #0f172a; color: #fff; padding: 10px 14px; border-radius: 10px; font-size: 13px; line-height: 1.5; display: none; }
     .subnav { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
     .subnav button { padding: 7px 12px; font-size: 13.5px; border-radius: 999px; }
     .meta-line { font-size: 12.5px; color: var(--text-muted); line-height: 1.55; margin-top: 8px; }
@@ -298,6 +343,7 @@ const HTML_PAGE = `<!doctype html>
 </head>
 <body>
   <div id="globalError"></div>
+  <button id="fabTop" onclick="window.scrollTo({ top: 0, behavior: 'smooth' })" title="맨 위로">▲</button>
   <div class="topbar">
     <div class="brand">📊 한국주식 스크리닝 · 재무분석</div>
     <div class="tagline">DART 공시 · 공공데이터포털 시세 · 한국은행(ECOS)/FRED 거시지표</div>
@@ -314,11 +360,12 @@ const HTML_PAGE = `<!doctype html>
 
   <!-- ===================== ② 종목분석 ===================== -->
   <div id="tabFinancial">
-    <div class="card">
+    <div class="card" id="searchCard">
       <div class="row">
         <span class="combo"><input id="corpName" placeholder="종목명·종목코드·초성 (예: 삼성전자, 005930, ㅅㅅㅈㅈ)" autocomplete="off" /></span>
         <button class="primary" onclick="analyzeStock()">분석하기</button>
         <button id="btnWatch" onclick="toggleWatchlist()" title="관심종목에 추가/제거">☆ 관심</button>
+        <button id="btnSearchMore" onclick="toggleSearchCompact()" title="관심종목·저장 종목·고급 설정 펼치기/접기" style="display:none;">▾ 더보기</button>
       </div>
       <div id="comboHint_corpName" class="combo-hint"></div>
       <div id="watchlistWrap" class="row" style="margin-top:8px; gap:6px;"></div>
@@ -349,7 +396,7 @@ const HTML_PAGE = `<!doctype html>
     <div id="status"></div>
 
     <div id="stockBody" style="display:none;">
-      <div class="subnav">
+      <div class="subnav sticky" id="stockSubnav">
         <button id="subBtn_summary" class="toggle-active" onclick="setSubTab('summary')">요약 · 분류 · 밸류에이션</button>
         <button id="subBtn_table" onclick="setSubTab('table')">재무제표 표</button>
         <button id="subBtn_five" onclick="setSubTab('five')">ROE 5단계 분해</button>
@@ -365,6 +412,7 @@ const HTML_PAGE = `<!doctype html>
           <button id="dockBtn_value" onclick="setDock('value')" style="padding:6px 11px; font-size:13px;">밸류에이션</button>
           <button id="dockBtn_safety" onclick="setDock('safety')" style="padding:6px 11px; font-size:13px;">재무안정</button>
           <button id="dockBtn_holder" onclick="setDock('holder')" style="padding:6px 11px; font-size:13px;">주주환원</button>
+          <button id="dockFold" onclick="toggleDockFold()" style="padding:6px 11px; font-size:13px; margin-left:auto;" title="차트를 접어 아래 내용을 바로 봅니다">▴ 접기</button>
         </div>
         <div id="dockViewRow" class="row" style="margin-top:8px; display:none;">
           <span style="font-size:12.5px; color:var(--text-muted);">기간 단위</span>
@@ -628,20 +676,25 @@ const HTML_PAGE = `<!doctype html>
       <div class="subnav" id="pfuNav">
         <button onclick="pfuPanel('home')" id="pfuNb_home">현황</button>
         <button onclick="pfuPanel('plan')" id="pfuNb_plan">계획·수량</button>
-        <button onclick="pfuPanel('trade')" id="pfuNb_trade">거래 기록</button>
+        <button onclick="pfuPanel('ledger')" id="pfuNb_ledger">원장</button>
         <button onclick="pfuPanel('check')" id="pfuNb_check">행동 점검</button>
         <button onclick="pfuPanel('policy')" id="pfuNb_policy">정책</button>
       </div>
       <div id="pfuMsg" class="meta-line"></div>
 
-      <div id="pfuP_home"><div class="card" id="pfuSummary"></div><div class="card" id="pfuHold"></div></div>
+      <div id="pfuP_home">
+        <div class="card" id="pfuSummary"></div>
+        <div class="card" id="pfuAlerts" style="display:none;"></div>
+        <div id="pfuHold"></div>
+      </div>
 
       <div id="pfuP_plan" style="display:none;">
         <div class="card">
           <div class="card-title">투자 계획 (가설 · 반증 조건 · 위험 기준가)</div>
-          <div class="row"><input id="pfpName" placeholder="종목명(정확히)" style="flex:1; min-width:140px;" />
+          <div class="row"><span class="combo"><input id="pfpName" placeholder="종목명·코드·초성" autocomplete="off" /></span>
             <select id="pfpStatus"><option>관찰</option><option>매수검토</option><option>보유</option><option>보류</option><option>축소검토</option><option>매도검토</option><option>종료</option></select>
             <input id="pfpSector" placeholder="업종(직접 입력)" style="width:120px;" /></div>
+          <div id="comboHint_pfpName" class="combo-hint"></div>
           <textarea id="pfpThesis" placeholder="투자 논리: 왜 이 기업인가? (사업·경쟁우위·현금흐름 근거)" style="width:100%; margin-top:8px; min-height:60px;"></textarea>
           <textarea id="pfpDis" placeholder="반증 조건: 무엇이 관측되면 이 가설이 틀렸다고 인정할지 (매수검토·보유 상태는 필수)" style="width:100%; margin-top:8px; min-height:50px;"></textarea>
           <textarea id="pfpRisk" placeholder="핵심 위험 / 대안 종목과의 비교 / 촉매" style="width:100%; margin-top:8px; min-height:50px;"></textarea>
@@ -662,34 +715,24 @@ const HTML_PAGE = `<!doctype html>
         <div class="card"><div class="card-title">저장된 계획</div><div id="pfuPlans"></div></div>
         <div class="card">
           <div class="card-title">매수 수량 계산기 (위험 예산 · 집중도 · 현금 · 유동성 중 가장 작은 값)</div>
-          <div class="row"><input id="pfcName" placeholder="종목명" style="flex:1; min-width:140px;" /><button onclick="pfuQuote()">현재가·거래대금 불러오기</button></div>
+          <div class="row"><span class="combo"><input id="pfcName" placeholder="종목명·코드·초성" autocomplete="off" /></span><button onclick="pfuQuote()">현재가·거래대금 불러오기</button></div><div id="comboHint_pfcName" class="combo-hint"></div>
           <div class="row" style="margin-top:8px;"><input id="pfcBuy" type="number" placeholder="매수 예정가" style="width:110px;" /><input id="pfcRisk" type="number" placeholder="위험관리 기준가" style="width:120px;" /><input id="pfcBear" type="number" placeholder="Bear 가격(선택)" style="width:120px;" /><input id="pfcAdv" type="number" placeholder="20일 평균 거래대금(원)" style="width:170px;" /></div>
           <div class="row" style="margin-top:8px;"><button onclick="pfuCalc()">계산</button></div>
           <div id="pfcOut" style="margin-top:10px;"></div>
         </div>
       </div>
 
-      <div id="pfuP_trade" style="display:none;">
-        <div class="card">
-          <div class="card-title">체결 내용 기록 (증권사에서 이미 체결된 것)</div>
-          <div class="row"><select id="pftSide" onchange="pfuSideChange()"><option value="buy">매수</option><option value="sell">매도</option><option value="deposit">입금</option><option value="withdraw">출금</option></select>
-            <input id="pftDate" type="date" /><input id="pftName" placeholder="종목명(정확히)" style="flex:1; min-width:140px;" /></div>
-          <div class="row" style="margin-top:8px;"><input id="pftQty" type="number" placeholder="수량(주)" style="width:100px;" /><input id="pftPrice" type="number" placeholder="체결가 (입출금은 금액)" style="width:170px;" /><input id="pftFee" type="number" placeholder="수수료(비우면 정책 비율)" style="width:170px;" /><input id="pftTax" type="number" placeholder="세금(비우면 정책)" style="width:140px;" /></div>
-          <div class="row" style="margin-top:8px;">
-            <select id="pftReason"><option value="">매도 사유 선택</option><option>가치 도달</option><option>가설 훼손</option><option>가격 위험</option><option>비중 초과</option><option>현금 필요</option><option>대체 기회</option><option>비용·세금</option></select>
-            <select id="pftEmo"><option value="">지금 감정</option><option>평온</option><option>자신감</option><option>불안</option><option>공포</option><option>탐욕</option><option>후회</option><option>지루함</option></select>
-            <input id="pftNote" placeholder="메모" style="flex:1; min-width:140px;" /></div>
-          <div class="row" style="margin-top:10px;"><button onclick="pfuSubmitTrade(false)">기록</button></div>
-          <div id="pftWarn"></div>
-        </div>
-        <div class="card"><div class="card-title">거래 원장 (삭제 없음 — 잘못된 기록은 무효 처리)</div><div id="pfuLedger"></div></div>
+      <div id="pfuP_ledger" style="display:none;">
+        <div class="card"><div class="card-title">거래 원장 (삭제 없음 — 잘못된 기록은 무효 처리)</div>
+          <input id="pflFilter" placeholder="종목명으로 거르기" oninput="pfuRenderLedger()" style="width:100%; margin-bottom:8px;" />
+          <div id="pfuLedger"></div></div>
       </div>
 
       <div id="pfuP_check" style="display:none;">
         <div class="card" id="pfuBeh"></div>
         <div class="card">
           <div class="card-title">사후 검토 일지 (결과가 아니라 과정을 평가)</div>
-          <div class="row"><input id="pfjName" placeholder="종목명(선택)" style="flex:1; min-width:140px;" /><input id="pfjOut" type="number" step="0.1" placeholder="결과 수익률 %" style="width:130px;" />
+          <div class="row"><span class="combo"><input id="pfjName" placeholder="종목명(선택)" autocomplete="off" /></span><input id="pfjOut" type="number" step="0.1" placeholder="결과 수익률 %" style="width:130px;" />
             <select id="pfjLS"><option value="">운/실력 판단</option><option>대부분 실력(과정)</option><option>반반</option><option>대부분 운</option><option>판단 불가</option></select>
             <select id="pfjEmo"><option value="">감정</option><option>평온</option><option>자신감</option><option>불안</option><option>공포</option><option>탐욕</option><option>후회</option></select></div>
           <div style="font-size:12.5px; margin-top:8px;">과정 점검 (해당하면 체크)</div>
@@ -720,6 +763,41 @@ const HTML_PAGE = `<!doctype html>
         </div>
       </div>
     </div>
+  
+  <button id="pfuFab" onclick="pfuOpenSheet('buy')">＋ 기록</button>
+  <div id="pfuToast"></div>
+  <div id="pfuSheet" class="pf-sheet">
+    <div class="pf-sheet-bg" onclick="pfuCloseSheet()"></div>
+    <div class="pf-sheet-body">
+      <div class="row" style="justify-content:space-between;"><b style="font-size:16px;">거래 기록 <span style="font-size:12px; font-weight:400; color:var(--text-muted);">(증권사에서 이미 체결된 내용)</span></b><button onclick="pfuCloseSheet()" style="padding:4px 10px;">✕</button></div>
+      <div class="seg" id="pftSeg">
+        <button class="buy" data-side="buy" onclick="pfuSetSide('buy')">매수</button>
+        <button class="sell" data-side="sell" onclick="pfuSetSide('sell')">매도</button>
+        <button class="cash" data-side="deposit" onclick="pfuSetSide('deposit')">입금</button>
+        <button class="cash" data-side="withdraw" onclick="pfuSetSide('withdraw')">출금</button>
+      </div>
+      <div id="pftStockRow">
+        <span class="combo"><input id="pftName" placeholder="종목명·코드·초성 (예: ㅅㅅㅈㅈ)" autocomplete="off" /></span>
+        <div id="comboHint_pftName" class="combo-hint"></div>
+        <div id="pftCtx" class="meta-line" style="margin-top:2px;"></div>
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <input id="pftDate" type="date" style="width:150px;" oninput="pfuPreview()" />
+        <input id="pftQty" type="number" inputmode="numeric" placeholder="수량(주)" style="width:110px;" oninput="pfuPreview()" />
+        <input id="pftPrice" type="number" inputmode="decimal" placeholder="체결가" style="flex:1; min-width:110px;" oninput="pfuPreview()" />
+      </div>
+      <div id="pftQuick" class="chips"></div>
+      <div id="pftPrev" class="pf-prev">종목을 고르면 현재가와 체결 후 비중이 여기에 미리 계산됩니다.</div>
+      <div id="pftEmoWrap"><div style="font-size:12.5px; color:var(--text-muted);">지금 감정 (선택 — 기록해 두면 행동 점검에 쓰입니다)</div><div class="chips" id="pftEmo"></div></div>
+      <div id="pftReasonWrap" style="display:none;"><div style="font-size:12.5px; color:var(--text-muted);">매도 사유 (사전 규칙 기준)</div><div class="chips" id="pftReason"></div></div>
+      <details class="adv"><summary>비용 직접 입력 · 메모</summary>
+        <div class="row" style="margin-top:6px;"><input id="pftFee" type="number" placeholder="수수료(비우면 정책 비율)" style="width:170px;" /><input id="pftTax" type="number" placeholder="세금(매도, 비우면 정책)" style="width:170px;" /></div>
+        <input id="pftNote" placeholder="메모" style="width:100%; margin-top:6px;" />
+      </details>
+      <div id="pftWarn"></div>
+      <div class="row" style="margin-top:12px;"><button class="primary" id="pftGo" onclick="pfuSubmitTrade(false)" style="flex:1; padding:12px;">기록하기</button></div>
+    </div>
+  </div>
   </div><!-- /tabPf -->
 
   <!-- ===================== ④ 데이터 관리 ===================== -->
@@ -913,6 +991,7 @@ const HTML_PAGE = `<!doctype html>
       if (!v) { hint.innerHTML = ''; return; }
       if (!STOCK_LIST) { hint.innerHTML = '<span style="color:var(--text-muted);">종목 목록을 불러오는 중…</span>'; return; }
       const exact = STOCK_LIST.filter((s) => s.n === v)[0];
+      if (exact && input.getAttribute('data-pf')) { hint.innerHTML = '<span class="good">✔ ' + escHtml(exact.n) + '</span> (' + exact.c + ')'; return; }
       if (exact) {
         const c = savedMap()[exact.n];
         hint.innerHTML = '<span class="good">✔ ' + escHtml(exact.n) + '</span> (' + exact.c + ') · ' + (c
@@ -927,6 +1006,7 @@ const HTML_PAGE = `<!doctype html>
     // opts.analyze=true면 선택 즉시 분석(종목분석 입력창). 비교 입력창은 값만 채운다.
     function attachCombo(input, opts) {
       opts = opts || {};
+      if (opts.pf) input.setAttribute('data-pf', '1');
       const box = document.createElement('div');
       box.className = 'combo-list';
       input.parentNode.appendChild(box);
@@ -940,9 +1020,10 @@ const HTML_PAGE = `<!doctype html>
         box.style.display = items.length ? 'block' : 'none';
       };
       const pick = (s) => {
-        input.value = s.n; close(); updateComboHint(input);
+        input.value = s.n; input._lastPick = s.n; close(); updateComboHint(input);
         if (input.id === 'corpName') updateWatchButtonState();
         if (opts.analyze) analyzeStock();
+        if (opts.onPick) opts.onPick(s);
       };
       const refresh = () => {
         const v = input.value.trim();
@@ -960,7 +1041,7 @@ const HTML_PAGE = `<!doctype html>
           ev.preventDefault();
           const v = input.value.trim();
           const exact = STOCK_LIST ? STOCK_LIST.filter((s) => s.n === v)[0] : null;
-          if (exact) { close(); updateComboHint(input); if (opts.analyze) analyzeStock(); return; }
+          if (exact) { close(); updateComboHint(input); if (opts.analyze) analyzeStock(); if (opts.onPick) opts.onPick(exact); return; }
           if (items.length) { pick(items[act >= 0 ? act : 0]); return; }
           if (!STOCK_LIST) { close(); if (opts.analyze) analyzeStock(); return; } // 목록을 못 받았을 땐 예전처럼 서버에 맡긴다
           updateComboHint(input);
@@ -970,7 +1051,10 @@ const HTML_PAGE = `<!doctype html>
         const el = ev.target.closest('.combo-item'); if (!el) return;
         ev.preventDefault(); pick(items[Number(el.getAttribute('data-i'))]);
       });
-      input.addEventListener('blur', () => setTimeout(close, 120));
+      input.addEventListener('blur', () => setTimeout(() => {
+        close();
+        if (opts.onPick && STOCK_LIST) { const v = input.value.trim(), ex = STOCK_LIST.filter((x) => x.n === v)[0]; if (ex && input._lastPick !== v) opts.onPick(ex); }
+      }, 160));
     }
     function renderSavedBox() {
       const list = dbCompanies || [];
@@ -995,6 +1079,7 @@ const HTML_PAGE = `<!doctype html>
     }
     (function () {
       attachCombo(document.getElementById('corpName'), { analyze: true });
+      document.getElementById('corpName').addEventListener('focus', function () { const c = document.getElementById('searchCard'); if (c.classList.contains('compact')) { c.classList.remove('compact'); document.getElementById('btnSearchMore').textContent = '▴ 접기'; } });
       attachCombo(document.getElementById('cmpNameA'));
       attachCombo(document.getElementById('cmpNameB'));
       document.getElementById('comboHint_corpName').addEventListener('click', (ev) => {
@@ -3060,10 +3145,11 @@ function anBuildNav() {
   const ds = Array.prototype.slice.call(el.children).filter(function (x) { return x.tagName === 'DETAILS'; });
   if (ds.length < 3) return;
   const nav = document.createElement('div');
-  nav.style.cssText = 'position:sticky; top:0; z-index:5; display:flex; flex-wrap:wrap; gap:6px; align-items:center; padding:6px 8px; margin:0 0 8px; background:var(--card, #fff); border:1px solid var(--border); border-radius:8px; font-size:12px;';
+  nav.className = 'an-sticky';
   const mk = function (txt, fn, strong) { const b = document.createElement('button'); b.type = 'button'; b.textContent = txt; b.style.cssText = 'font-size:12px; padding:3px 8px; height:auto; ' + (strong ? 'font-weight:700;' : ''); b.onclick = fn; nav.appendChild(b); };
   mk('전체 펼치기', function () { ds.forEach(function (d) { d.open = true; }); }, true);
   mk('전체 접기', function () { ds.forEach(function (d) { d.open = false; }); }, true);
+  { const jd = ds.filter(function (d) { const sm = d.querySelector('summary'); return sm && sm.textContent.indexOf('투자 판단 요약') >= 0; })[0]; if (jd) mk('🧭 결론 먼저', function () { jd.open = true; jd.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, true); }
   Array.prototype.slice.call(el.children).forEach(function (d) {
     if (d.classList && d.classList.contains('an-chap')) { const sp = document.createElement('span'); sp.textContent = d.getAttribute('data-short').split(' ')[0]; sp.title = d.getAttribute('data-short'); sp.style.cssText = 'font-weight:800; margin-left:6px; cursor:pointer;'; sp.onclick = function () { d.scrollIntoView({ behavior: 'smooth', block: 'start' }); }; nav.appendChild(sp); return; }
     if (d.tagName !== 'DETAILS') return;
@@ -3908,16 +3994,7 @@ function renderAnalysis() {
 
 // ===== ⑥ 내 계좌 (클라이언트). 계산 엔진(pf*)은 서버와 같은 소스를 그대로 주입받아 쓴다. =====
 ${PF_CLIENT_FUNCS}
-const PFU = { key: '', st: null, panel: 'home', last: null };
-function pfuToday() { const d = new Date(Date.now() + 9 * 3600 * 1000); return d.toISOString().slice(0, 10); }
-function pfuMsg(t, bad) { const el = document.getElementById('pfuMsg'); if (el) { el.style.color = bad ? '#dc2626' : 'var(--text-muted)'; el.textContent = t || ''; } }
-async function pfuApi(path, method, body) {
-  const opt = { method: method || 'GET', headers: { 'x-pf-key': PFU.key }, cache: 'no-store' };
-  if (body) { opt.headers['content-type'] = 'application/json'; opt.body = JSON.stringify(body); }
-  const res = await fetch(path, opt);
-  let d = null; try { d = await res.json(); } catch (e) { d = { error: 'HTTP ' + res.status }; }
-  return { status: res.status, ok: res.ok, data: d };
-}
+const PFU = { key: '', st: null, panel: 'home', qc: {}, side: 'buy', emo: '', reason: '', q: null, inited: false };
 async function pfuUnlock() {
   const k = document.getElementById('pfuKey').value.trim(); const g = document.getElementById('pfuGateMsg');
   if (!k) { g.textContent = '키를 입력하세요.'; return; }
@@ -3927,21 +4004,51 @@ async function pfuUnlock() {
     if (!r.ok) { PFU.key = ''; g.style.color = '#dc2626'; g.textContent = r.data.error || '열 수 없습니다.'; return; }
     try { sessionStorage.setItem('pfKey', k); } catch (e) {}
     document.getElementById('pfuGate').style.display = 'none'; document.getElementById('pfuMain').style.display = '';
+    document.getElementById('pfuFab').style.display = 'block';
     await pfuLoad();
   } catch (e) { PFU.key = ''; g.style.color = '#dc2626'; g.textContent = '오류: ' + e.message; }
+}
+function pfuChips(id, opts, key) {
+  const el = document.getElementById(id);
+  el.innerHTML = opts.map(function (o) { return '<button type="button" data-v="' + escHtml(o) + '">' + escHtml(o) + '</button>'; }).join('');
+  el.onclick = function (ev) {
+    const b = ev.target.closest('button'); if (!b) return;
+    const v = b.getAttribute('data-v'); PFU[key] = PFU[key] === v ? '' : v; // 다시 누르면 해제
+    Array.prototype.forEach.call(el.children, function (x) { x.className = x.getAttribute('data-v') === PFU[key] ? 'on' : ''; });
+  };
 }
 function pfuInit() {
   if (PFU.inited) return; PFU.inited = true;
   document.getElementById('pftDate').value = pfuToday();
+  pfuChips('pftEmo', ['평온', '자신감', '불안', '공포', '탐욕', '후회', '지루함'], 'emo');
+  pfuChips('pftReason', ['가치 도달', '가설 훼손', '가격 위험', '비중 초과', '현금 필요', '대체 기회', '비용·세금'], 'reason');
   let h = ''; for (let i = 0; i < 3; i++) h += '<div class="row" style="margin-top:6px;"><input id="pfpTc' + i + '" placeholder="' + (i + 1) + '차 조건(예: 다음 분기 실적 확인 후)" style="flex:1; min-width:150px;" /><input id="pfpTp' + i + '" type="number" placeholder="가격" style="width:90px;" /><input id="pfpTw' + i + '" type="number" placeholder="비중%" style="width:80px;" /></div>';
   document.getElementById('pfpTr').innerHTML = h;
   const items = ['매수 전에 가설과 반증 조건을 적었다', '가치평가(Bear/Base/Bull) 근거가 있었다', '비중이 정책 한도 안이었다', '당시 감정을 기록했다', '사전에 정한 규칙대로 실행했다', '하락·상승에 감정이 아니라 가설 기준으로 대응했다'];
   document.getElementById('pfjProc').innerHTML = items.map(function (t, i) { return '<label style="display:block; font-size:13px; margin:3px 0;"><input type="checkbox" class="pfjC" data-i="' + i + '" /> ' + t + '</label>'; }).join('');
+  // 종목명 자동 확인(종목분석과 같은 검색창): 거래 시트·계획·계산기·일지
+  attachCombo(document.getElementById('pftName'), { pf: true, onPick: pfuPickTrade });
+  attachCombo(document.getElementById('pfpName'), { pf: true });
+  attachCombo(document.getElementById('pfcName'), { pf: true, onPick: function (s) { pfuQuote(); } });
+  attachCombo(document.getElementById('pfjName'), { pf: true });
+  document.getElementById('pfuHold').addEventListener('click', function (ev) {
+    const b = ev.target.closest('button[data-act]'); if (!b) return;
+    const act = b.getAttribute('data-act'), nm = b.getAttribute('data-name');
+    if (act === 'buy' || act === 'sell') pfuOpenSheet(act, nm);
+    else if (act === 'plan') { pfuPanel('plan'); document.getElementById('pfpName').value = nm; const p = PFU.st.plans.filter(function (x) { return x.corp_name === nm; })[0]; if (p) pfuEditPlan(p.plan_key); window.scrollTo(0, 0); }
+  });
+  document.getElementById('pfuAlerts').addEventListener('click', function (ev) {
+    const b = ev.target.closest('button[data-act]'); if (!b) return;
+    const nm = b.getAttribute('data-name');
+    if (b.getAttribute('data-act') === 'plan') { pfuPanel('plan'); document.getElementById('pfpName').value = nm; window.scrollTo(0, 0); }
+    else if (b.getAttribute('data-act') === 'policy') pfuPanel('policy');
+    else if (b.getAttribute('data-act') === 'deposit') pfuOpenSheet('deposit');
+  });
   try { const k = sessionStorage.getItem('pfKey'); if (k) { document.getElementById('pfuKey').value = k; pfuUnlock(); } } catch (e) {}
 }
 function pfuPanel(p) {
   PFU.panel = p;
-  ['home', 'plan', 'trade', 'check', 'policy'].forEach(function (k) {
+  ['home', 'plan', 'ledger', 'check', 'policy'].forEach(function (k) {
     document.getElementById('pfuP_' + k).style.display = k === p ? '' : 'none';
     document.getElementById('pfuNb_' + k).className = k === p ? 'toggle-active' : '';
   });
@@ -3950,29 +4057,175 @@ async function pfuLoad() {
   pfuMsg('불러오는 중...');
   try {
     const r = await pfuApi('/api/pf/state');
-    if (!r.ok) { pfuMsg(r.data.error || '불러오기 실패', true); return; }
-    PFU.st = r.data; pfuRender(); pfuPanel(PFU.panel); pfuMsg('');
-  } catch (e) { pfuMsg('오류: ' + e.message, true); }
+    if (!r.ok) { pfuMsg(r.data.error || '불러오기 실패', true); return false; }
+    PFU.prev = PFU.st; PFU.st = r.data; pfuRender(); pfuPanel(PFU.panel); pfuMsg(''); return true;
+  } catch (e) { pfuMsg('오류: ' + e.message, true); return false; }
+}
+function pfuPlanOf(code) { return (PFU.st.plans || []).filter(function (p) { return p.stock_code === code; })[0] || null; }
+function pfuAlertList() {
+  const st = PFU.st, out = [], today = pfuToday();
+  if (!st.policy) out.push({ cls: 'bad', msg: '투자 정책이 아직 없습니다 — 비중·현금 점검과 수량 계산이 꺼져 있습니다.', act: 'policy', label: '정책 입력' });
+  if (st.ledger.deposits <= 0 && st.trades.length === 0) out.push({ cls: 'info', msg: '먼저 계좌 원금을 [입금]으로 기록하세요(현금·비중 계산의 출발점).', act: 'deposit', label: '입금 기록' });
+  (st.summary.warnings || []).forEach(function (w) { out.push({ cls: w.level === 'warn' ? 'bad' : '', msg: w.msg }); });
+  st.summary.rows.forEach(function (r) {
+    const pl = pfuPlanOf(r.code);
+    if (!pl) { out.push({ cls: 'info', msg: r.name + ': 투자 계획이 없습니다(가설·반증 조건·위험 기준가).', act: 'plan', label: '계획 작성', name: r.name }); return; }
+    if (pl.risk_price > 0 && r.close != null && r.close <= pl.risk_price) out.push({ cls: 'bad', msg: r.name + ': 현재가 ' + pfuFmt(r.close) + '원이 위험관리 기준가 ' + pfuFmt(pl.risk_price) + '원 이하 — 가설을 먼저 재검토하세요(자동 매도 신호가 아닙니다).', act: 'plan', label: '계획 보기', name: r.name });
+    if (pl.review_date && String(pl.review_date).replace(/-/g, '') <= today.replace(/-/g, '')) out.push({ cls: '', msg: r.name + ': 계획 검토일(' + pl.review_date + ')이 도래했습니다.', act: 'plan', label: '계획 보기', name: r.name });
+    if (!(pl.risk_price > 0)) out.push({ cls: 'info', msg: r.name + ': 계획에 위험관리 기준가가 없습니다.', act: 'plan', label: '계획 보기', name: r.name });
+  });
+  return out;
+}
+function pfuRender() {
+  const st = PFU.st, s = st.summary, pol = st.policy;
+  const pc = function (v) { return v == null ? '' : v >= 0 ? 'pf-pos' : 'pf-neg'; };
+  const unrealPct = s.cost > 0 && s.unreal != null ? s.unreal / s.cost : null;
+  let h = '<div class="pf-kpi"><div><small>총자산(원)</small><b>' + pfuFmt(s.total) + '</b></div><div><small>평가손익(미실현)</small><b class="' + pc(s.unreal) + '">' + (unrealPct == null ? 'N/A' : (unrealPct >= 0 ? '+' : '') + (unrealPct * 100).toFixed(1) + '%') + '</b><small>' + pfuFmt(s.unreal) + '원</small></div><div><small>현금 비중</small><b>' + pfuPct(s.cashPct) + '</b><small>' + pfuFmt(s.cash) + '원' + (pol && pol.min_cash_pct ? ' · 최소 ' + pol.min_cash_pct + '%' : '') + '</small></div></div>';
+  h += '<div class="meta-line">실현손익(누적, 비용 반영) ' + pfuFmt(s.realized) + '원 · 상위 1·3·5 종목 비중 ' + pfuPct(s.top1) + ' · ' + pfuPct(s.top3) + ' · ' + pfuPct(s.top5) + (s.sectors && s.sectors.length ? ' · 업종 ' + s.sectors.slice(0, 3).map(function (x) { return escHtml(x.name) + ' ' + pfuPct(x.weight, 0); }).join('/') : '') + '</div>';
+  document.getElementById('pfuSummary').innerHTML = h;
+  const al = pfuAlertList(), ael = document.getElementById('pfuAlerts');
+  ael.style.display = al.length ? '' : 'none';
+  ael.innerHTML = al.length ? '<div class="card-title">확인할 것 ' + al.length + '</div>' + al.map(function (a) { return '<div class="pf-chip ' + (a.cls || '') + '">' + escHtml(a.msg) + (a.act ? ' <button type="button" data-act="' + a.act + '" data-name="' + escHtml(a.name || '') + '" style="padding:2px 8px; font-size:12px; margin-left:4px;">' + escHtml(a.label) + '</button>' : '') + '</div>'; }).join('') : '';
+  const lim = pol && pol.max_position_pct > 0 ? pol.max_position_pct : null;
+  const cards = s.rows.map(function (r) {
+    const w = r.weight != null ? r.weight * 100 : null, scale = Math.max(lim ? lim * 1.4 : 30, (w || 0) * 1.1, 5);
+    const pl = pfuPlanOf(r.code);
+    return '<div class="pfc" id="pfcard_' + r.code + '"><div class="pfc-h"><b style="font-size:15px;">' + escHtml(r.name) + '</b><span style="font-size:11.5px; color:var(--text-muted);">' + escHtml(pl ? pl.status : '계획 없음') + (r.sector ? ' · ' + escHtml(r.sector) : '') + '</span><span class="' + pc(r.unrealPct) + '" style="margin-left:auto; font-weight:700;">' + (r.unrealPct == null ? 'N/A' : (r.unrealPct >= 0 ? '+' : '') + (r.unrealPct * 100).toFixed(1) + '%') + '</span></div>' +
+      '<div class="pfc-bar"><i class="' + (lim && w > lim ? 'over' : '') + '" style="width:' + Math.min(100, (w || 0) / scale * 100).toFixed(1) + '%"></i>' + (lim ? '<u style="left:' + (lim / scale * 100).toFixed(1) + '%" title="정책 최대 비중"></u>' : '') + '</div>' +
+      '<div class="pfc-m">비중 <b>' + pfuPct(r.weight) + '</b>' + (lim ? ' / 한도 ' + lim + '%' : '') + ' · ' + pfuFmt(r.qty) + '주 · 평단 ' + pfuFmt(r.avg) + ' → 현재 ' + pfuFmt(r.close) + (r.priceDate ? ' (' + escHtml(r.priceDate) + ')' : '') + '<br/>평가금액 ' + pfuFmt(r.mv) + '원' + (pl && pl.risk_price > 0 ? ' · 위험기준가 ' + pfuFmt(pl.risk_price) : '') + '</div>' +
+      '<div class="row" style="margin-top:6px;"><button type="button" data-act="buy" data-name="' + escHtml(r.name) + '">매수</button><button type="button" data-act="sell" data-name="' + escHtml(r.name) + '">매도</button><button type="button" data-act="plan" data-name="' + escHtml(r.name) + '">계획</button></div></div>';
+  }).join('');
+  document.getElementById('pfuHold').innerHTML = '<div class="card-title" style="margin:4px 2px;">보유 종목 ' + s.rows.length + '개 <span style="font-weight:400; text-transform:none;">(막대 = 비중, 검은 선 = 정책 최대 비중)</span></div>' + (cards || '<div class="card" style="font-size:13px; color:var(--text-muted);">보유 종목이 없습니다. 오른쪽 아래 [＋ 기록]으로 입금 후 매수 내역을 입력하세요.</div>');
+  pfuRenderPlans(); pfuRenderLedger(); pfuRenderBeh(); pfuRenderJournal(); pfuFillPolicy();
+}
+// ---------- 거래 입력 시트 ----------
+function pfuToast(t) { const el = document.getElementById('pfuToast'); el.textContent = t; el.style.display = 'block'; clearTimeout(PFU.tt); PFU.tt = setTimeout(function () { el.style.display = 'none'; }, 7000); }
+function pfuOpenSheet(side, name) {
+  document.getElementById('pfuSheet').style.display = 'block';
+  document.getElementById('pftWarn').innerHTML = '';
+  PFU.emo = ''; PFU.reason = ''; PFU.q = null;
+  Array.prototype.forEach.call(document.querySelectorAll('#pftEmo button, #pftReason button'), function (b) { b.className = ''; });
+  ['pftQty', 'pftPrice', 'pftFee', 'pftTax', 'pftNote'].forEach(function (i) { document.getElementById(i).value = ''; });
+  document.getElementById('pftDate').value = pfuToday();
+  document.getElementById('pftName').value = name || '';
+  pfuSetSide(side || 'buy');
+  if (name) pfuPickTrade({ n: name });
+  else setTimeout(function () { if (side === 'buy' || side === 'sell') document.getElementById('pftName').focus(); }, 80);
+}
+function pfuCloseSheet() { document.getElementById('pfuSheet').style.display = 'none'; }
+function pfuSetSide(side) {
+  PFU.side = side;
+  Array.prototype.forEach.call(document.querySelectorAll('#pftSeg button'), function (b) { b.classList.toggle('on', b.getAttribute('data-side') === side); });
+  const cash = side === 'deposit' || side === 'withdraw';
+  document.getElementById('pftStockRow').style.display = cash ? 'none' : '';
+  document.getElementById('pftQty').style.display = cash ? 'none' : '';
+  document.getElementById('pftPrice').placeholder = cash ? '금액(원)' : '체결가';
+  document.getElementById('pftReasonWrap').style.display = side === 'sell' ? '' : 'none';
+  document.getElementById('pftEmoWrap').style.display = cash ? 'none' : '';
+  document.getElementById('pftTax').style.display = side === 'sell' ? '' : 'none';
+  document.getElementById('pftGo').textContent = { buy: '매수 기록하기', sell: '매도 기록하기', deposit: '입금 기록하기', withdraw: '출금 기록하기' }[side];
+  pfuQuickBtns(); pfuPreview();
+}
+async function pfuPickTrade(s) {
+  const nm = s.n; document.getElementById('pftName').value = nm;
+  const ctx = document.getElementById('pftCtx'); ctx.textContent = '시세 조회 중...';
+  PFU.q = null;
+  try {
+    let q = PFU.qc[nm];
+    if (!q || Date.now() - q.t > 120000) { const r = await pfuApi('/api/pf/quote?corp_name=' + encodeURIComponent(nm)); if (!r.ok) throw new Error(r.data.error || '시세 실패'); q = Object.assign({ t: Date.now() }, r.data); PFU.qc[nm] = q; }
+    PFU.q = q;
+    if (!document.getElementById('pftPrice').value) document.getElementById('pftPrice').value = q.close;
+    const row = PFU.st.summary.rows.filter(function (r) { return r.name === nm; })[0];
+    const pl = PFU.st.plans.filter(function (p) { return p.corp_name === nm; })[0];
+    ctx.textContent = nm + ' 종가 ' + pfuFmt(q.close) + '원 (' + q.date + ')' + (row ? ' · 보유 ' + pfuFmt(row.qty) + '주, 평단 ' + pfuFmt(row.avg) : ' · 미보유') + (pl ? ' · 계획 ' + pl.status : ' · 계획 없음');
+  } catch (e) { ctx.textContent = '시세를 못 불러왔습니다(' + e.message + '). 체결가를 직접 입력하세요.'; }
+  pfuQuickBtns(); pfuPreview();
+}
+function pfuQuickBtns() {
+  const el = document.getElementById('pftQuick'); el.innerHTML = '';
+  const nm = document.getElementById('pftName').value.trim(); const st = PFU.st; if (!st) return;
+  const row = st.summary.rows.filter(function (r) { return r.name === nm; })[0];
+  const add = function (t, fn) { const b = document.createElement('button'); b.type = 'button'; b.textContent = t; b.onclick = fn; el.appendChild(b); };
+  const setQ = function (q) { document.getElementById('pftQty').value = Math.max(0, Math.floor(q)); pfuPreview(); };
+  if (PFU.side === 'sell' && row) { add('25%', function () { setQ(row.qty * 0.25); }); add('50%', function () { setQ(row.qty * 0.5); }); add('전량 ' + pfuFmt(row.qty) + '주', function () { setQ(row.qty); }); }
+  if (PFU.side === 'buy' && st.policy) {
+    const pl = st.plans.filter(function (p) { return p.corp_name === nm; })[0];
+    if (pl && pl.risk_price > 0) add('계산기 상한 적용', function () {
+      const p = Number(document.getElementById('pftPrice').value) || (PFU.q && PFU.q.close);
+      const res = pfSizePosition({ base: st.summary.total, riskPct: st.policy.risk_budget_pct, buyPrice: p, riskPrice: pl.risk_price, maxPosPct: st.policy.max_position_pct, curPosValue: row ? row.mv : 0, cash: st.summary.cash, minCashPct: st.policy.min_cash_pct, cashNeeds: st.policy.cash_needs_krw, feePct: st.policy.fee_rate_pct, adv: PFU.q ? PFU.q.adv20 : null, advPct: st.policy.adv_limit_pct, bearPrice: pl.bear_price });
+      if (!res.ok) { document.getElementById('pftPrev').textContent = res.errors.join(' '); return; }
+      setQ(res.qty);
+      document.getElementById('pftPrev').innerHTML = '참고 상한 ' + pfuFmt(res.qty) + '주 (가장 작은 한도: ' + escHtml(res.binding.join(', ')) + '). 상한은 필수가 아니라 참고값입니다.';
+    });
+  }
+}
+function pfuPreview() {
+  const st = PFU.st, el = document.getElementById('pftPrev'); if (!st) return;
+  const side = PFU.side, p = Number(document.getElementById('pftPrice').value), q = Number(document.getElementById('pftQty').value), tot = st.summary.total, pol = st.policy || {};
+  if (side === 'deposit' || side === 'withdraw') { el.innerHTML = p > 0 ? '현금 ' + pfuFmt(st.summary.cash) + ' → <b>' + pfuFmt(st.summary.cash + (side === 'deposit' ? p : -p)) + '원</b>' : '금액을 입력하세요.'; return; }
+  const nm = document.getElementById('pftName').value.trim(), row = st.summary.rows.filter(function (r) { return r.name === nm; })[0];
+  if (!(p > 0) || !(q > 0)) return;
+  const amt = p * q, fee = pol.fee_rate_pct ? amt * pol.fee_rate_pct / 100 : 0, tax = side === 'sell' && pol.sell_tax_pct ? amt * pol.sell_tax_pct / 100 : 0;
+  const cur = row && row.mv ? row.mv : 0, cash = st.summary.cash;
+  const bad = function (c) { return c ? ' style="color:#dc2626;font-weight:700"' : ''; };
+  if (side === 'buy') {
+    const w = tot > 0 ? (cur + amt) / tot * 100 : null, cashAfter = cash - amt - fee, cp = tot > 0 ? cashAfter / tot * 100 : null;
+    el.innerHTML = '금액 ' + pfuFmt(amt) + '원 (+비용 ' + pfuFmt(fee) + ') · 체결 후 비중 <span' + bad(pol.max_position_pct && w > pol.max_position_pct) + '>' + (w == null ? 'N/A' : w.toFixed(1) + '%') + '</span>' + (pol.max_position_pct ? ' / 한도 ' + pol.max_position_pct + '%' : '') + '<br/>현금 ' + pfuFmt(cash) + ' → <span' + bad(cashAfter < 0 || (pol.min_cash_pct && cp < pol.min_cash_pct)) + '>' + pfuFmt(cashAfter) + '원 (' + (cp == null ? 'N/A' : cp.toFixed(1) + '%') + ')</span>' + (pol.min_cash_pct ? ' / 최소 ' + pol.min_cash_pct + '%' : '');
+  } else {
+    const gain = row && row.avg != null ? (p - row.avg) * q - fee - tax : null, w = tot > 0 ? Math.max(0, cur - amt) / tot * 100 : null, cashAfter = cash + amt - fee - tax;
+    el.innerHTML = '수령 약 ' + pfuFmt(amt - fee - tax) + '원 · 예상 실현손익 <b class="' + (gain == null ? '' : gain >= 0 ? 'pf-pos' : 'pf-neg') + '">' + pfuFmt(gain) + '원</b>' + (row && q > row.qty ? ' <span style="color:#dc2626;font-weight:700">(보유 ' + row.qty + '주 초과!)</span>' : '') + '<br/>체결 후 비중 ' + (w == null ? 'N/A' : w.toFixed(1) + '%') + ' · 현금 → ' + pfuFmt(cashAfter) + '원 (' + (tot > 0 ? (cashAfter / tot * 100).toFixed(1) + '%' : 'N/A') + ')';
+  }
+}
+function pfuTradeBody(ack) {
+  const side = PFU.side, cash = side === 'deposit' || side === 'withdraw';
+  const b = { side: side, trade_date: pfuV('pftDate'), price: pfuV('pftPrice'), note: pfuV('pftNote') };
+  if (!cash) { b.corp_name = pfuV('pftName').trim(); b.qty = pfuV('pftQty'); b.emotion = PFU.emo; b.reason = side === 'sell' ? PFU.reason : ''; }
+  if (pfuV('pftFee') !== '') b.fee = pfuV('pftFee'); if (pfuV('pftTax') !== '') b.tax = pfuV('pftTax');
+  if (ack) { b.ack = true; b.ack_reason = pfuV('pftAck'); b.checks = Array.prototype.map.call(document.querySelectorAll('.pftChk'), function (c) { return c.checked; }); }
+  return b;
+}
+async function pfuSubmitTrade(ack) {
+  const box = document.getElementById('pftWarn'); const b = pfuTradeBody(ack);
+  if (ack && b.checks.length && b.checks.some(function (c) { return !c; })) { box.insertAdjacentHTML('afterbegin', '<div style="color:#dc2626; font-size:13px;">물타기 점검 항목을 모두 확인해야 기록됩니다. 하나라도 아니라면 기록을 취소하는 것이 맞습니다.</div>'); return; }
+  const r = await pfuApi('/api/pf/trade', 'POST', b);
+  if (r.status === 409 && r.data.needs_ack) {
+    const chk = ['처음 세운 가설이 아직 유효하다', '반증 조건에 해당하지 않는다', '오늘 처음 보는 종목이라도 이 가격·비중에 살 것이다', '하락 원인을 확인했다', '추가 후 총 비중이 정책 한도 안이다', '손실을 만회하려는 마음이 아니다'];
+    box.innerHTML = '<div style="border:1px solid #f59e0b; background:#fffbeb; border-radius:8px; padding:10px; margin-top:10px;"><b>기록 전 점검 경고</b> (막는 것이 아니라, 알고 선택했는지 남기는 절차)<ul style="font-size:13px; margin:6px 0 6px 18px; padding:0;">' + r.data.warnings.filter(function (w) { return w.level !== 'block'; }).map(function (w) { return '<li>' + escHtml(w.msg) + '</li>'; }).join('') + '</ul>' +
+      (r.data.needs_check ? '<div style="font-size:13px;">물타기 점검(모두 해당해야 기록)</div>' + chk.map(function (t) { return '<label style="display:block; font-size:13px;"><input type="checkbox" class="pftChk" /> ' + t + '</label>'; }).join('') : '') +
+      '<textarea id="pftAck" placeholder="그래도 기록하는 이유(5자 이상)" style="width:100%; margin-top:6px; min-height:44px;"></textarea><div class="row" style="margin-top:6px;"><button onclick="pfuSubmitTrade(true)">이유를 적었고 알고 기록합니다</button><button onclick="pfuCancelAck()" style="background:#fff; color:var(--text);">취소</button></div></div>';
+    box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    return;
+  }
+  if (!r.ok) { box.innerHTML = '<div style="color:#dc2626; font-size:13px; margin-top:8px;">' + escHtml(r.data.error || '기록 실패') + '</div>'; return; }
+  const prev = PFU.st, nm = b.corp_name; pfuCloseSheet();
+  await pfuLoad(); pfuPanel('home');
+  const now = PFU.st, dTot = prev && prev.summary ? now.summary.total - prev.summary.total : null;
+  const rn = nm ? now.summary.rows.filter(function (x) { return x.name === nm; })[0] : null, rp = nm && prev ? prev.summary.rows.filter(function (x) { return x.name === nm; })[0] : null;
+  const sn = { buy: '매수', sell: '매도', deposit: '입금', withdraw: '출금' }[b.side];
+  pfuToast('기록 완료: ' + (nm ? nm + ' ' + sn + ' ' + b.qty + '주' : sn + ' ' + pfuFmt(Number(b.price)) + '원') + (nm ? ' → 보유 ' + (rp ? pfuFmt(rp.qty) : 0) + '주 → ' + (rn ? pfuFmt(rn.qty) + '주 (비중 ' + pfuPct(rn.weight) + ')' : '없음') : '') + ' · 현금 ' + pfuPct(now.summary.cashPct) + (r.data.costNote ? ' · ' + r.data.costNote : ''));
+  if (rn) { const c = document.getElementById('pfcard_' + rn.code); if (c) { c.classList.add('flash'); c.scrollIntoView({ behavior: 'smooth', block: 'center' }); } } else window.scrollTo(0, 0);
+}
+function pfuCancelAck() { document.getElementById('pftWarn').innerHTML = ''; }
+function pfuRenderLedger() {
+  const f = (document.getElementById('pflFilter') ? document.getElementById('pflFilter').value : '').trim();
+  const tr = PFU.st.trades.filter(function (t) { return !f || (t.corp_name || '').indexOf(f) >= 0; }); const sn = { buy: '매수', sell: '매도', deposit: '입금', withdraw: '출금' };
+  let h = (PFU.st.ledger.errors || []).map(function (e) { return '<div style="color:#dc2626; font-size:12.5px;">⚠ ' + escHtml(e.msg) + '</div>'; }).join('');
+  h += tr.length ? '<div class="tscroll"><table><thead><tr><th>일자</th><th>구분</th><th>종목</th><th>수량</th><th>가격/금액</th><th>비용</th><th>감정·사유</th><th></th></tr></thead><tbody>' + tr.map(function (t) {
+    return '<tr style="' + (t.voided ? 'opacity:.45; text-decoration:line-through;' : '') + '"><td>' + escHtml(t.trade_date) + '</td><td>' + sn[t.side] + '</td><td>' + escHtml(t.corp_name || '') + '</td><td>' + (t.stock_code ? pfuFmt(t.qty) : '') + '</td><td>' + pfuFmt(t.price) + '</td><td>' + pfuFmt((t.fee || 0) + (t.tax || 0)) + '</td><td>' + escHtml([t.emotion, t.reason].filter(Boolean).join(' · ')) + '</td><td>' + (t.voided ? '무효' : '<button style="padding:2px 7px; font-size:12px;" onclick="pfuVoid(' + t.id + ')">무효</button>') + '</td></tr>';
+  }).join('') + '</tbody></table></div>' : '<div style="font-size:13px; color:var(--text-muted);">기록이 없습니다. 오른쪽 아래 [＋ 기록]에서 먼저 [입금]으로 계좌 원금을 기록하세요.</div>';
+  document.getElementById('pfuLedger').innerHTML = h;
+}
+function pfuToday() { const d = new Date(Date.now() + 9 * 3600 * 1000); return d.toISOString().slice(0, 10); }
+function pfuMsg(t, bad) { const el = document.getElementById('pfuMsg'); if (el) { el.style.color = bad ? '#dc2626' : 'var(--text-muted)'; el.textContent = t || ''; } }
+async function pfuApi(path, method, body) {
+  const opt = { method: method || 'GET', headers: { 'x-pf-key': PFU.key }, cache: 'no-store' };
+  if (body) { opt.headers['content-type'] = 'application/json'; opt.body = JSON.stringify(body); }
+  const res = await fetch(path, opt);
+  let d = null; try { d = await res.json(); } catch (e) { d = { error: 'HTTP ' + res.status }; }
+  return { status: res.status, ok: res.ok, data: d };
 }
 function pfuFmt(v) { return v == null ? 'N/A' : Math.round(v).toLocaleString('ko-KR'); }
 function pfuPct(v, d) { return v == null ? 'N/A' : (v * 100).toFixed(d == null ? 1 : d) + '%'; }
-function pfuRender() {
-  const st = PFU.st, s = st.summary;
-  let h = '<div class="card-title">계좌 현황 (원, 평균단가법 · 최신 종가 기준)</div>';
-  if (!st.policy) h += '<div style="color:#b45309; font-size:13px; margin-bottom:6px;">먼저 [정책] 탭에서 투자 정책을 저장하면 비중·현금 점검과 수량 계산이 켜집니다.</div>';
-  h += '<table><tbody><tr><td>총자산</td><td style="text-align:right"><b>' + pfuFmt(s.total) + '</b></td></tr><tr><td>현금</td><td style="text-align:right">' + pfuFmt(s.cash) + ' (' + pfuPct(s.cashPct) + ')</td></tr><tr><td>평가금액</td><td style="text-align:right">' + pfuFmt(s.mv) + '</td></tr><tr><td>평가손익(미실현)</td><td style="text-align:right">' + pfuFmt(s.unreal) + '</td></tr><tr><td>실현손익(누적, 비용 반영)</td><td style="text-align:right">' + pfuFmt(s.realized) + '</td></tr><tr><td>상위 1·3·5 종목 비중</td><td style="text-align:right">' + pfuPct(s.top1) + ' · ' + pfuPct(s.top3) + ' · ' + pfuPct(s.top5) + '</td></tr></tbody></table>';
-  const ws = (s.warnings || []).map(function (w) { return '<li>' + escHtml(w.msg) + '</li>'; }).join('');
-  if (ws) h += '<ul style="font-size:12.5px; color:#b45309; margin:8px 0 0 18px; padding:0;">' + ws + '</ul>';
-  if (s.partial) h += '<div class="meta-line">일부 값은 현재가가 없어 부분 합계입니다.</div>';
-  document.getElementById('pfuSummary').innerHTML = h;
-  let t = '<div class="card-title">보유 종목</div>';
-  if (!s.rows.length) t += '<div style="font-size:13px; color:var(--text-muted);">보유 종목이 없습니다. [거래 기록]에서 입금 후 매수 내역을 입력하세요.</div>';
-  else t += '<div class="tscroll"><table><thead><tr><th>종목</th><th>수량</th><th>평균단가</th><th>현재가</th><th>비중</th><th>평가손익</th><th>업종</th></tr></thead><tbody>' + s.rows.map(function (r) { return '<tr><td>' + escHtml(r.name) + '</td><td>' + pfuFmt(r.qty) + '</td><td>' + pfuFmt(r.avg) + '</td><td>' + pfuFmt(r.close) + (r.priceDate ? '<div style="font-size:10.5px;color:var(--text-muted)">' + escHtml(r.priceDate) + '</div>' : '') + '</td><td>' + pfuPct(r.weight) + '</td><td>' + pfuPct(r.unrealPct) + '</td><td>' + escHtml(r.sector || '미분류') + '</td></tr>'; }).join('') + '</tbody></table></div>';
-  if (s.sectors && s.sectors.length) t += '<div class="meta-line">업종 비중(계획에 직접 적은 업종 기준): ' + s.sectors.map(function (x) { return escHtml(x.name) + ' ' + pfuPct(x.weight); }).join(' · ') + '</div>';
-  t += '<div class="meta-line">같은 업종·같은 요인에 노출된 종목은 함께 움직일 수 있어, 종목 수가 많아도 분산이 충분하다고 단정할 수 없습니다.</div>';
-  document.getElementById('pfuHold').innerHTML = t;
-  pfuRenderPlans(); pfuRenderLedger(); pfuRenderBeh(); pfuRenderJournal(); pfuFillPolicy();
-}
 function pfuRenderPlans() {
   const ps = PFU.st.plans;
   document.getElementById('pfuPlans').innerHTML = ps.length ? ps.map(function (p) {
@@ -4025,37 +4278,6 @@ function pfuCalc() {
   h += '<ul style="font-size:12px; color:var(--text-muted); margin:8px 0 0 18px; padding:0;">' + res.warnings.map(function (w) { return '<li>' + escHtml(w) + '</li>'; }).join('') + '<li>이 계산은 고정 위험 비율 방식의 일반적인 실무 규칙입니다. 켈리 기준 등 최적 비중 공식은 입력 추정치(승률·손익비)가 불확실해 쓰지 않았습니다.</li></ul>';
   out.innerHTML = h;
 }
-function pfuSideChange() { const s = pfuV('pftSide'), cash = s === 'deposit' || s === 'withdraw'; document.getElementById('pftName').style.display = cash ? 'none' : ''; document.getElementById('pftQty').style.display = cash ? 'none' : ''; document.getElementById('pftFee').style.display = cash ? 'none' : ''; document.getElementById('pftTax').style.display = s === 'sell' ? '' : 'none'; document.getElementById('pftReason').style.display = s === 'sell' ? '' : 'none'; }
-function pfuTradeBody(ack) {
-  const b = { side: pfuV('pftSide'), trade_date: pfuV('pftDate'), corp_name: pfuV('pftName').trim(), qty: pfuV('pftQty'), price: pfuV('pftPrice'), emotion: pfuV('pftEmo'), reason: pfuV('pftReason'), note: pfuV('pftNote') };
-  if (pfuV('pftFee') !== '') b.fee = pfuV('pftFee'); if (pfuV('pftTax') !== '') b.tax = pfuV('pftTax');
-  if (ack) { b.ack = true; b.ack_reason = pfuV('pftAck'); b.checks = Array.prototype.map.call(document.querySelectorAll('.pftChk'), function (c) { return c.checked; }); }
-  return b;
-}
-async function pfuSubmitTrade(ack) {
-  const box = document.getElementById('pftWarn'); const b = pfuTradeBody(ack);
-  if (ack && b.checks.length && b.checks.some(function (c) { return !c; })) { pfuMsg('물타기 점검 항목을 모두 확인해야 기록됩니다. 하나라도 아니라면 기록을 취소하는 것이 맞습니다.', true); return; }
-  const r = await pfuApi('/api/pf/trade', 'POST', b);
-  if (r.status === 409 && r.data.needs_ack) {
-    const chk = ['처음 세운 가설이 아직 유효하다', '반증 조건에 해당하지 않는다', '오늘 처음 보는 종목이라도 이 가격·비중에 살 것이다', '하락 원인을 확인했다', '추가 후 총 비중이 정책 한도 안이다', '손실을 만회하려는 마음이 아니다'];
-    box.innerHTML = '<div style="border:1px solid #f59e0b; background:#fffbeb; border-radius:8px; padding:10px; margin-top:10px;"><b>기록 전 점검 경고</b> (막는 것이 아니라, 알고 선택했는지 남기는 절차)<ul style="font-size:13px; margin:6px 0 6px 18px; padding:0;">' + r.data.warnings.filter(function (w) { return w.level !== 'block'; }).map(function (w) { return '<li>' + escHtml(w.msg) + '</li>'; }).join('') + '</ul>' +
-      (r.data.needs_check ? '<div style="font-size:13px;">물타기 점검(모두 해당해야 기록)</div>' + chk.map(function (t) { return '<label style="display:block; font-size:13px;"><input type="checkbox" class="pftChk" /> ' + t + '</label>'; }).join('') : '') +
-      '<textarea id="pftAck" placeholder="그래도 기록하는 이유(5자 이상)" style="width:100%; margin-top:6px; min-height:44px;"></textarea><div class="row" style="margin-top:6px;"><button onclick="pfuSubmitTrade(true)">이유를 적었고 알고 기록합니다</button><button onclick="pfuCancelAck()" style="background:#fff; color:var(--text);">취소</button></div></div>';
-    return;
-  }
-  if (!r.ok) { pfuMsg(r.data.error || '기록 실패', true); return; }
-  box.innerHTML = ''; ['pftQty', 'pftPrice', 'pftFee', 'pftTax', 'pftNote'].forEach(function (i) { document.getElementById(i).value = ''; });
-  pfuMsg('기록 완료.' + (r.data.costNote ? ' ' + r.data.costNote : '')); await pfuLoad();
-}
-function pfuCancelAck() { document.getElementById('pftWarn').innerHTML = ''; }
-function pfuRenderLedger() {
-  const tr = PFU.st.trades; const sn = { buy: '매수', sell: '매도', deposit: '입금', withdraw: '출금' };
-  let h = (PFU.st.ledger.errors || []).map(function (e) { return '<div style="color:#dc2626; font-size:12.5px;">⚠ ' + escHtml(e.msg) + '</div>'; }).join('');
-  h += tr.length ? '<div class="tscroll"><table><thead><tr><th>일자</th><th>구분</th><th>종목</th><th>수량</th><th>가격/금액</th><th>비용</th><th>감정·사유</th><th></th></tr></thead><tbody>' + tr.map(function (t) {
-    return '<tr style="' + (t.voided ? 'opacity:.45; text-decoration:line-through;' : '') + '"><td>' + escHtml(t.trade_date) + '</td><td>' + sn[t.side] + '</td><td>' + escHtml(t.corp_name || '') + '</td><td>' + (t.stock_code ? pfuFmt(t.qty) : '') + '</td><td>' + pfuFmt(t.price) + '</td><td>' + pfuFmt((t.fee || 0) + (t.tax || 0)) + '</td><td>' + escHtml([t.emotion, t.reason].filter(Boolean).join(' · ')) + '</td><td>' + (t.voided ? '무효' : '<button style="padding:2px 7px; font-size:12px;" onclick="pfuVoid(' + t.id + ')">무효</button>') + '</td></tr>';
-  }).join('') + '</tbody></table></div>' : '<div style="font-size:13px; color:var(--text-muted);">기록이 없습니다. 먼저 [입금]으로 계좌 원금을 기록하세요.</div>';
-  document.getElementById('pfuLedger').innerHTML = h;
-}
 async function pfuVoid(id) {
   const why = window.prompt('무효 처리 사유(3자 이상). 기록은 지워지지 않고 계산에서만 제외됩니다.'); if (!why) return;
   const r = await pfuApi('/api/pf/trade/void', 'POST', { id: id, reason: why });
@@ -4103,6 +4325,7 @@ async function pfuExport() {
   const blob = await res.blob(); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'pf_backup.json'; document.body.appendChild(a); a.click(); a.remove();
 }
 
+
     function switchTab(tab) {
       const tabs = { financial: 'tabFinancial', momentum: 'tabMomentum', macro: 'tabMacro', data: 'tabData', bt: 'tabBt', pf: 'tabPf' };
       const btns = { financial: 'tabBtnFinancial', momentum: 'tabBtnMomentum', macro: 'tabBtnMacro', data: 'tabBtnData', bt: 'tabBtnBt', pf: 'tabBtnPf' };
@@ -4117,6 +4340,8 @@ async function pfuExport() {
       if (tab === 'macro' && macroCorrDirty && rawRows.length) computeMacroCorrelation();
       if (tab === 'financial' && subTab === 'table' && chartSel.length) renderChartPanel(false);
       window.scrollTo(0, 0);
+      setTimeout(setNavVars, 30);
+      const fab = document.getElementById('pfuFab'); if (fab) fab.style.display = (tab === 'pf' && PFU.key) ? 'block' : 'none';
     }
 
     async function loadDataSummary() {
@@ -4438,8 +4663,25 @@ async function pfuExport() {
       document.getElementById('dockQ').className = viewMode === 'quarterly' ? 'toggle-active' : '';
       document.getElementById('dockA').className = viewMode === 'annual' ? 'toggle-active' : '';
     }
+    function toggleDockFold() {
+      const d = document.getElementById('chartDock'), f = d.classList.toggle('folded');
+      document.getElementById('dockFold').textContent = f ? '▾ 펼치기' : '▴ 접기';
+      if (!f) { if (dockMode === 'price') drawPrice(); else renderChartPanel(false); }
+    }
+    function toggleSearchCompact() {
+      const c = document.getElementById('searchCard'), on = c.classList.toggle('compact');
+      document.getElementById('btnSearchMore').textContent = on ? '▾ 더보기' : '▴ 접기';
+    }
+    function setNavVars() {
+      const n = document.getElementById('mainNav'); if (n) document.documentElement.style.setProperty('--navh', n.offsetHeight + 'px');
+      const sb = document.getElementById('stockSubnav'); const vis = sb && sb.offsetParent !== null;
+      document.documentElement.style.setProperty('--subh', vis ? sb.offsetHeight + 'px' : '0px');
+    }
+    window.addEventListener('resize', setNavVars);
+    window.addEventListener('scroll', function () { const f = document.getElementById('fabTop'); if (f) f.style.display = window.scrollY > 500 ? 'block' : 'none'; }, { passive: true });
     function setDock(mode) {
       dockMode = mode;
+      if (document.getElementById('chartDock').classList.contains('folded')) { document.getElementById('chartDock').classList.remove('folded'); document.getElementById('dockFold').textContent = '▴ 접기'; }
       ['price', 'growth', 'margin', 'cash', 'value', 'safety', 'holder'].forEach((k) => { document.getElementById('dockBtn_' + k).className = k === mode ? 'toggle-active' : ''; });
       syncDockView();
       const isPrice = mode === 'price';
@@ -4616,6 +4858,8 @@ async function pfuExport() {
     }
     async function showStockResult(seq) {
       document.getElementById('stockBody').style.display = '';
+      { const sc = document.getElementById('searchCard'); sc.classList.add('compact'); document.getElementById('btnSearchMore').style.display = ''; document.getElementById('btnSearchMore').textContent = '▾ 더보기'; }
+      setTimeout(setNavVars, 50);
       renderStockMeta();
       applyView();
       const stEl = document.getElementById('status');
