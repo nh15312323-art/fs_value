@@ -8925,7 +8925,26 @@ async function ensureScreenTables(db) {
   await db.prepare("CREATE TABLE IF NOT EXISTS screen_lists (snap_date TEXT NOT NULL, list_key TEXT NOT NULL, payload TEXT, PRIMARY KEY (snap_date, list_key))").run();
   // data.go.kr(종목정보→법인등록번호→기업재무정보)로 받은 영업이익 캐시. 한 번 받으면 120일간 재사용한다.
   await db.prepare("CREATE TABLE IF NOT EXISTS op_income_cache (stock_code TEXT PRIMARY KEY, crno TEXT, biz_year INTEGER, op_profit REAL, fetched_at TEXT)").run();
+  // 계산 결과 캐시: 같은 기준일·같은 조건이면 무거운 SQL(수십만~백만 행 읽기)을 다시 돌리지 않고 저장분 1행만 읽는다.
+  await db.prepare("CREATE TABLE IF NOT EXISTS screen_cache (cache_key TEXT PRIMARY KEY, payload TEXT, created_at TEXT)").run();
   screenTablesReady = true;
+}
+
+// 캐시 읽기/쓰기(실패해도 계산은 계속한다). 한 행이 1.5MB를 넘으면 저장하지 않는다(D1 한 행 한도 2MB 보호).
+async function screenCacheGet(env, key) {
+  try {
+    const r = await env.DB.prepare("SELECT payload FROM screen_cache WHERE cache_key = ?").bind(key).first();
+    return r && r.payload ? JSON.parse(r.payload) : null;
+  } catch (e) { return null; }
+}
+async function screenCachePut(env, key, obj, d0) {
+  try {
+    const txt = JSON.stringify(obj);
+    if (txt.length > 1500000) return;
+    // 기준일이 바뀌면 이전 날짜 캐시는 쓸모가 없으므로 비운다(표가 계속 커지지 않게).
+    await env.DB.prepare("DELETE FROM screen_cache WHERE cache_key NOT LIKE ?").bind(d0 + "|%").run();
+    await env.DB.prepare("INSERT OR REPLACE INTO screen_cache (cache_key, payload, created_at) VALUES (?, ?, ?)").bind(key, txt, new Date().toISOString()).run();
+  } catch (e) { console.error("스크리닝 캐시 저장 실패:", (e && e.message) || e); }
 }
 
 function parseIndexXml(xml) {
@@ -9130,6 +9149,17 @@ async function computeScreenLists(env, opts) {
   if (i0 < 0) throw new Error("최근 거래일의 종목 시세가 아직 없습니다. '유니버스 갱신'과 백필 진행 상황을 확인해주세요.");
   const pts = { d0: cal[i0], d20: cal[i0 + 20], d21: cal[i0 + 21], d60: cal[i0 + 60], d63: cal[i0 + 63], d120: cal[i0 + 120], d126: cal[i0 + 126] };
 
+  // 2-1) 캐시 확인: 기준일 + 모든 조건이 같으면 이전 계산 결과를 그대로 쓴다(읽기 1행). 무료 읽기 한도(하루 500만 행) 보호용.
+  const cacheKey = [pts.d0, minMcap, minTv, minPrice, pcMcap, pcTv, nw.w3.toFixed(4), nw.w6.toFixed(4), cal.length >= 270 ? "h" : "s"].join("|");
+  if (!opts.noCache) {
+    const hit = await screenCacheGet(env, cacheKey);
+    if (hit && hit.meta && hit.lists) {
+      hit.meta.cached = true;
+      hit.meta.clamped = clamped; // 안내 문구는 이번 요청 기준으로 다시 붙인다
+      return hit;
+    }
+  }
+
   // 3) 코스피 값(같은 날짜 지점)
   const dateList = Object.values(pts);
   const { results: kr } = await env.DB
@@ -9217,7 +9247,14 @@ async function computeScreenLists(env, opts) {
   const extraMap = new Map();
   if (mom.ready) {
     const dStart = cal[i0 + SCREEN_MOM_DAYS];
-    const { results: ex } = await env.DB.prepare(SCREEN_EXTRA_SQL).bind(dStart, pts.d0, pts.d21, SCREEN_JUMP_LIMIT).all();
+    // 이 쿼리가 가장 무겁다(252일 × 종목 수 ≈ 80만 행). 기준일이 같으면 조건을 바꿔도 결과가 같으므로 따로 캐시한다.
+    const exKey = pts.d0 + "|extra|" + dStart;
+    let ex = await screenCacheGet(env, exKey);
+    if (!Array.isArray(ex)) {
+      const got = await env.DB.prepare(SCREEN_EXTRA_SQL).bind(dStart, pts.d0, pts.d21, SCREEN_JUMP_LIMIT).all();
+      ex = got.results || [];
+      await screenCachePut(env, exKey, ex, pts.d0);
+    }
     for (const e of ex) extraMap.set(e.sc, e);
   }
   const extraOf = (r) => {
@@ -9254,7 +9291,9 @@ async function computeScreenLists(env, opts) {
     topN: SCREEN_TOP_N, minMcapEok: minMcap, minTvEok: minTv, pcMcap, pcTv, hotPct: SCREEN_HOT_PCT, cutMcEok, cutTvEok, minPrice, weights: nw, clamped, avgDays: SCREEN_AVG_DAYS,
     mom, zMinObs: { z10: SCREEN_Z10_MIN_OBS, z20: SCREEN_Z20_MIN_OBS }, asof_rows: meta0 ? meta0.total : null, no_mcap: meta0 ? meta0.nomc : null, passed_floor: passedN,
   };
-  return { meta, lists };
+  const out = { meta, lists };
+  await screenCachePut(env, cacheKey, out, pts.d0);
+  return out;
 }
 
 async function saveScreenLists(env, result) {
