@@ -144,6 +144,8 @@ const DB_COLUMNS = [
   "updated_at",
 ];
 
+// 계산 엔진 함수의 원문을 화면 스크립트에 그대로 넣어 서버와 같은 코드를 쓴다(복붙으로 두 벌이 어긋나는 것을 막음).
+const PF_CLIENT_FUNCS = [pfLedger, pfSummary, pfSizePosition, pfSplitTranches, pfTradeWarnings, pfBehavior].map((f) => f.toString()).join("\n");
 const HTML_PAGE = `<!doctype html>
 <html lang="ko">
 <head>
@@ -175,6 +177,9 @@ const HTML_PAGE = `<!doctype html>
     .topbar .tagline { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
     .nav { display: flex; gap: 6px; position: sticky; top: 0; z-index: 20; background: var(--bg); padding: 6px 0 8px; margin-bottom: 8px; border-bottom: 1px solid var(--border); }
     .nav button { flex: 1; padding: 10px 6px; font-size: 14px; font-weight: 600; }
+    .pfl { display: flex; flex-direction: column; font-size: 12px; color: var(--text-muted); gap: 3px; flex: 1; min-width: 150px; }
+    .pfl input { width: 100%; }
+    textarea { font-size: 14px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-family: inherit; }
     .subnav { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
     .subnav button { padding: 7px 12px; font-size: 13.5px; border-radius: 999px; }
     .meta-line { font-size: 12.5px; color: var(--text-muted); line-height: 1.55; margin-top: 8px; }
@@ -304,6 +309,7 @@ const HTML_PAGE = `<!doctype html>
     <button id="tabBtnMacro" onclick="switchTab('macro')">③ 거시·상관</button>
     <button id="tabBtnData" onclick="switchTab('data')">④ 데이터 관리</button>
     <button id="tabBtnBt" onclick="switchTab('bt')">⑤ 백테스트</button>
+    <button id="tabBtnPf" onclick="switchTab('pf')">⑥ 내 계좌</button>
   </div>
 
   <!-- ===================== ② 종목분석 ===================== -->
@@ -604,6 +610,117 @@ const HTML_PAGE = `<!doctype html>
       <div style="font-size:11.5px; color:var(--text-muted); margin-top:6px;">논문 인용은 이 앱에서 온라인으로 재확인하지 못했습니다. 중요한 판단 전에 원문을 확인하세요. 백테스트 결과는 미래 수익을 보장하지 않습니다.</div>
     </details>
   </div>
+
+  <!-- ===================== ⑥ 내 계좌 ===================== -->
+  <div id="tabPf" style="display:none;">
+    <div class="card" style="border-left:4px solid #f59e0b;">
+      <div class="card-title">⑥ 내 계좌·매매 관리 (기록과 점검 도구 — 주문은 내지 않습니다)</div>
+      <div style="font-size:12.5px; line-height:1.6;">증권사에서 실제로 체결한 내용을 여기에 <b>기록</b>하면 평균단가·비중·현금·행동 통계를 계산합니다. 이 화면의 수량·경고는 <b>참고용 계산</b>이며 투자 권유나 최적 수익을 보장하지 않습니다.
+        근거 수준: ①정의·산식(평균단가, 비중, 손실 예산 = 확립된 계산) ②반복 관찰된 행동 편향(처분효과 Shefrin&amp;Statman 1985·Odean 1998, 과잉거래 Barber&amp;Odean 2000, 손실회피 Kahneman&amp;Tversky 1979) ③실무 관행(체크리스트·숙려 시간·일지) ④정책값은 <b>본인 선택</b>이며 정답이 증명된 값이 아닙니다. 논문은 이 앱에서 온라인으로 재확인하지 못했습니다.</div>
+    </div>
+    <div class="card" id="pfuGate">
+      <div class="card-title">접근 키</div>
+      <div style="font-size:12.5px; color:var(--text-muted); margin-bottom:8px;">이 사이트 주소는 공개라서 보유 내역은 키가 있어야 저장·조회됩니다. Cloudflare → 이 Worker → Settings → Variables and Secrets에 <b>PF_KEY</b>(12자 이상 무작위 문자열, Secret 형식)를 등록한 뒤 같은 값을 아래에 입력하세요.</div>
+      <div class="row"><input id="pfuKey" type="password" placeholder="접근 키" autocomplete="off" style="flex:1; min-width:180px;" /><button onclick="pfuUnlock()">열기</button></div>
+      <div id="pfuGateMsg" class="meta-line"></div>
+    </div>
+    <div id="pfuMain" style="display:none;">
+      <div class="subnav" id="pfuNav">
+        <button onclick="pfuPanel('home')" id="pfuNb_home">현황</button>
+        <button onclick="pfuPanel('plan')" id="pfuNb_plan">계획·수량</button>
+        <button onclick="pfuPanel('trade')" id="pfuNb_trade">거래 기록</button>
+        <button onclick="pfuPanel('check')" id="pfuNb_check">행동 점검</button>
+        <button onclick="pfuPanel('policy')" id="pfuNb_policy">정책</button>
+      </div>
+      <div id="pfuMsg" class="meta-line"></div>
+
+      <div id="pfuP_home"><div class="card" id="pfuSummary"></div><div class="card" id="pfuHold"></div></div>
+
+      <div id="pfuP_plan" style="display:none;">
+        <div class="card">
+          <div class="card-title">투자 계획 (가설 · 반증 조건 · 위험 기준가)</div>
+          <div class="row"><input id="pfpName" placeholder="종목명(정확히)" style="flex:1; min-width:140px;" />
+            <select id="pfpStatus"><option>관찰</option><option>매수검토</option><option>보유</option><option>보류</option><option>축소검토</option><option>매도검토</option><option>종료</option></select>
+            <input id="pfpSector" placeholder="업종(직접 입력)" style="width:120px;" /></div>
+          <textarea id="pfpThesis" placeholder="투자 논리: 왜 이 기업인가? (사업·경쟁우위·현금흐름 근거)" style="width:100%; margin-top:8px; min-height:60px;"></textarea>
+          <textarea id="pfpDis" placeholder="반증 조건: 무엇이 관측되면 이 가설이 틀렸다고 인정할지 (매수검토·보유 상태는 필수)" style="width:100%; margin-top:8px; min-height:50px;"></textarea>
+          <textarea id="pfpRisk" placeholder="핵심 위험 / 대안 종목과의 비교 / 촉매" style="width:100%; margin-top:8px; min-height:50px;"></textarea>
+          <div class="row" style="margin-top:8px;">
+            <input id="pfpBear" type="number" placeholder="Bear 가격" style="width:100px;" /><input id="pfpBase" type="number" placeholder="Base 가격" style="width:100px;" /><input id="pfpBull" type="number" placeholder="Bull 가격" style="width:100px;" />
+          </div>
+          <div class="row" style="margin-top:8px;">
+            <input id="pfpEL" type="number" placeholder="매수구간 하단" style="width:110px;" /><input id="pfpEH" type="number" placeholder="매수구간 상단" style="width:110px;" /><input id="pfpRP" type="number" placeholder="위험관리 기준가" style="width:120px;" /><input id="pfpMaxQ" type="number" placeholder="최대 수량(주)" style="width:110px;" />
+          </div>
+          <textarea id="pfpSell" placeholder="매도·축소 규칙(사전에 정함): 예) 가치 도달 / 가설 훼손 / 비중 초과" style="width:100%; margin-top:8px; min-height:44px;"></textarea>
+          <textarea id="pfpNoAvg" placeholder="물타기 금지/허용 규칙(사전에 정함)" style="width:100%; margin-top:8px; min-height:40px;"></textarea>
+          <div class="row" style="margin-top:8px;"><label style="font-size:12.5px;">검토일 <input id="pfpReview" type="date" /></label></div>
+          <div style="font-size:12.5px; margin-top:8px;"><b>분할 매수 계획</b> (조건·가격·비중%는 본인 선택. 일시 매수보다 분할이 낫다는 것은 이 앱에서 검증되지 않았습니다)</div>
+          <div id="pfpTr"></div>
+          <div class="row" style="margin-top:10px;"><button onclick="pfuSavePlan()">계획 저장(새 버전)</button><button onclick="pfuClearPlan()" style="background:#fff; color:var(--text);">새로 작성</button></div>
+          <input type="hidden" id="pfpKey" />
+        </div>
+        <div class="card"><div class="card-title">저장된 계획</div><div id="pfuPlans"></div></div>
+        <div class="card">
+          <div class="card-title">매수 수량 계산기 (위험 예산 · 집중도 · 현금 · 유동성 중 가장 작은 값)</div>
+          <div class="row"><input id="pfcName" placeholder="종목명" style="flex:1; min-width:140px;" /><button onclick="pfuQuote()">현재가·거래대금 불러오기</button></div>
+          <div class="row" style="margin-top:8px;"><input id="pfcBuy" type="number" placeholder="매수 예정가" style="width:110px;" /><input id="pfcRisk" type="number" placeholder="위험관리 기준가" style="width:120px;" /><input id="pfcBear" type="number" placeholder="Bear 가격(선택)" style="width:120px;" /><input id="pfcAdv" type="number" placeholder="20일 평균 거래대금(원)" style="width:170px;" /></div>
+          <div class="row" style="margin-top:8px;"><button onclick="pfuCalc()">계산</button></div>
+          <div id="pfcOut" style="margin-top:10px;"></div>
+        </div>
+      </div>
+
+      <div id="pfuP_trade" style="display:none;">
+        <div class="card">
+          <div class="card-title">체결 내용 기록 (증권사에서 이미 체결된 것)</div>
+          <div class="row"><select id="pftSide" onchange="pfuSideChange()"><option value="buy">매수</option><option value="sell">매도</option><option value="deposit">입금</option><option value="withdraw">출금</option></select>
+            <input id="pftDate" type="date" /><input id="pftName" placeholder="종목명(정확히)" style="flex:1; min-width:140px;" /></div>
+          <div class="row" style="margin-top:8px;"><input id="pftQty" type="number" placeholder="수량(주)" style="width:100px;" /><input id="pftPrice" type="number" placeholder="체결가 (입출금은 금액)" style="width:170px;" /><input id="pftFee" type="number" placeholder="수수료(비우면 정책 비율)" style="width:170px;" /><input id="pftTax" type="number" placeholder="세금(비우면 정책)" style="width:140px;" /></div>
+          <div class="row" style="margin-top:8px;">
+            <select id="pftReason"><option value="">매도 사유 선택</option><option>가치 도달</option><option>가설 훼손</option><option>가격 위험</option><option>비중 초과</option><option>현금 필요</option><option>대체 기회</option><option>비용·세금</option></select>
+            <select id="pftEmo"><option value="">지금 감정</option><option>평온</option><option>자신감</option><option>불안</option><option>공포</option><option>탐욕</option><option>후회</option><option>지루함</option></select>
+            <input id="pftNote" placeholder="메모" style="flex:1; min-width:140px;" /></div>
+          <div class="row" style="margin-top:10px;"><button onclick="pfuSubmitTrade(false)">기록</button></div>
+          <div id="pftWarn"></div>
+        </div>
+        <div class="card"><div class="card-title">거래 원장 (삭제 없음 — 잘못된 기록은 무효 처리)</div><div id="pfuLedger"></div></div>
+      </div>
+
+      <div id="pfuP_check" style="display:none;">
+        <div class="card" id="pfuBeh"></div>
+        <div class="card">
+          <div class="card-title">사후 검토 일지 (결과가 아니라 과정을 평가)</div>
+          <div class="row"><input id="pfjName" placeholder="종목명(선택)" style="flex:1; min-width:140px;" /><input id="pfjOut" type="number" step="0.1" placeholder="결과 수익률 %" style="width:130px;" />
+            <select id="pfjLS"><option value="">운/실력 판단</option><option>대부분 실력(과정)</option><option>반반</option><option>대부분 운</option><option>판단 불가</option></select>
+            <select id="pfjEmo"><option value="">감정</option><option>평온</option><option>자신감</option><option>불안</option><option>공포</option><option>탐욕</option><option>후회</option></select></div>
+          <div style="font-size:12.5px; margin-top:8px;">과정 점검 (해당하면 체크)</div>
+          <div id="pfjProc"></div>
+          <textarea id="pfjLesson" placeholder="배운 점 / 다음에 바꿀 규칙" style="width:100%; margin-top:8px; min-height:50px;"></textarea>
+          <div class="row" style="margin-top:8px;"><button onclick="pfuSaveJournal()">일지 저장</button></div>
+          <div id="pfuJournal" style="margin-top:10px;"></div>
+        </div>
+      </div>
+
+      <div id="pfuP_policy" style="display:none;">
+        <div class="card">
+          <div class="card-title">나의 투자 정책 (본인이 정하는 값 — 정답이 증명된 숫자는 없습니다)</div>
+          <div style="font-size:12.5px; color:var(--text-muted); margin-bottom:8px;">저장할 때마다 새 버전이 쌓입니다(과거 기록 보존). 입력 예시는 참고용 출발점일 뿐 추천값이 아닙니다.</div>
+          <div class="row"><label class="pfl">1회 매수 허용 손실(총자산 대비 %)<input id="pfoRisk" type="number" step="0.1" placeholder="예: 0.5" /></label>
+            <label class="pfl">단일 종목 최대 비중 %<input id="pfoMax" type="number" step="1" placeholder="예: 15" /></label>
+            <label class="pfl">최소 현금 비중 %<input id="pfoCash" type="number" step="1" placeholder="예: 10" /></label></div>
+          <div class="row" style="margin-top:8px;"><label class="pfl">1년 내 예정 현금 수요(원)<input id="pfoNeeds" type="number" placeholder="0" /></label>
+            <label class="pfl">감내 가능한 최대 낙폭 %<input id="pfoDD" type="number" placeholder="예: 25" /></label>
+            <label class="pfl">투자 기간(개월)<input id="pfoHz" type="number" placeholder="예: 60" /></label></div>
+          <div class="row" style="margin-top:8px;"><label class="pfl">매수 수수료율 %<input id="pfoFee" type="number" step="0.001" placeholder="증권사 기준" /></label>
+            <label class="pfl">매도 세율 %<input id="pfoTax" type="number" step="0.001" placeholder="현재 세법 확인" /></label>
+            <label class="pfl">하루 거래대금 대비 최대 주문 %<input id="pfoAdv" type="number" step="0.1" placeholder="예: 1" /></label>
+            <label class="pfl">계획 후 숙려 시간(시간)<input id="pfoCd" type="number" placeholder="예: 24" /></label></div>
+          <input id="pfoNote" placeholder="메모" style="width:100%; margin-top:8px;" />
+          <div class="row" style="margin-top:10px;"><button onclick="pfuSavePolicy()">정책 저장</button><button onclick="pfuExport()" style="background:#fff; color:var(--text);">전체 백업(JSON) 받기</button></div>
+          <div style="font-size:12px; color:var(--text-muted); margin-top:8px;">수수료율·세율은 이 앱이 임의로 넣지 않습니다. 비워 두면 비용을 0으로 기록하고 그 사실을 알려줍니다.</div>
+        </div>
+      </div>
+    </div>
+  </div><!-- /tabPf -->
 
   <!-- ===================== ④ 데이터 관리 ===================== -->
   <div id="tabData" style="display:none;">
@@ -3789,9 +3906,206 @@ function renderAnalysis() {
       }
     }
 
+// ===== ⑥ 내 계좌 (클라이언트). 계산 엔진(pf*)은 서버와 같은 소스를 그대로 주입받아 쓴다. =====
+${PF_CLIENT_FUNCS}
+const PFU = { key: '', st: null, panel: 'home', last: null };
+function pfuToday() { const d = new Date(Date.now() + 9 * 3600 * 1000); return d.toISOString().slice(0, 10); }
+function pfuMsg(t, bad) { const el = document.getElementById('pfuMsg'); if (el) { el.style.color = bad ? '#dc2626' : 'var(--text-muted)'; el.textContent = t || ''; } }
+async function pfuApi(path, method, body) {
+  const opt = { method: method || 'GET', headers: { 'x-pf-key': PFU.key }, cache: 'no-store' };
+  if (body) { opt.headers['content-type'] = 'application/json'; opt.body = JSON.stringify(body); }
+  const res = await fetch(path, opt);
+  let d = null; try { d = await res.json(); } catch (e) { d = { error: 'HTTP ' + res.status }; }
+  return { status: res.status, ok: res.ok, data: d };
+}
+async function pfuUnlock() {
+  const k = document.getElementById('pfuKey').value.trim(); const g = document.getElementById('pfuGateMsg');
+  if (!k) { g.textContent = '키를 입력하세요.'; return; }
+  PFU.key = k; g.textContent = '확인 중...';
+  try {
+    const r = await pfuApi('/api/pf/ping');
+    if (!r.ok) { PFU.key = ''; g.style.color = '#dc2626'; g.textContent = r.data.error || '열 수 없습니다.'; return; }
+    try { sessionStorage.setItem('pfKey', k); } catch (e) {}
+    document.getElementById('pfuGate').style.display = 'none'; document.getElementById('pfuMain').style.display = '';
+    await pfuLoad();
+  } catch (e) { PFU.key = ''; g.style.color = '#dc2626'; g.textContent = '오류: ' + e.message; }
+}
+function pfuInit() {
+  if (PFU.inited) return; PFU.inited = true;
+  document.getElementById('pftDate').value = pfuToday();
+  let h = ''; for (let i = 0; i < 3; i++) h += '<div class="row" style="margin-top:6px;"><input id="pfpTc' + i + '" placeholder="' + (i + 1) + '차 조건(예: 다음 분기 실적 확인 후)" style="flex:1; min-width:150px;" /><input id="pfpTp' + i + '" type="number" placeholder="가격" style="width:90px;" /><input id="pfpTw' + i + '" type="number" placeholder="비중%" style="width:80px;" /></div>';
+  document.getElementById('pfpTr').innerHTML = h;
+  const items = ['매수 전에 가설과 반증 조건을 적었다', '가치평가(Bear/Base/Bull) 근거가 있었다', '비중이 정책 한도 안이었다', '당시 감정을 기록했다', '사전에 정한 규칙대로 실행했다', '하락·상승에 감정이 아니라 가설 기준으로 대응했다'];
+  document.getElementById('pfjProc').innerHTML = items.map(function (t, i) { return '<label style="display:block; font-size:13px; margin:3px 0;"><input type="checkbox" class="pfjC" data-i="' + i + '" /> ' + t + '</label>'; }).join('');
+  try { const k = sessionStorage.getItem('pfKey'); if (k) { document.getElementById('pfuKey').value = k; pfuUnlock(); } } catch (e) {}
+}
+function pfuPanel(p) {
+  PFU.panel = p;
+  ['home', 'plan', 'trade', 'check', 'policy'].forEach(function (k) {
+    document.getElementById('pfuP_' + k).style.display = k === p ? '' : 'none';
+    document.getElementById('pfuNb_' + k).className = k === p ? 'toggle-active' : '';
+  });
+}
+async function pfuLoad() {
+  pfuMsg('불러오는 중...');
+  try {
+    const r = await pfuApi('/api/pf/state');
+    if (!r.ok) { pfuMsg(r.data.error || '불러오기 실패', true); return; }
+    PFU.st = r.data; pfuRender(); pfuPanel(PFU.panel); pfuMsg('');
+  } catch (e) { pfuMsg('오류: ' + e.message, true); }
+}
+function pfuFmt(v) { return v == null ? 'N/A' : Math.round(v).toLocaleString('ko-KR'); }
+function pfuPct(v, d) { return v == null ? 'N/A' : (v * 100).toFixed(d == null ? 1 : d) + '%'; }
+function pfuRender() {
+  const st = PFU.st, s = st.summary;
+  let h = '<div class="card-title">계좌 현황 (원, 평균단가법 · 최신 종가 기준)</div>';
+  if (!st.policy) h += '<div style="color:#b45309; font-size:13px; margin-bottom:6px;">먼저 [정책] 탭에서 투자 정책을 저장하면 비중·현금 점검과 수량 계산이 켜집니다.</div>';
+  h += '<table><tbody><tr><td>총자산</td><td style="text-align:right"><b>' + pfuFmt(s.total) + '</b></td></tr><tr><td>현금</td><td style="text-align:right">' + pfuFmt(s.cash) + ' (' + pfuPct(s.cashPct) + ')</td></tr><tr><td>평가금액</td><td style="text-align:right">' + pfuFmt(s.mv) + '</td></tr><tr><td>평가손익(미실현)</td><td style="text-align:right">' + pfuFmt(s.unreal) + '</td></tr><tr><td>실현손익(누적, 비용 반영)</td><td style="text-align:right">' + pfuFmt(s.realized) + '</td></tr><tr><td>상위 1·3·5 종목 비중</td><td style="text-align:right">' + pfuPct(s.top1) + ' · ' + pfuPct(s.top3) + ' · ' + pfuPct(s.top5) + '</td></tr></tbody></table>';
+  const ws = (s.warnings || []).map(function (w) { return '<li>' + escHtml(w.msg) + '</li>'; }).join('');
+  if (ws) h += '<ul style="font-size:12.5px; color:#b45309; margin:8px 0 0 18px; padding:0;">' + ws + '</ul>';
+  if (s.partial) h += '<div class="meta-line">일부 값은 현재가가 없어 부분 합계입니다.</div>';
+  document.getElementById('pfuSummary').innerHTML = h;
+  let t = '<div class="card-title">보유 종목</div>';
+  if (!s.rows.length) t += '<div style="font-size:13px; color:var(--text-muted);">보유 종목이 없습니다. [거래 기록]에서 입금 후 매수 내역을 입력하세요.</div>';
+  else t += '<div class="tscroll"><table><thead><tr><th>종목</th><th>수량</th><th>평균단가</th><th>현재가</th><th>비중</th><th>평가손익</th><th>업종</th></tr></thead><tbody>' + s.rows.map(function (r) { return '<tr><td>' + escHtml(r.name) + '</td><td>' + pfuFmt(r.qty) + '</td><td>' + pfuFmt(r.avg) + '</td><td>' + pfuFmt(r.close) + (r.priceDate ? '<div style="font-size:10.5px;color:var(--text-muted)">' + escHtml(r.priceDate) + '</div>' : '') + '</td><td>' + pfuPct(r.weight) + '</td><td>' + pfuPct(r.unrealPct) + '</td><td>' + escHtml(r.sector || '미분류') + '</td></tr>'; }).join('') + '</tbody></table></div>';
+  if (s.sectors && s.sectors.length) t += '<div class="meta-line">업종 비중(계획에 직접 적은 업종 기준): ' + s.sectors.map(function (x) { return escHtml(x.name) + ' ' + pfuPct(x.weight); }).join(' · ') + '</div>';
+  t += '<div class="meta-line">같은 업종·같은 요인에 노출된 종목은 함께 움직일 수 있어, 종목 수가 많아도 분산이 충분하다고 단정할 수 없습니다.</div>';
+  document.getElementById('pfuHold').innerHTML = t;
+  pfuRenderPlans(); pfuRenderLedger(); pfuRenderBeh(); pfuRenderJournal(); pfuFillPolicy();
+}
+function pfuRenderPlans() {
+  const ps = PFU.st.plans;
+  document.getElementById('pfuPlans').innerHTML = ps.length ? ps.map(function (p) {
+    return '<div style="border-top:1px solid var(--border); padding:8px 0; font-size:13px;"><b>' + escHtml(p.corp_name) + '</b> · ' + escHtml(p.status) + ' · v' + p.version + ' <button style="padding:3px 8px; font-size:12px;" onclick="pfuEditPlan(' + p.plan_key + ')">불러와 수정</button><br/>' +
+      '<span style="color:var(--text-muted)">논리:</span> ' + escHtml(p.thesis || '-') + '<br/><span style="color:var(--text-muted)">반증:</span> ' + escHtml(p.disproof || '-') + '<br/>' +
+      '<span style="color:var(--text-muted)">매수구간</span> ' + pfuFmt(p.entry_low) + '~' + pfuFmt(p.entry_high) + ' · <span style="color:var(--text-muted)">위험기준가</span> ' + pfuFmt(p.risk_price) + ' · Bear/Base/Bull ' + pfuFmt(p.bear_price) + '/' + pfuFmt(p.base_price) + '/' + pfuFmt(p.bull_price) + (p.review_date ? ' · 검토일 ' + escHtml(p.review_date) : '') + '</div>';
+  }).join('') : '<div style="font-size:13px; color:var(--text-muted);">저장된 계획이 없습니다.</div>';
+}
+function pfuV(id) { return document.getElementById(id).value; }
+function pfuEditPlan(key) {
+  const p = PFU.st.plans.filter(function (x) { return x.plan_key === key; })[0]; if (!p) return;
+  const set = function (id, v) { document.getElementById(id).value = v == null ? '' : v; };
+  set('pfpKey', p.plan_key); set('pfpName', p.corp_name); set('pfpStatus', p.status); set('pfpSector', p.sector); set('pfpThesis', p.thesis); set('pfpDis', p.disproof);
+  set('pfpRisk', [p.risks, p.alt_considered].filter(Boolean).join(' / ')); set('pfpBear', p.bear_price); set('pfpBase', p.base_price); set('pfpBull', p.bull_price);
+  set('pfpEL', p.entry_low); set('pfpEH', p.entry_high); set('pfpRP', p.risk_price); set('pfpMaxQ', p.max_qty); set('pfpSell', p.sell_rules); set('pfpNoAvg', p.no_avgdown_rules); set('pfpReview', p.review_date);
+  let tr = []; try { tr = JSON.parse(p.tranche_json || '[]'); } catch (e) {}
+  for (let i = 0; i < 3; i++) { set('pfpTc' + i, tr[i] ? tr[i].cond : ''); set('pfpTp' + i, tr[i] ? tr[i].price : ''); set('pfpTw' + i, tr[i] ? tr[i].weightPct : ''); }
+  document.getElementById('pfcName').value = p.corp_name; set('pfcRisk', p.risk_price); set('pfcBear', p.bear_price);
+  pfuMsg('계획을 불러왔습니다. 수정 후 저장하면 새 버전(v' + (p.version + 1) + ')이 쌓입니다.'); window.scrollTo(0, 0);
+}
+function pfuClearPlan() { ['pfpKey', 'pfpName', 'pfpSector', 'pfpThesis', 'pfpDis', 'pfpRisk', 'pfpBear', 'pfpBase', 'pfpBull', 'pfpEL', 'pfpEH', 'pfpRP', 'pfpMaxQ', 'pfpSell', 'pfpNoAvg', 'pfpReview'].forEach(function (i) { document.getElementById(i).value = ''; }); for (let i = 0; i < 3; i++) ['pfpTc', 'pfpTp', 'pfpTw'].forEach(function (p) { document.getElementById(p + i).value = ''; }); }
+async function pfuSavePlan() {
+  const tr = []; for (let i = 0; i < 3; i++) { const c = pfuV('pfpTc' + i), p = pfuV('pfpTp' + i), w = pfuV('pfpTw' + i); if (c || p || w) tr.push({ cond: c, price: p === '' ? null : Number(p), weightPct: w === '' ? null : Number(w) }); }
+  const body = { plan_key: pfuV('pfpKey') || null, corp_name: pfuV('pfpName').trim(), status: pfuV('pfpStatus'), sector: pfuV('pfpSector'), thesis: pfuV('pfpThesis'), disproof: pfuV('pfpDis'), risks: pfuV('pfpRisk'), bear_price: pfuV('pfpBear'), base_price: pfuV('pfpBase'), bull_price: pfuV('pfpBull'), entry_low: pfuV('pfpEL'), entry_high: pfuV('pfpEH'), risk_price: pfuV('pfpRP'), max_qty: pfuV('pfpMaxQ'), sell_rules: pfuV('pfpSell'), no_avgdown_rules: pfuV('pfpNoAvg'), review_date: pfuV('pfpReview'), tranches: tr, data_asof: pfuToday() };
+  const r = await pfuApi('/api/pf/plan', 'POST', body);
+  if (!r.ok) { pfuMsg(r.data.error || '저장 실패', true); return; }
+  pfuMsg('계획 저장 완료(v' + r.data.version + ')'); pfuClearPlan(); await pfuLoad();
+}
+async function pfuQuote() {
+  const nm = pfuV('pfcName').trim(); if (!nm) { pfuMsg('종목명을 입력하세요.', true); return; }
+  pfuMsg('시세 조회 중...');
+  const r = await pfuApi('/api/pf/quote?corp_name=' + encodeURIComponent(nm));
+  if (!r.ok) { pfuMsg(r.data.error || '조회 실패', true); return; }
+  PFU.quote = r.data; document.getElementById('pfcBuy').value = r.data.close;
+  document.getElementById('pfcAdv').value = r.data.adv20 == null ? '' : Math.round(r.data.adv20);
+  pfuMsg(r.data.corp_name + ' 종가 ' + pfuFmt(r.data.close) + '원 (' + r.data.date + ')' + (r.data.adv20 == null ? ' · 거래대금 자료 부족' : ' · 최근 ' + r.data.advN + '일 평균 거래대금 ' + pfuFmt(r.data.adv20) + '원'));
+}
+function pfuCalc() {
+  const st = PFU.st, pol = st.policy, out = document.getElementById('pfcOut');
+  if (!pol) { out.innerHTML = '<span style="color:#dc2626">먼저 [정책] 탭에서 정책을 저장하세요.</span>'; return; }
+  const nm = pfuV('pfcName').trim(); const cur = st.summary.rows.filter(function (r) { return r.name === nm; })[0];
+  const res = pfSizePosition({ base: st.summary.total, riskPct: pol.risk_budget_pct, buyPrice: pfuV('pfcBuy'), riskPrice: pfuV('pfcRisk'), maxPosPct: pol.max_position_pct, curPosValue: cur ? cur.mv : 0, cash: st.summary.cash, minCashPct: pol.min_cash_pct, cashNeeds: pol.cash_needs_krw, feePct: pol.fee_rate_pct, adv: pfuV('pfcAdv'), advPct: pol.adv_limit_pct, bearPrice: pfuV('pfcBear') });
+  if (!res.ok) { out.innerHTML = '<ul style="color:#dc2626; font-size:13px;">' + res.errors.map(function (e) { return '<li>' + escHtml(e) + '</li>'; }).join('') + '</ul>'; return; }
+  let h = '<div style="font-size:15px;"><b>참고 상한: ' + pfuFmt(res.qty) + '주</b> (약 ' + pfuFmt(res.amount) + '원, 매수 후 비중 ' + pfuPct(res.weightAfter) + ', 매수 후 현금 ' + pfuPct(res.cashAfterPct) + ')</div>';
+  h += '<div class="meta-line">가장 작은 한도: ' + escHtml(res.binding.join(', ')) + ' · ' + escHtml(res.scenarioRef) + ' 도달 시 예상 손실 ' + pfuFmt(res.scenarioLoss) + '원 (총자산의 ' + pfuPct(res.scenarioLossPct, 2) + ')</div>';
+  h += '<table style="margin-top:8px;"><thead><tr><th>한도</th><th>최대 수량</th><th>계산</th></tr></thead><tbody>' + res.limits.map(function (l) { return '<tr><td>' + escHtml(l.label) + '</td><td>' + pfuFmt(l.qty) + '</td><td style="font-size:11.5px">' + escHtml(l.note) + '</td></tr>'; }).join('') + '</tbody></table>';
+  const plan = st.plans.filter(function (p) { return p.corp_name === nm; })[0]; let tw = [];
+  try { tw = plan ? JSON.parse(plan.tranche_json || '[]') : []; } catch (e) {}
+  if (tw.length && res.qty > 0) { const qs = pfSplitTranches(res.qty, tw.map(function (x) { return x.weightPct; })); h += '<div style="margin-top:8px; font-size:13px;"><b>계획된 분할(' + tw.length + '회)에 따른 수량</b>: ' + qs.map(function (q, i) { return (i + 1) + '차 ' + pfuFmt(q) + '주'; }).join(' · ') + '</div>'; }
+  h += '<ul style="font-size:12px; color:var(--text-muted); margin:8px 0 0 18px; padding:0;">' + res.warnings.map(function (w) { return '<li>' + escHtml(w) + '</li>'; }).join('') + '<li>이 계산은 고정 위험 비율 방식의 일반적인 실무 규칙입니다. 켈리 기준 등 최적 비중 공식은 입력 추정치(승률·손익비)가 불확실해 쓰지 않았습니다.</li></ul>';
+  out.innerHTML = h;
+}
+function pfuSideChange() { const s = pfuV('pftSide'), cash = s === 'deposit' || s === 'withdraw'; document.getElementById('pftName').style.display = cash ? 'none' : ''; document.getElementById('pftQty').style.display = cash ? 'none' : ''; document.getElementById('pftFee').style.display = cash ? 'none' : ''; document.getElementById('pftTax').style.display = s === 'sell' ? '' : 'none'; document.getElementById('pftReason').style.display = s === 'sell' ? '' : 'none'; }
+function pfuTradeBody(ack) {
+  const b = { side: pfuV('pftSide'), trade_date: pfuV('pftDate'), corp_name: pfuV('pftName').trim(), qty: pfuV('pftQty'), price: pfuV('pftPrice'), emotion: pfuV('pftEmo'), reason: pfuV('pftReason'), note: pfuV('pftNote') };
+  if (pfuV('pftFee') !== '') b.fee = pfuV('pftFee'); if (pfuV('pftTax') !== '') b.tax = pfuV('pftTax');
+  if (ack) { b.ack = true; b.ack_reason = pfuV('pftAck'); b.checks = Array.prototype.map.call(document.querySelectorAll('.pftChk'), function (c) { return c.checked; }); }
+  return b;
+}
+async function pfuSubmitTrade(ack) {
+  const box = document.getElementById('pftWarn'); const b = pfuTradeBody(ack);
+  if (ack && b.checks.length && b.checks.some(function (c) { return !c; })) { pfuMsg('물타기 점검 항목을 모두 확인해야 기록됩니다. 하나라도 아니라면 기록을 취소하는 것이 맞습니다.', true); return; }
+  const r = await pfuApi('/api/pf/trade', 'POST', b);
+  if (r.status === 409 && r.data.needs_ack) {
+    const chk = ['처음 세운 가설이 아직 유효하다', '반증 조건에 해당하지 않는다', '오늘 처음 보는 종목이라도 이 가격·비중에 살 것이다', '하락 원인을 확인했다', '추가 후 총 비중이 정책 한도 안이다', '손실을 만회하려는 마음이 아니다'];
+    box.innerHTML = '<div style="border:1px solid #f59e0b; background:#fffbeb; border-radius:8px; padding:10px; margin-top:10px;"><b>기록 전 점검 경고</b> (막는 것이 아니라, 알고 선택했는지 남기는 절차)<ul style="font-size:13px; margin:6px 0 6px 18px; padding:0;">' + r.data.warnings.filter(function (w) { return w.level !== 'block'; }).map(function (w) { return '<li>' + escHtml(w.msg) + '</li>'; }).join('') + '</ul>' +
+      (r.data.needs_check ? '<div style="font-size:13px;">물타기 점검(모두 해당해야 기록)</div>' + chk.map(function (t) { return '<label style="display:block; font-size:13px;"><input type="checkbox" class="pftChk" /> ' + t + '</label>'; }).join('') : '') +
+      '<textarea id="pftAck" placeholder="그래도 기록하는 이유(5자 이상)" style="width:100%; margin-top:6px; min-height:44px;"></textarea><div class="row" style="margin-top:6px;"><button onclick="pfuSubmitTrade(true)">이유를 적었고 알고 기록합니다</button><button onclick="pfuCancelAck()" style="background:#fff; color:var(--text);">취소</button></div></div>';
+    return;
+  }
+  if (!r.ok) { pfuMsg(r.data.error || '기록 실패', true); return; }
+  box.innerHTML = ''; ['pftQty', 'pftPrice', 'pftFee', 'pftTax', 'pftNote'].forEach(function (i) { document.getElementById(i).value = ''; });
+  pfuMsg('기록 완료.' + (r.data.costNote ? ' ' + r.data.costNote : '')); await pfuLoad();
+}
+function pfuCancelAck() { document.getElementById('pftWarn').innerHTML = ''; }
+function pfuRenderLedger() {
+  const tr = PFU.st.trades; const sn = { buy: '매수', sell: '매도', deposit: '입금', withdraw: '출금' };
+  let h = (PFU.st.ledger.errors || []).map(function (e) { return '<div style="color:#dc2626; font-size:12.5px;">⚠ ' + escHtml(e.msg) + '</div>'; }).join('');
+  h += tr.length ? '<div class="tscroll"><table><thead><tr><th>일자</th><th>구분</th><th>종목</th><th>수량</th><th>가격/금액</th><th>비용</th><th>감정·사유</th><th></th></tr></thead><tbody>' + tr.map(function (t) {
+    return '<tr style="' + (t.voided ? 'opacity:.45; text-decoration:line-through;' : '') + '"><td>' + escHtml(t.trade_date) + '</td><td>' + sn[t.side] + '</td><td>' + escHtml(t.corp_name || '') + '</td><td>' + (t.stock_code ? pfuFmt(t.qty) : '') + '</td><td>' + pfuFmt(t.price) + '</td><td>' + pfuFmt((t.fee || 0) + (t.tax || 0)) + '</td><td>' + escHtml([t.emotion, t.reason].filter(Boolean).join(' · ')) + '</td><td>' + (t.voided ? '무효' : '<button style="padding:2px 7px; font-size:12px;" onclick="pfuVoid(' + t.id + ')">무효</button>') + '</td></tr>';
+  }).join('') + '</tbody></table></div>' : '<div style="font-size:13px; color:var(--text-muted);">기록이 없습니다. 먼저 [입금]으로 계좌 원금을 기록하세요.</div>';
+  document.getElementById('pfuLedger').innerHTML = h;
+}
+async function pfuVoid(id) {
+  const why = window.prompt('무효 처리 사유(3자 이상). 기록은 지워지지 않고 계산에서만 제외됩니다.'); if (!why) return;
+  const r = await pfuApi('/api/pf/trade/void', 'POST', { id: id, reason: why });
+  if (!r.ok) { pfuMsg(r.data.error || '실패', true); return; } await pfuLoad();
+}
+function pfuRenderBeh() {
+  const b = PFU.st.behavior, d = b.disposition, a = b.activity, c = b.compliance, m = b.matrix;
+  let h = '<div class="card-title">행동 점검 (내 기록에서 계산 — 판정이 아니라 거울)</div>';
+  h += '<div style="font-size:13px; line-height:1.7;"><b>처분효과 점검</b> (이익 종목은 일찍 팔고 손실 종목은 오래 들고 있는 경향; 개인투자자 연구에서 반복 관찰, 너 개인에게 해당하는지는 아래 기록으로 확인)<br/>';
+  if (d.enough) h += '이익 매도 ' + d.nWin + '건 평균 보유 ' + Math.round(d.winHold) + '일 / 손실 매도 ' + d.nLose + '건 평균 보유 ' + Math.round(d.loseHold) + '일 → 손실/이익 보유기간 비율 <b>' + (d.ratio == null ? 'N/A' : d.ratio.toFixed(2)) + '</b> (1보다 훨씬 크면 손실 종목을 오래 끄는 경향 가능)';
+  else h += '매도 ' + d.n + '건(이익 ' + d.nWin + ', 손실 ' + d.nLose + '). 표본이 부족합니다(매도 10건 이상, 이익·손실 각 3건 이상 필요). 지금은 결론을 내지 않습니다.';
+  h += '<br/><b>거래 빈도·비용</b>: 최근 90일 거래 ' + a.trades90 + '건 · 누적 비용 ' + pfuFmt(a.costTotal) + '원 (총자산의 ' + pfuPct(a.costPct, 2) + ')<br/>';
+  h += '<b>계획 준수</b>: 매수 ' + c.buys + '건 중 계획 연결 ' + c.planLinked + '건(' + pfuPct(c.planLinkedPct, 0) + '), 경고 승인 후 기록 ' + c.warned + '건(' + pfuPct(c.warnedPct, 0) + '), 평균단가 아래 추가매수 ' + c.avgdown + '건<br/>';
+  const emo = Object.keys(b.emotions).map(function (k) { return escHtml(k) + ' ' + b.emotions[k]; }).join(' · '); h += '<b>기록된 감정</b>: ' + (emo || '없음') + '<br/>';
+  h += '<b>과정×결과 (사후검토 ' + b.matrixN + '건)</b>: 좋은 과정+좋은 결과 ' + m.goodGood + ' · 좋은 과정+나쁜 결과(운 나쁨 가능) ' + m.goodBad + ' · 나쁜 과정+좋은 결과(운 좋음 가능) ' + m.badGood + ' · 나쁜 과정+나쁜 결과 ' + m.badBad + '</div>';
+  h += '<div class="meta-line">짧은 기간·적은 건수에서의 결과는 운과 실력을 구분하기 어렵습니다. 과정 점수 기준은 과정 점검 항목 70% 이상입니다(임의 기준).</div>';
+  document.getElementById('pfuBeh').innerHTML = h;
+}
+async function pfuSaveJournal() {
+  const proc = Array.prototype.map.call(document.querySelectorAll('.pfjC'), function (c) { return c.checked; });
+  const body = { kind: '사후검토', corp_name: pfuV('pfjName').trim(), outcome_pct: pfuV('pfjOut'), luck_skill: pfuV('pfjLS'), emotion: pfuV('pfjEmo'), process: proc, lesson: pfuV('pfjLesson') };
+  const r = await pfuApi('/api/pf/journal', 'POST', body);
+  if (!r.ok) { pfuMsg(r.data.error || '저장 실패', true); return; }
+  document.getElementById('pfjLesson').value = ''; Array.prototype.forEach.call(document.querySelectorAll('.pfjC'), function (c) { c.checked = false; });
+  pfuMsg('일지 저장 완료(과정 점수 ' + Math.round(r.data.process_score) + ')'); await pfuLoad();
+}
+function pfuRenderJournal() {
+  const j = PFU.st.journal;
+  document.getElementById('pfuJournal').innerHTML = j.length ? j.slice(0, 20).map(function (e) { return '<div style="border-top:1px solid var(--border); padding:6px 0; font-size:12.5px;">' + escHtml(String(e.created_at).slice(0, 10)) + ' · ' + escHtml(e.corp_name || '-') + ' · 과정 ' + (e.process_score == null ? 'N/A' : Math.round(e.process_score)) + ' · 결과 ' + (e.outcome_pct == null ? 'N/A' : e.outcome_pct + '%') + (e.luck_skill ? ' · ' + escHtml(e.luck_skill) : '') + '<br/>' + escHtml(e.lesson || '') + '</div>'; }).join('') : '';
+}
+function pfuFillPolicy() {
+  const p = PFU.st.policy; if (!p || PFU.polFilled) return; PFU.polFilled = true;
+  const m = { pfoRisk: 'risk_budget_pct', pfoMax: 'max_position_pct', pfoCash: 'min_cash_pct', pfoNeeds: 'cash_needs_krw', pfoDD: 'max_dd_tolerance_pct', pfoHz: 'horizon_months', pfoFee: 'fee_rate_pct', pfoTax: 'sell_tax_pct', pfoAdv: 'adv_limit_pct', pfoCd: 'cooldown_hours', pfoNote: 'note' };
+  Object.keys(m).forEach(function (id) { document.getElementById(id).value = p[m[id]] == null ? '' : p[m[id]]; });
+}
+async function pfuSavePolicy() {
+  const body = { risk_budget_pct: pfuV('pfoRisk'), max_position_pct: pfuV('pfoMax'), min_cash_pct: pfuV('pfoCash'), cash_needs_krw: pfuV('pfoNeeds'), max_dd_tolerance_pct: pfuV('pfoDD'), horizon_months: pfuV('pfoHz'), fee_rate_pct: pfuV('pfoFee'), sell_tax_pct: pfuV('pfoTax'), adv_limit_pct: pfuV('pfoAdv'), cooldown_hours: pfuV('pfoCd'), note: pfuV('pfoNote') };
+  const r = await pfuApi('/api/pf/policy', 'POST', body);
+  if (!r.ok) { pfuMsg(r.data.error || '저장 실패', true); return; }
+  PFU.polFilled = false; pfuMsg('정책 저장 완료(새 버전)'); await pfuLoad();
+}
+async function pfuExport() {
+  const res = await fetch('/api/pf/export', { headers: { 'x-pf-key': PFU.key } });
+  if (!res.ok) { pfuMsg('백업 실패', true); return; }
+  const blob = await res.blob(); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'pf_backup.json'; document.body.appendChild(a); a.click(); a.remove();
+}
+
     function switchTab(tab) {
-      const tabs = { financial: 'tabFinancial', momentum: 'tabMomentum', macro: 'tabMacro', data: 'tabData', bt: 'tabBt' };
-      const btns = { financial: 'tabBtnFinancial', momentum: 'tabBtnMomentum', macro: 'tabBtnMacro', data: 'tabBtnData', bt: 'tabBtnBt' };
+      const tabs = { financial: 'tabFinancial', momentum: 'tabMomentum', macro: 'tabMacro', data: 'tabData', bt: 'tabBt', pf: 'tabPf' };
+      const btns = { financial: 'tabBtnFinancial', momentum: 'tabBtnMomentum', macro: 'tabBtnMacro', data: 'tabBtnData', bt: 'tabBtnBt', pf: 'tabBtnPf' };
       Object.keys(tabs).forEach(function (k) {
         document.getElementById(tabs[k]).style.display = k === tab ? '' : 'none';
         document.getElementById(btns[k]).className = k === tab ? 'toggle-active' : '';
@@ -3799,6 +4113,7 @@ function renderAnalysis() {
       if (tab === 'momentum' && !screenAutoLoaded) { screenAutoLoaded = true; loadScreen('top', true); }
       if (tab === 'data') { loadDataSummary(); checkMarketStatus(); }
       if (tab === 'bt') { btInitUi(); }
+      if (tab === 'pf') { pfuInit(); }
       if (tab === 'macro' && macroCorrDirty && rawRows.length) computeMacroCorrelation();
       if (tab === 'financial' && subTab === 'table' && chartSel.length) renderChartPanel(false);
       window.scrollTo(0, 0);
@@ -6070,6 +6385,377 @@ async function saveRowsToDb(db, rows) {
   }
 }
 
+// ============================================================
+// 내 계좌·매매 관리(pf) — 계산 엔진. 브라우저와 서버가 "같은 함수"를 쓰도록 순수 함수로만 만든다(PF_CLIENT_FUNCS로 화면에 주입).
+// 증거 수준(화면에도 표시): 평균단가·손익·비중·분산은 "확립된 정의", 위험예산 기반 수량 한도는 "확립된 계산 + 정책 선택(비율은 사용자가 정함)",
+// 처분효과(Shefrin & Statman 1985; Odean 1998)·과도한 매매(Barber & Odean 2000)는 "반복 관찰된 실증(미국 중심, 한국 개별 투자자에 그대로 적용은 별도 검증 필요)",
+// 사전 체크리스트·숙려 시간·일지는 "실무 관행/행동재무 문헌 기반 아이디어(효과 크기는 보편적으로 증명되지 않음)".
+// 금액은 모두 원(KRW), 수량은 정수 주. 평균단가법(이동평균). 호가단위·세금 규정은 반영하지 않고 사용자가 입력한 수수료·세금만 쓴다.
+// ============================================================
+function pfLedger(trades) {
+  const list = (trades || []).filter((t) => !t.voided).slice().sort((a, b) => String(a.trade_date).localeCompare(String(b.trade_date)) || (a.id || 0) - (b.id || 0));
+  const dayDiff = (a, b) => Math.round((Date.UTC(+b.slice(0, 4), +b.slice(4, 6) - 1, +b.slice(6, 8)) - Date.UTC(+a.slice(0, 4), +a.slice(4, 6) - 1, +a.slice(6, 8))) / 86400000);
+  const pos = {}; const errors = [], sells = [];
+  let cash = 0, realized = 0, fees = 0, deposits = 0;
+  for (const t of list) {
+    const q = Number(t.qty) || 0, p = Number(t.price) || 0, fee = Number(t.fee) || 0, tax = Number(t.tax) || 0;
+    if (t.side === "deposit") { cash += p; deposits += p; continue; }
+    if (t.side === "withdraw") { cash -= p; deposits -= p; continue; }
+    const code = t.stock_code;
+    const ps = pos[code] || (pos[code] = { code: code, name: t.corp_name || code, qty: 0, cost: 0, realized: 0, openDate: null, firstBuy: null });
+    if (t.corp_name) ps.name = t.corp_name;
+    if (t.side === "buy") {
+      if (ps.qty === 0) ps.openDate = t.trade_date;
+      if (!ps.firstBuy) ps.firstBuy = t.trade_date;
+      ps.qty += q; ps.cost += q * p + fee; cash -= q * p + fee; fees += fee;
+    } else if (t.side === "sell") {
+      if (q > ps.qty) { errors.push({ id: t.id, msg: "보유 수량(" + ps.qty + "주)보다 많이 매도한 기록입니다: " + (t.corp_name || code) + " " + t.trade_date }); continue; }
+      const avg = ps.qty ? ps.cost / ps.qty : 0, removed = avg * q, proceeds = q * p - fee - tax, gain = proceeds - removed;
+      ps.realized += gain; realized += gain; cash += proceeds; fees += fee + tax;
+      sells.push({ id: t.id, code: code, name: ps.name, date: t.trade_date, qty: q, gain: gain, pct: removed > 0 ? gain / removed : null, holdDays: ps.openDate ? dayDiff(ps.openDate, t.trade_date) : null, emotion: t.emotion || null });
+      ps.qty -= q; ps.cost -= removed;
+      if (ps.qty === 0) { ps.cost = 0; ps.openDate = null; }
+    }
+  }
+  const positions = Object.keys(pos).map((k) => pos[k]).map((x) => ({ code: x.code, name: x.name, qty: x.qty, cost: x.cost, avg: x.qty ? x.cost / x.qty : null, realized: x.realized, openDate: x.openDate }));
+  return { positions: positions, cash: cash, realized: realized, fees: fees, deposits: deposits, sells: sells, errors: errors };
+}
+
+// prices: { code: { close, date } }, policy: 최신 정책(없으면 {}), sectors: { code: '업종' }, today: 'YYYYMMDD'
+function pfSummary(ledger, prices, policy, sectors, today) {
+  policy = policy || {}; prices = prices || {}; sectors = sectors || {};
+  const held = ledger.positions.filter((x) => x.qty > 0);
+  let mvSum = 0, costSum = 0, unpriced = 0;
+  const rows = held.map((x) => {
+    const pr = prices[x.code], close = pr && pr.close > 0 ? pr.close : null;
+    const mv = close != null ? x.qty * close : null;
+    if (mv != null) mvSum += mv; else unpriced++;
+    costSum += x.cost;
+    return { code: x.code, name: x.name, qty: x.qty, avg: x.avg, cost: x.cost, close: close, priceDate: pr ? pr.date : null, mv: mv, unreal: mv != null ? mv - x.cost : null, unrealPct: mv != null && x.cost > 0 ? mv / x.cost - 1 : null, sector: sectors[x.code] || null, realized: x.realized };
+  });
+  const total = ledger.cash + mvSum;
+  rows.forEach((r) => { r.weight = r.mv != null && total > 0 ? r.mv / total : null; });
+  rows.sort((a, b) => (b.mv || 0) - (a.mv || 0));
+  const topN = (n) => total > 0 ? rows.slice(0, n).reduce((s, r) => s + (r.mv || 0), 0) / total : null;
+  const sec = {};
+  rows.forEach((r) => { const k = r.sector || "미분류"; sec[k] = (sec[k] || 0) + (r.mv || 0); });
+  const sectors2 = Object.keys(sec).map((k) => ({ name: k, mv: sec[k], weight: total > 0 ? sec[k] / total : null })).sort((a, b) => b.mv - a.mv);
+  const warnings = [];
+  if (unpriced) warnings.push({ level: "warn", code: "unpriced", msg: "현재가를 못 가져온 보유 종목이 " + unpriced + "개 있어 총자산·비중이 부정확합니다." });
+  if (ledger.cash < 0) warnings.push({ level: "warn", code: "cash_neg", msg: "현금이 음수입니다. 입금 기록이 빠졌거나(또는 신용·미수 사용) 거래 기록이 틀렸을 수 있습니다." });
+  if (ledger.errors.length) warnings.push({ level: "warn", code: "ledger", msg: "원장 오류 " + ledger.errors.length + "건: " + ledger.errors[0].msg });
+  rows.forEach((r) => {
+    if (policy.max_position_pct > 0 && r.weight != null && r.weight * 100 > policy.max_position_pct) warnings.push({ level: "review", code: "over_weight", msg: r.name + " 비중 " + (r.weight * 100).toFixed(1) + "%가 정책 한도 " + policy.max_position_pct + "%를 넘었습니다(검토 요청: 가격 상승으로 인한 초과인지, 가설 변화인지 구분)." });
+    if (r.priceDate && today && Number(today) - Number(r.priceDate) > 7) warnings.push({ level: "warn", code: "stale", msg: r.name + " 가격 기준일(" + r.priceDate + ")이 오래됐습니다." });
+  });
+  if (policy.min_cash_pct > 0 && total > 0 && ledger.cash / total * 100 < policy.min_cash_pct) warnings.push({ level: "review", code: "low_cash", msg: "현금 비중 " + (ledger.cash / total * 100).toFixed(1) + "%가 정책 최소 " + policy.min_cash_pct + "% 아래입니다." });
+  if (policy.cash_needs_krw > 0 && ledger.cash < policy.cash_needs_krw) warnings.push({ level: "review", code: "cash_needs", msg: "현금이 예정 현금 수요(" + Math.round(policy.cash_needs_krw).toLocaleString() + "원)보다 적습니다." });
+  return { total: total, cash: ledger.cash, cashPct: total > 0 ? ledger.cash / total : null, mv: mvSum, cost: costSum, unreal: mvSum - (costSum - rows.filter((r) => r.mv == null).reduce((s, r) => s + r.cost, 0)), realized: ledger.realized, fees: ledger.fees, rows: rows, top1: topN(1), top3: topN(3), top5: topN(5), sectors: sectors2, warnings: warnings, partial: unpriced > 0 };
+}
+
+// 포지션 크기: 세 한도(위험 예산·집중도·유동성)에 현금 한도를 더해 가장 보수적인 값을 쓴다.
+// i: { base(기준 자산), riskPct, buyPrice, riskPrice, maxPosPct, curPosValue, cash, minCashPct, cashNeeds, feePct, adv(20일 평균 거래대금, 원), advPct, bearPrice }
+function pfSizePosition(i) {
+  const n = (v) => (v == null || v === "" || !isFinite(Number(v))) ? null : Number(v);
+  const base = n(i.base), buy = n(i.buyPrice), risk = n(i.riskPrice), riskPct = n(i.riskPct), maxPct = n(i.maxPosPct);
+  const errors = [];
+  if (!(base > 0)) errors.push("기준 자산(계좌 총자산)이 필요합니다.");
+  if (!(buy > 0)) errors.push("매수 예정가를 입력하세요.");
+  if (!(risk > 0)) errors.push("위험관리 기준 가격(이 가격 아래면 가설·위험을 재검토할 가격)이 필요합니다.");
+  if (buy > 0 && risk > 0 && risk >= buy) errors.push("위험관리 기준 가격이 매수가와 같거나 더 높아 손실 한도 계산이 성립하지 않습니다. 입력을 확인하세요.");
+  if (!(riskPct > 0)) errors.push("정책의 위험 예산 비율(1회 매수의 허용 손실 %)이 필요합니다.");
+  if (!(maxPct > 0)) errors.push("정책의 단일 종목 최대 비중이 필요합니다.");
+  if (errors.length) return { ok: false, errors: errors };
+  const cur = n(i.curPosValue) || 0, cash = n(i.cash), minCashPct = n(i.minCashPct) || 0, needs = n(i.cashNeeds) || 0, feePct = n(i.feePct) || 0;
+  const lossBudget = base * riskPct / 100, perShare = buy - risk;
+  const limits = [];
+  limits.push({ key: "risk", label: "위험 예산", qty: Math.floor(lossBudget / perShare), note: "허용 손실 " + Math.round(lossBudget).toLocaleString() + "원 ÷ 주당 계획 손실 " + Math.round(perShare).toLocaleString() + "원" });
+  const concAmt = Math.max(0, base * maxPct / 100 - cur);
+  limits.push({ key: "conc", label: "집중도(종목 최대 비중)", qty: Math.floor(concAmt / buy), note: "최대 " + maxPct + "% = " + Math.round(base * maxPct / 100).toLocaleString() + "원 − 기보유 " + Math.round(cur).toLocaleString() + "원" });
+  if (cash != null) {
+    const usable = Math.max(0, cash - base * minCashPct / 100 - needs);
+    limits.push({ key: "cash", label: "가용 현금", qty: Math.floor(usable / (buy * (1 + feePct / 100))), note: "현금 " + Math.round(cash).toLocaleString() + "원 − 최소 현금 " + Math.round(base * minCashPct / 100).toLocaleString() + "원 − 예정 수요 " + Math.round(needs).toLocaleString() + "원" });
+  }
+  const adv = n(i.adv), advPct = n(i.advPct);
+  if (adv > 0 && advPct > 0) limits.push({ key: "liq", label: "유동성(하루 거래대금 대비)", qty: Math.floor(adv * advPct / 100 / buy), note: "20일 평균 거래대금 " + Math.round(adv).toLocaleString() + "원 × " + advPct + "%" });
+  const minQty = Math.min.apply(null, limits.map((l) => l.qty));
+  const binding = limits.filter((l) => l.qty === minQty).map((l) => l.label);
+  const amount = minQty * buy, fee = amount * feePct / 100;
+  const bear = n(i.bearPrice), refLoss = bear > 0 ? bear : risk;
+  const cashAfter = cash != null ? cash - amount - fee : null;
+  const warnings = [];
+  if (adv == null || !(adv > 0)) warnings.push("유동성 자료가 없어 유동성 한도는 적용하지 못했습니다(체결 가능성을 따로 확인하세요).");
+  warnings.push("손실 계산은 기준 가격에 체결된다는 가정의 근사치입니다. 갭 하락·거래정지·하한가에서는 실제 손실이 더 클 수 있습니다.");
+  if (minQty <= 0) warnings.push("현재 정책·자산 기준으로는 신규 매수 한도가 0주입니다(보류·현금 보유도 유효한 선택입니다).");
+  return { ok: true, qty: minQty, amount: amount, fee: fee, weightAfter: (cur + amount) / base, cashAfter: cashAfter, cashAfterPct: cashAfter != null ? cashAfter / base : null, limits: limits, binding: binding, lossBudget: lossBudget, perShareLoss: perShare, scenarioLoss: minQty * (buy - refLoss), scenarioRef: bear > 0 ? "Bear 가격" : "위험관리 기준가", scenarioLossPct: minQty * (buy - refLoss) / base, warnings: warnings };
+}
+
+// 분할 수량 배분: 가중치(%)를 정규화해 정수 주로 나누고 남는 주는 앞 회차부터 1주씩 더한다. 가중치 자체는 정답이 아니라 사용자 선택이다.
+function pfSplitTranches(totalQty, weights) {
+  const w = (weights || []).map((x) => Math.max(0, Number(x) || 0)), s = w.reduce((a, b) => a + b, 0);
+  if (!(totalQty > 0) || !(s > 0)) return w.map(() => 0);
+  const qs = w.map((x) => Math.floor(totalQty * x / s));
+  let rest = totalQty - qs.reduce((a, b) => a + b, 0);
+  for (let k = 0; rest > 0 && qs.length; k = (k + 1) % qs.length) { if (w[k] > 0) { qs[k]++; rest--; } }
+  return qs;
+}
+
+// 거래 기록 직전 사전 점검. 결과 level: block(기록 불가) / warn(이유를 적고 승인해야 기록) / info(참고)
+// c: { trade:{side,code,name,qty,price,reason}, ledger, policy, plan(해당 종목 최신 계획 또는 null), totalValue, nowMs, emotion }
+function pfTradeWarnings(c) {
+  const t = c.trade, pol = c.policy || {}, plan = c.plan || null, out = [];
+  const q = Number(t.qty) || 0, p = Number(t.price) || 0;
+  if (t.side === "deposit" || t.side === "withdraw") return out;
+  if (!(q > 0) || !Number.isInteger(q)) out.push({ id: "qty", level: "block", msg: "수량은 1 이상의 정수여야 합니다." });
+  if (!(p > 0)) out.push({ id: "price", level: "block", msg: "체결 가격을 입력하세요." });
+  const pos = c.ledger.positions.filter((x) => x.code === t.code)[0];
+  const held = pos ? pos.qty : 0;
+  if (t.side === "sell") {
+    if (q > held) out.push({ id: "oversell", level: "block", msg: "보유 수량(" + held + "주)보다 많이 팔 수 없습니다." });
+    if (!t.reason) out.push({ id: "reason", level: "warn", msg: "매도 사유(가치 도달/가설 훼손/가격 위험/비중 초과/현금 필요/대체 기회/비용·세금)를 선택하지 않았습니다." });
+    if ((c.emotion === "불안" || c.emotion === "공포") && t.reason !== "가설 훼손") out.push({ id: "emotion_sell", level: "info", msg: "불안한 상태에서 가설 훼손 이외의 이유로 매도하려 합니다. 하루 뒤 같은 판단인지 다시 확인해 보세요(실무 권고, 효과 크기는 증명되지 않음)." });
+    return out;
+  }
+  if (!plan) out.push({ id: "noplan", level: "warn", msg: "이 종목의 투자 계획(가설·반증 조건·위험 기준가)이 없습니다. 계획 없이 매수하면 사후 평가가 어렵습니다." });
+  else {
+    if (plan.status === "보류" || plan.status === "종료" || plan.status === "매도검토") out.push({ id: "planstatus", level: "warn", msg: "계획 상태가 '" + plan.status + "'입니다. 신규 매수 결정이 계획과 맞는지 확인하세요." });
+    const hrs = pol.cooldown_hours > 0 && plan.created_ms ? (c.nowMs - plan.created_ms) / 3600000 : null;
+    if (hrs != null && hrs < pol.cooldown_hours) out.push({ id: "cooldown", level: "warn", msg: "계획을 만든 지 " + hrs.toFixed(1) + "시간 지났습니다(정책 숙려 시간 " + pol.cooldown_hours + "시간). 즉흥 매수가 아닌지 확인하세요." });
+    if (plan.entry_high > 0 && p > plan.entry_high) out.push({ id: "fomo", level: "warn", msg: "체결가가 계획한 매수 구간 상단(" + Math.round(plan.entry_high).toLocaleString() + "원)보다 높습니다. 오르는 가격을 쫓는 매수(FOMO)는 아닌지 확인하세요." });
+    if (plan.risk_price > 0 && p <= plan.risk_price) out.push({ id: "riskprice", level: "warn", msg: "체결가가 위험관리 기준가(" + Math.round(plan.risk_price).toLocaleString() + "원) 이하입니다. 기준가 이하에서는 가설 재검토가 먼저입니다." });
+    if (plan.max_qty > 0 && held + q > plan.max_qty) out.push({ id: "maxqty", level: "warn", msg: "계획의 최대 수량(" + plan.max_qty + "주)을 넘습니다(보유 " + held + " + 매수 " + q + ")." });
+  }
+  if (pos && pos.avg != null && p < pos.avg) out.push({ id: "avgdown", level: "warn", needsCheck: true, msg: "평균 매입가(" + Math.round(pos.avg).toLocaleString() + "원)보다 낮은 가격의 추가 매수입니다. 평균단가를 낮추는 행위가 아니라 '지금 새로 사도 되는가'를 판단하는 별도 결정이어야 합니다." });
+  if (c.totalValue > 0) {
+    const curV = pos ? pos.qty * (c.priceNow || p) : 0, after = (curV + q * p) / c.totalValue;
+    if (pol.max_position_pct > 0 && after * 100 > pol.max_position_pct) out.push({ id: "conc", level: "warn", msg: "이 매수 후 비중이 약 " + (after * 100).toFixed(1) + "%로 정책 한도 " + pol.max_position_pct + "%를 넘습니다." });
+  }
+  const cashAfter = c.ledger.cash - q * p;
+  if (cashAfter < 0) out.push({ id: "cash_neg", level: "warn", msg: "이 매수 후 현금이 음수입니다(입금 기록 누락 또는 신용 사용 여부 확인)." });
+  else if (c.totalValue > 0 && pol.min_cash_pct > 0 && cashAfter / c.totalValue * 100 < pol.min_cash_pct) out.push({ id: "mincash", level: "warn", msg: "이 매수 후 현금 비중이 정책 최소 " + pol.min_cash_pct + "% 아래로 내려갑니다." });
+  return out;
+}
+
+// 행동 점검: 내 기록에서 계산되는 통계. 표본이 작으면 결론을 내지 않고 "표본 부족"으로 표시한다.
+function pfBehavior(ledger, trades, journal, totalValue, nowMs) {
+  const sells = ledger.sells || [], live = (trades || []).filter((t) => !t.voided && (t.side === "buy" || t.side === "sell"));
+  const buys = live.filter((t) => t.side === "buy");
+  const avg = (a) => a.length ? a.reduce((s, x) => s + x, 0) / a.length : null;
+  const win = sells.filter((s) => s.gain > 0 && s.holdDays != null), lose = sells.filter((s) => s.gain < 0 && s.holdDays != null);
+  const enough = sells.length >= 10 && win.length >= 3 && lose.length >= 3;
+  const wH = avg(win.map((s) => s.holdDays)), lH = avg(lose.map((s) => s.holdDays));
+  const disposition = { n: sells.length, nWin: win.length, nLose: lose.length, winHold: wH, loseHold: lH, ratio: wH > 0 && lH != null ? lH / wH : null, enough: enough };
+  const cutoff = nowMs - 90 * 86400000;
+  const recent = live.filter((t) => t.created_ms && t.created_ms >= cutoff);
+  const cost = ledger.fees || 0;
+  const linked = buys.filter((t) => t.plan_id).length, warned = buys.filter((t) => t.warn_json && t.warn_json !== "[]").length;
+  const avgdown = buys.filter((t) => t.warn_json && t.warn_json.indexOf('"avgdown"') >= 0).length;
+  const emo = {};
+  live.forEach((t) => { if (t.emotion) emo[t.emotion] = (emo[t.emotion] || 0) + 1; });
+  const j = (journal || []).filter((e) => e.kind === "사후검토" && e.process_score != null && e.outcome_pct != null);
+  const m = { goodGood: 0, goodBad: 0, badGood: 0, badBad: 0 };
+  j.forEach((e) => { const gp = e.process_score >= 70, go = e.outcome_pct >= 0; if (gp && go) m.goodGood++; else if (gp) m.goodBad++; else if (go) m.badGood++; else m.badBad++; });
+  return {
+    disposition: disposition,
+    activity: { trades90: recent.length, buys: buys.length, sells: sells.length, costTotal: cost, costPct: totalValue > 0 ? cost / totalValue : null },
+    compliance: { buys: buys.length, planLinked: linked, planLinkedPct: buys.length ? linked / buys.length : null, warned: warned, warnedPct: buys.length ? warned / buys.length : null, avgdown: avgdown },
+    emotions: emo, matrix: m, matrixN: j.length,
+  };
+}
+
+// ============================================================
+// 내 계좌·매매 관리 — 서버(D1 + API). 모든 /api/pf/* 는 접근 키(PF_KEY, Cloudflare 비밀 변수)가 있어야 한다.
+// 이 사이트 주소는 공개라서 키 없이 개인 보유 내역을 저장·조회하게 두면 누구나 볼 수 있다 → 키가 설정되지 않았으면 모두 거부(기본 닫힘).
+// 원칙: 원장(거래)은 지우지 않고 "무효 처리"만 한다(이력 보존). 정책·투자 계획은 덮어쓰지 않고 새 버전을 쌓는다.
+// 이 앱은 주문을 내지 않는다. 여기 기록은 "사용자가 다른 곳(증권사)에서 실제로 체결한 내용을 적은 것"이다.
+// ============================================================
+let pfTablesReady = false;
+async function ensurePfTables(db) {
+  if (pfTablesReady) return;
+  const run = (sql) => db.prepare(sql).run();
+  await run("CREATE TABLE IF NOT EXISTS pf_policy (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, risk_budget_pct REAL, max_position_pct REAL, min_cash_pct REAL, cash_needs_krw REAL, max_dd_tolerance_pct REAL, horizon_months INTEGER, fee_rate_pct REAL, sell_tax_pct REAL, adv_limit_pct REAL, cooldown_hours INTEGER, note TEXT)");
+  await run("CREATE TABLE IF NOT EXISTS pf_trades (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, trade_date TEXT NOT NULL, stock_code TEXT, corp_name TEXT, side TEXT NOT NULL, qty INTEGER, price REAL, fee REAL DEFAULT 0, tax REAL DEFAULT 0, plan_id INTEGER, emotion TEXT, reason TEXT, note TEXT, warn_json TEXT, check_json TEXT, ack_reason TEXT, voided INTEGER DEFAULT 0, void_reason TEXT, voided_at TEXT)");
+  await run("CREATE INDEX IF NOT EXISTS idx_pf_trades_code ON pf_trades (stock_code, trade_date)");
+  await run("CREATE TABLE IF NOT EXISTS pf_plans (id INTEGER PRIMARY KEY AUTOINCREMENT, plan_key INTEGER NOT NULL, version INTEGER NOT NULL, created_at TEXT NOT NULL, stock_code TEXT, corp_name TEXT, status TEXT, thesis TEXT, disproof TEXT, risks TEXT, catalysts TEXT, sector TEXT, alt_considered TEXT, bear_price REAL, base_price REAL, bull_price REAL, valuation_note TEXT, entry_low REAL, entry_high REAL, risk_price REAL, max_qty INTEGER, tranche_json TEXT, sell_rules TEXT, no_avgdown_rules TEXT, review_date TEXT, data_asof TEXT, UNIQUE (plan_key, version))");
+  await run("CREATE TABLE IF NOT EXISTS pf_journal (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, kind TEXT, trade_id INTEGER, plan_key INTEGER, stock_code TEXT, corp_name TEXT, emotion TEXT, process_json TEXT, process_score REAL, outcome_pct REAL, luck_skill TEXT, lesson TEXT, outcome_note TEXT, price_at_decision REAL, data_asof TEXT)");
+  pfTablesReady = true;
+}
+function pfAuthError(request, env) {
+  const key = env.PF_KEY ? String(env.PF_KEY) : "";
+  if (key.length < 12) return Response.json({ error: "개인정보 보호를 위해 접근 키가 필요합니다. Cloudflare 설정에서 PF_KEY(12자 이상 무작위 문자열)를 비밀 변수로 등록한 뒤 다시 열어주세요.", code: "no_key" }, { status: 403 });
+  const given = request.headers.get("x-pf-key") || "";
+  let diff = given.length ^ key.length; // 길이가 달라도 끝까지 비교(시간 차이로 키를 추측하지 못하게)
+  for (let i = 0; i < Math.max(given.length, key.length); i++) diff |= (given.charCodeAt(i) || 0) ^ (key.charCodeAt(i) || 0);
+  if (diff !== 0) return Response.json({ error: "접근 키가 맞지 않습니다.", code: "bad_key" }, { status: 401 });
+  return null;
+}
+const PF_STATUSES = ["관찰", "매수검토", "보유", "보류", "축소검토", "매도검토", "종료"];
+const PF_SELL_REASONS = ["가치 도달", "가설 훼손", "가격 위험", "비중 초과", "현금 필요", "대체 기회", "비용·세금"];
+async function pfLatestPrices(env, codes) {
+  const out = {};
+  if (!env.DATA_GO_KR_KEY || !codes.length) return out;
+  const ymd = (d) => d.toISOString().slice(0, 10).replace(/-/g, "");
+  const kst = new Date(Date.now() + 9 * 3600 * 1000);
+  await Promise.all(codes.slice(0, 12).map(async (code) => {
+    try {
+      const h = (await fetchKrxStockHistory(code, ymd(new Date(kst.getTime() - 14 * 86400000)), ymd(kst), env.DATA_GO_KR_KEY)).filter((x) => x.close > 0);
+      if (h.length) out[code] = { close: h[h.length - 1].close, date: h[h.length - 1].date };
+    } catch (e) { /* 이 종목만 가격 없음으로 표시 */ }
+  }));
+  return out;
+}
+async function pfBuildState(env) {
+  const db = env.DB;
+  const policy = await db.prepare("SELECT * FROM pf_policy ORDER BY id DESC LIMIT 1").first();
+  const { results: trades } = await db.prepare("SELECT * FROM pf_trades ORDER BY trade_date, id").all();
+  const { results: plans } = await db.prepare("SELECT p.* FROM pf_plans p WHERE p.version = (SELECT MAX(version) FROM pf_plans q WHERE q.plan_key = p.plan_key) ORDER BY p.id DESC").all();
+  const { results: planVersions } = await db.prepare("SELECT plan_key, version, created_at, status FROM pf_plans ORDER BY plan_key, version").all();
+  const { results: journal } = await db.prepare("SELECT * FROM pf_journal ORDER BY id DESC LIMIT 200").all();
+  const tr = trades.map((t) => Object.assign({}, t, { voided: !!t.voided, created_ms: Date.parse(t.created_at) }));
+  const ledger = pfLedger(tr);
+  const held = ledger.positions.filter((x) => x.qty > 0).map((x) => x.code);
+  const prices = await pfLatestPrices(env, held);
+  const { results: secRows } = await db.prepare("SELECT stock_code, sector FROM pf_plans WHERE sector IS NOT NULL AND sector <> '' ORDER BY id").all();
+  const sectors = {}; secRows.forEach((p) => { sectors[p.stock_code] = p.sector; }); // 가장 최근에 적은 업종 사용(새 버전에서 비워도 유지)
+  const today = todayStr();
+  const summary = pfSummary(ledger, prices, policy || {}, sectors, today);
+  const behavior = pfBehavior(ledger, tr, journal.map((j) => Object.assign({}, j)), summary.total, Date.now());
+  return { policy: policy || null, trades: tr.slice().reverse(), plans: plans, planVersions: planVersions, journal: journal, ledger: { cash: ledger.cash, realized: ledger.realized, fees: ledger.fees, deposits: ledger.deposits, errors: ledger.errors, positions: ledger.positions }, summary: summary, behavior: behavior, asof: new Date().toISOString(), heldWithoutPrice: held.filter((c) => !prices[c]) };
+}
+async function handlePf(request, env, pathname, searchParams) {
+  const bad = pfAuthError(request, env);
+  if (bad) return bad;
+  try {
+    await ensurePfTables(env.DB);
+    const db = env.DB;
+    const str = (v, max) => (v == null ? null : String(v).trim().slice(0, max || 2000)) || null;
+    const num = (v) => (v == null || v === "" || !isFinite(Number(v))) ? null : Number(v);
+    const body = request.method === "POST" ? await request.json().catch(() => null) : null;
+    if (request.method === "POST" && !body) return Response.json({ error: "요청 본문(JSON)이 올바르지 않습니다." }, { status: 400 });
+    const nowIso = new Date().toISOString();
+    const resolveStock = async (name) => {
+      const r = await db.prepare("SELECT corp_name, stock_code FROM corp_master WHERE corp_name = ?").bind(name).first();
+      return r && r.stock_code ? r : null;
+    };
+
+    if (pathname === "/api/pf/ping") return Response.json({ ok: true });
+    if (pathname === "/api/pf/state") return Response.json(await pfBuildState(env));
+    if (pathname === "/api/pf/export") {
+      const out = {};
+      for (const t of ["pf_policy", "pf_trades", "pf_plans", "pf_journal"]) out[t] = (await db.prepare("SELECT * FROM " + t).all()).results;
+      return new Response(JSON.stringify(out, null, 1), { headers: { "content-type": "application/json; charset=utf-8", "content-disposition": "attachment; filename=pf_backup.json" } });
+    }
+    if (pathname === "/api/pf/quote") {
+      const name = searchParams.get("corp_name") || "";
+      const st = await resolveStock(name);
+      if (!st) return Response.json({ error: "'" + name + "' 종목을 찾을 수 없습니다." }, { status: 404 });
+      if (!env.DATA_GO_KR_KEY) return Response.json({ error: "DATA_GO_KR_KEY 미설정" }, { status: 500 });
+      const ymd = (d) => d.toISOString().slice(0, 10).replace(/-/g, "");
+      const kst = new Date(Date.now() + 9 * 3600 * 1000);
+      const h = (await fetchKrxStockHistory(st.stock_code, ymd(new Date(kst.getTime() - 40 * 86400000)), ymd(kst), env.DATA_GO_KR_KEY)).filter((x) => x.close > 0);
+      if (!h.length) return Response.json({ error: "시세를 받지 못했습니다." }, { status: 502 });
+      const last20 = h.slice(-20).map((x) => x.tradingValue).filter((v) => v > 0);
+      return Response.json({ corp_name: st.corp_name, stock_code: st.stock_code, close: h[h.length - 1].close, date: h[h.length - 1].date, adv20: last20.length >= 10 ? last20.reduce((a, b) => a + b, 0) / last20.length : null, advN: last20.length });
+    }
+    if (request.method !== "POST") return Response.json({ error: "지원하지 않는 요청입니다." }, { status: 404 });
+
+    if (pathname === "/api/pf/policy") {
+      const rng = (v, lo, hi, nm, nullable) => { const x = num(v); if (x == null) { if (nullable) return null; throw new Error(nm + "을(를) 입력하세요."); } if (x < lo || x > hi) throw new Error(nm + "은(는) " + lo + "~" + hi + " 범위여야 합니다."); return x; };
+      let p;
+      try {
+        p = { risk: rng(body.risk_budget_pct, 0.01, 10, "위험 예산(%)"), maxp: rng(body.max_position_pct, 1, 100, "단일 종목 최대 비중(%)"), minc: rng(body.min_cash_pct, 0, 99, "최소 현금 비중(%)"), needs: rng(body.cash_needs_krw, 0, 1e13, "예정 현금 수요(원)", true) || 0, dd: rng(body.max_dd_tolerance_pct, 1, 100, "감내 최대 낙폭(%)", true), hz: rng(body.horizon_months, 1, 600, "투자 기간(개월)", true), fee: rng(body.fee_rate_pct, 0, 5, "수수료율(%)", true), tax: rng(body.sell_tax_pct, 0, 5, "매도 세율(%)", true), adv: rng(body.adv_limit_pct, 0.1, 100, "하루 거래대금 대비 최대 주문 비율(%)", true), cd: rng(body.cooldown_hours, 0, 720, "숙려 시간(시간)", true) };
+      } catch (e) { return Response.json({ error: e.message }, { status: 400 }); }
+      await db.prepare("INSERT INTO pf_policy (created_at, risk_budget_pct, max_position_pct, min_cash_pct, cash_needs_krw, max_dd_tolerance_pct, horizon_months, fee_rate_pct, sell_tax_pct, adv_limit_pct, cooldown_hours, note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)")
+        .bind(nowIso, p.risk, p.maxp, p.minc, p.needs, p.dd, p.hz, p.fee, p.tax, p.adv, p.cd == null ? null : Math.round(p.cd), str(body.note, 1000)).run();
+      return Response.json({ ok: true });
+    }
+
+    if (pathname === "/api/pf/plan") {
+      const st = await resolveStock(str(body.corp_name, 100) || "");
+      if (!st) return Response.json({ error: "종목을 찾을 수 없습니다. 상장사 이름을 정확히 입력하세요." }, { status: 400 });
+      const status = PF_STATUSES.indexOf(body.status) >= 0 ? body.status : "관찰";
+      const thesis = str(body.thesis, 4000), disproof = str(body.disproof, 4000);
+      if ((status === "매수검토" || status === "보유") && (!thesis || !disproof)) return Response.json({ error: "투자 논리와 반증 조건(무엇이 관측되면 이 가설이 틀렸다고 볼지)을 적지 않으면 '" + status + "' 상태로 올릴 수 없습니다. 정의하기 어렵다면 '관찰' 또는 '보류'로 두세요." }, { status: 400 });
+      let tranches = []; try { tranches = Array.isArray(body.tranches) ? body.tranches.slice(0, 6).map((t) => ({ cond: str(t.cond, 300), price: num(t.price), weightPct: num(t.weightPct) })) : []; } catch (e) { tranches = []; }
+      const rp = num(body.risk_price), el = num(body.entry_low), eh = num(body.entry_high);
+      if (el != null && eh != null && el > eh) return Response.json({ error: "매수 구간의 하단이 상단보다 클 수 없습니다." }, { status: 400 });
+      if (rp != null && el != null && rp >= el) return Response.json({ error: "위험관리 기준가는 매수 구간 하단보다 낮아야 합니다." }, { status: 400 });
+      let planKey = num(body.plan_key), version = 1;
+      if (planKey != null) {
+        const mx = await db.prepare("SELECT MAX(version) AS v FROM pf_plans WHERE plan_key = ? AND stock_code = ?").bind(planKey, st.stock_code).first();
+        if (!mx || mx.v == null) return Response.json({ error: "수정할 계획을 찾지 못했습니다." }, { status: 404 });
+        version = mx.v + 1;
+      } else {
+        const mk = await db.prepare("SELECT COALESCE(MAX(plan_key), 0) + 1 AS k FROM pf_plans").first();
+        planKey = mk.k;
+      }
+      await db.prepare("INSERT INTO pf_plans (plan_key, version, created_at, stock_code, corp_name, status, thesis, disproof, risks, catalysts, sector, alt_considered, bear_price, base_price, bull_price, valuation_note, entry_low, entry_high, risk_price, max_qty, tranche_json, sell_rules, no_avgdown_rules, review_date, data_asof) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+        .bind(planKey, version, nowIso, st.stock_code, st.corp_name, status, thesis, disproof, str(body.risks, 3000), str(body.catalysts, 2000), str(body.sector, 60), str(body.alt_considered, 2000), num(body.bear_price), num(body.base_price), num(body.bull_price), str(body.valuation_note, 3000), el, eh, rp, num(body.max_qty) == null ? null : Math.round(num(body.max_qty)), JSON.stringify(tranches), str(body.sell_rules, 3000), str(body.no_avgdown_rules, 2000), str(body.review_date, 10), str(body.data_asof, 40)).run();
+      return Response.json({ ok: true, plan_key: planKey, version: version });
+    }
+
+    if (pathname === "/api/pf/trade") {
+      const side = body.side;
+      if (["buy", "sell", "deposit", "withdraw"].indexOf(side) < 0) return Response.json({ error: "구분(매수/매도/입금/출금)이 올바르지 않습니다." }, { status: 400 });
+      const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10).replace(/-/g, ""); // 한국 날짜 기준(UTC로 비교하면 새벽 시간대에 오늘 거래가 미래로 거부됨)
+      const date = String(body.trade_date || today).replace(/-/g, "");
+      if (!/^\d{8}$/.test(date) || date > today) return Response.json({ error: "거래일이 올바르지 않습니다(미래 날짜는 기록할 수 없습니다)." }, { status: 400 });
+      const policy = await db.prepare("SELECT * FROM pf_policy ORDER BY id DESC LIMIT 1").first();
+      if (side === "deposit" || side === "withdraw") {
+        const amt = num(body.price);
+        if (!(amt > 0)) return Response.json({ error: "금액(원)을 입력하세요." }, { status: 400 });
+        await db.prepare("INSERT INTO pf_trades (created_at, trade_date, side, qty, price, note) VALUES (?,?,?,?,?,?)").bind(nowIso, date, side, 1, amt, str(body.note, 500)).run();
+        return Response.json({ ok: true });
+      }
+      const st = await resolveStock(str(body.corp_name, 100) || "");
+      if (!st) return Response.json({ error: "종목을 찾을 수 없습니다. 상장사 이름을 정확히 입력하세요." }, { status: 400 });
+      const qty = num(body.qty), price = num(body.price);
+      const { results: trs } = await db.prepare("SELECT * FROM pf_trades ORDER BY trade_date, id").all();
+      const ledger = pfLedger(trs.map((t) => Object.assign({}, t, { voided: !!t.voided })));
+      const plan = await db.prepare("SELECT * FROM pf_plans WHERE stock_code = ? ORDER BY plan_key DESC, version DESC LIMIT 1").bind(st.stock_code).first();
+      const planC = plan ? Object.assign({}, plan, { created_ms: Date.parse(plan.created_at) }) : null;
+      const book = ledger.positions.reduce((s, x) => s + x.cost, 0) + ledger.cash; // 현재가 조회 없이 장부가 기준 근사(서브요청 절약)
+      const emotion = str(body.emotion, 20), reason = str(body.reason, 20);
+      const warnings = pfTradeWarnings({ trade: { side: side, code: st.stock_code, name: st.corp_name, qty: qty, price: price, reason: reason }, ledger: ledger, policy: policy || {}, plan: planC, totalValue: book, nowMs: Date.now(), emotion: emotion });
+      const blocks = warnings.filter((w) => w.level === "block");
+      if (blocks.length) return Response.json({ error: blocks.map((w) => w.msg).join(" "), warnings: warnings }, { status: 400 });
+      const warns = warnings.filter((w) => w.level === "warn");
+      const checks = Array.isArray(body.checks) ? body.checks.map((x) => x === true) : null;
+      const needCheck = warns.some((w) => w.needsCheck);
+      const ackReason = str(body.ack_reason, 500);
+      if (warns.length && (!body.ack || !ackReason || ackReason.length < 5 || (needCheck && (!checks || checks.length < 6)))) {
+        return Response.json({ needs_ack: true, needs_check: needCheck, warnings: warnings, error: "사전 점검 경고가 있습니다. 내용을 확인하고 이유를 적어 승인해야 기록됩니다." }, { status: 409 });
+      }
+      const feeRate = policy ? policy.fee_rate_pct : null, taxRate = policy ? policy.sell_tax_pct : null;
+      const fee = num(body.fee) != null ? num(body.fee) : (feeRate != null ? Math.round(qty * price * feeRate / 100) : 0);
+      const tax = side === "sell" ? (num(body.tax) != null ? num(body.tax) : (taxRate != null ? Math.round(qty * price * taxRate / 100) : 0)) : 0;
+      await db.prepare("INSERT INTO pf_trades (created_at, trade_date, stock_code, corp_name, side, qty, price, fee, tax, plan_id, emotion, reason, note, warn_json, check_json, ack_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+        .bind(nowIso, date, st.stock_code, st.corp_name, side, Math.round(qty), price, fee, tax, plan ? plan.id : null, emotion, reason, str(body.note, 800), JSON.stringify(warnings.map((w) => ({ id: w.id, level: w.level }))), checks ? JSON.stringify(checks) : null, ackReason).run();
+      return Response.json({ ok: true, fee: fee, tax: tax, warnings: warnings, costNote: (feeRate == null || (side === "sell" && taxRate == null)) ? "정책에 수수료율·세율이 없어 비용을 0으로 기록했습니다. 실제 비용을 직접 입력하거나 정책에 입력하세요." : null });
+    }
+
+    if (pathname === "/api/pf/trade/void") {
+      const id = num(body.id), why = str(body.reason, 300);
+      if (!id || !why || why.length < 3) return Response.json({ error: "무효 처리 사유(3자 이상)를 적어주세요." }, { status: 400 });
+      const r = await db.prepare("UPDATE pf_trades SET voided = 1, void_reason = ?, voided_at = ? WHERE id = ? AND voided = 0").bind(why, nowIso, id).run();
+      return Response.json({ ok: true, changed: r.meta ? r.meta.changes : null });
+    }
+
+    if (pathname === "/api/pf/journal") {
+      const kind = body.kind === "결정" ? "결정" : "사후검토";
+      const st = body.corp_name ? await resolveStock(str(body.corp_name, 100)) : null;
+      const proc = Array.isArray(body.process) ? body.process.slice(0, 12).map((x) => x === true) : null;
+      const score = proc && proc.length ? proc.filter(Boolean).length / proc.length * 100 : null;
+      await db.prepare("INSERT INTO pf_journal (created_at, kind, trade_id, plan_key, stock_code, corp_name, emotion, process_json, process_score, outcome_pct, luck_skill, lesson, outcome_note, price_at_decision, data_asof) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+        .bind(nowIso, kind, num(body.trade_id), num(body.plan_key), st ? st.stock_code : null, st ? st.corp_name : null, str(body.emotion, 20), proc ? JSON.stringify(proc) : null, score, num(body.outcome_pct), str(body.luck_skill, 30), str(body.lesson, 3000), str(body.outcome_note, 3000), num(body.price_at_decision), str(body.data_asof, 40)).run();
+      return Response.json({ ok: true, process_score: score });
+    }
+    return Response.json({ error: "알 수 없는 요청입니다." }, { status: 404 });
+  } catch (e) {
+    return Response.json({ error: "서버 오류: " + ((e && e.message) || String(e)) }, { status: 500 });
+  }
+}
+
 export default {
   async fetch(request, env) {
     try {
@@ -6093,6 +6779,8 @@ export default {
 
 async function handleRequest(request, env) {
     const { pathname, searchParams } = new URL(request.url);
+
+    if (pathname.startsWith("/api/pf/")) return handlePf(request, env, pathname, searchParams);
 
     if (pathname === "/") {
       return new Response(HTML_PAGE, { headers: { "content-type": "text/html; charset=utf-8" } });
