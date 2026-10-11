@@ -242,6 +242,8 @@ const HTML_PAGE = `<!doctype html>
     /* 모든 결과 표 공용: 세로 스크롤 영역을 주어 머리글 행(th)이 위에 고정되게 한다(position: sticky는 스크롤되는 부모가 있어야 동작). */
     .tscroll { overflow: auto; max-height: 70vh; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; margin-top: 8px; }
     .tscroll table { margin: 0; }
+    #secWrap th:first-child, #secWrap td:first-child { min-width: 128px; white-space: normal; }
+    #secWrap th, #secWrap td { white-space: nowrap; } #secWrap th:first-child, #secWrap td:first-child { white-space: normal; }
     @media (max-width: 560px) { .nav button { font-size: 12.5px; padding: 9px 2px; } }
     .card {
       background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
@@ -748,6 +750,17 @@ const HTML_PAGE = `<!doctype html>
 
   <!-- ===================== ③ 거시·상관 ===================== -->
   <div id="tabMacro" style="display:none;">
+    <div class="card">
+      <div class="card-title">🏭 섹터 유동성 — 어느 업종에 거래대금이 몰리나</div>
+      <div class="meta-line" style="white-space:normal;">시황은 ‘지금 어떤 업종에 돈이 몰리는가’를 보는 것입니다. 저장된 일별 시세로 업종별 <b>거래대금 비중</b>(최근 20거래일)이 직전 60거래일보다 얼마나 늘었는지(상대 유입)와, 업종 <b>상대강도</b>(업종 종목 수익률의 중앙값 − 전체 중앙값)를 계산합니다. 업종 모멘텀은 학술 검증(Moskowitz-Grinblatt 1999, 미국)이 있지만, 거래대금 비중 변화는 유동성 유입을 보는 대용 지표(가설)이며 아직 백테스트 전이라 <b>매수 신호가 아닙니다</b>.</div>
+      <div class="row" style="margin-top:6px;"><button onclick="secLoad(true)">🔄 다시 계산</button>
+        <span style="font-size:12.5px; color:var(--text-muted);">정렬</span>
+        <button id="secS_relFlow" class="toggle-active" onclick="secSort('relFlow')">상대 유입</button><button id="secS_share" onclick="secSort('share')">비중</button><button id="secS_rs20" onclick="secSort('rs20')">20일 상대강도</button><button id="secS_rs60" onclick="secSort('rs60')">60일 상대강도</button></div>
+      <div id="secStatus" class="meta-line" style="white-space:normal;"></div>
+      <div class="tblbar"><button onclick="tblZoom(-1)">A−</button><button onclick="tblZoom(1)">A＋</button><button onclick="tblFull('secWrap')">⤢ 전체화면</button><span>좌우로 밀어서 보기 →</span></div>
+      <div id="secWrap" class="tscroll" style="display:none;"></div>
+      <div id="secNote" class="meta-line" style="white-space:normal;"></div>
+    </div>
     <div class="card">
       <div class="card-title">거시경제 변화와 실적·주가수익률의 상관관계</div>
       <div class="row">
@@ -1368,6 +1381,36 @@ const HTML_PAGE = `<!doctype html>
       dbRunning = false; document.getElementById('dbStopBtn').style.display = 'none';
       out.textContent = msg + ' 총 ' + total.toLocaleString('ko-KR') + '행 삭제' + (last && last.sizeAfter != null && before != null ? ' · 용량 ' + fmtBytes(before) + ' → ' + fmtBytes(last.sizeAfter) + ' (SQLite는 빈 공간을 재사용하므로 표시 용량이 바로 줄지 않을 수 있습니다)' : '') + '.';
       dbPrev = null; dbLoad(true);
+    }
+    // ===== 섹터 유동성 (매크로 탭) =====
+    let SEC = { data: null, err: null, sort: 'relFlow', loading: false };
+    async function secLoad(refresh) {
+      if (SEC.loading) return; SEC.loading = true;
+      document.getElementById('secStatus').textContent = '불러오는 중…';
+      try {
+        const res = await fetch('/api/sector/flow' + (refresh ? '?refresh=1' : ''), refresh ? { cache: 'no-store' } : undefined);
+        const d = await res.json(); if (!res.ok) throw new Error(d.error || '조회 실패');
+        SEC.data = d; SEC.err = null;
+      } catch (e) { SEC.err = e.message || String(e); }
+      SEC.loading = false; secRender();
+    }
+    function secSort(k) { SEC.sort = k; secRender(); }
+    function secRender() {
+      const st = document.getElementById('secStatus'), wrap = document.getElementById('secWrap'), note = document.getElementById('secNote');
+      ['relFlow', 'share', 'rs20', 'rs60'].forEach(function (k) { const b = document.getElementById('secS_' + k); if (b) b.className = k === SEC.sort ? 'toggle-active' : ''; });
+      if (SEC.err) { st.innerHTML = '<span style="color:var(--danger);">섹터 자료를 불러오지 못했습니다: ' + escHtml(SEC.err) + '</span>'; wrap.style.display = 'none'; note.textContent = ''; return; }
+      const d = SEC.data; if (!d) return;
+      const pc = function (v, dgt) { return v == null ? 'N/A' : '<span style="color:' + (v > 0 ? '#dc2626' : v < 0 ? '#2563eb' : 'inherit') + ';">' + (v >= 0 ? '+' : '') + (v * 100).toFixed(dgt == null ? 1 : dgt) + '%</span>'; };
+      const pp = function (v) { return v == null ? 'N/A' : '<span style="color:' + (v > 0 ? '#dc2626' : v < 0 ? '#2563eb' : 'inherit') + ';">' + (v >= 0 ? '+' : '') + v.toFixed(1) + '%p</span>'; };
+      const cov = d.universeN ? Math.round(d.mappedN / d.universeN * 100) : null;
+      st.innerHTML = '기준일 ' + d.asof + ' · 최근 ' + d.recDays + '거래일(' + d.recFrom + '~) vs 직전 ' + d.priDays + '거래일 · 업종 분류 완료 <b>' + d.mappedN + '/' + (d.universeN == null ? '?' : d.universeN) + '</b>종목' + (cov != null ? ' (' + cov + '%)' : '') + ' · 계산 ' + new Date(d.at).toLocaleString('ko-KR') + (d.cached ? ' (저장된 값, 6시간마다 갱신)' : '') +
+        (cov != null && cov < 70 ? '<br /><span style="color:#b45309;">⚠ 업종 분류가 아직 끝나지 않았습니다. 자동으로 몇 분마다 몇 종목씩 채우는 중이라 완료 전에는 일부 종목만의 비중입니다.</span>' : '') +
+        (!d.hasPrior ? '<br /><span style="color:#b45309;">⚠ 직전 구간 자료가 20거래일 미만이라 비중 변화·상대 유입은 계산하지 않았습니다.</span>' : '');
+      const key = SEC.sort, list = d.sectors.slice().sort(function (a, b) { if (a.small !== b.small) return a.small ? 1 : -1; const x = a[key], y = b[key]; if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1; return y - x; });
+      wrap.style.display = '';
+      wrap.innerHTML = '<table><thead><tr><th>업종(KSIC 중분류)</th><th>종목수</th><th>거래대금 비중</th><th>직전 대비</th><th>상대 유입</th><th>20일 수익률(중앙값)</th><th>20일 상대강도</th><th>60일 상대강도</th></tr></thead><tbody>' +
+        list.map(function (x) { return '<tr' + (x.small ? ' style="color:var(--text-muted);"' : '') + '><td>' + escHtml(x.name) + (x.small ? ' ⚠' : '') + '</td><td>' + x.n + '</td><td>' + (x.share == null ? 'N/A' : (x.share * 100).toFixed(1) + '%') + '</td><td>' + pp(x.dPP) + '</td><td>' + pc(x.relFlow, 0) + '</td><td>' + pc(x.ret20) + '</td><td>' + pc(x.rs20) + '</td><td>' + pc(x.rs60) + '</td></tr>'; }).join('') + '</tbody></table>';
+      note.innerHTML = '<b>읽는 법</b> 상대 유입 = (최근 20일 비중 ÷ 직전 60일 비중) − 1. 전체 시장 거래가 늘어도 이 업종 비중이 더 늘었는지를 봅니다. 상대강도 = 업종 수익률 중앙값과 분류된 전체 종목 중앙값의 차(시가총액 가중이 아니며 종가 기준, 배당 제외). ⚠ = 종목 5개 미만이라 참고용으로 맨 아래에 둠.<br /><b>한계</b> 업종은 DART의 한국표준산업분류 중분류 하나로만 분류돼 반도체·디스플레이가 한 업종으로 묶이고 지주회사·복합기업은 주력 업종 하나로만 잡힙니다. 저장 기준을 통과한 종목만 포함(생존편향 가능), 급등락 직후 일시적 쏠림과 추세를 구분하지 못합니다.';
     }
     // ===== 표 도구: 글자 크기 · 전체화면 =====
     let tblFs = 13; try { tblFs = Number(localStorage.getItem('tblFs')) || 13; } catch (e) {}
@@ -3434,7 +3477,7 @@ function sigExpected(divY, g, perChgTotal, years) {
   return (1 + g) * (1 + perAnn) - 1 + (anFin(divY) ? divY : 0);
 }
 // 변화 감지. c = 분석 컨텍스트(c.list, c.ttm), px = { d, c, v, tv } 일별 주가(없으면 null)
-function sigDetect(c, px) {
+function sigDetect(c, px, sec) {
   const items = [];
   const add = (o) => { items.push(o); };
   const L = c && c.list ? c.list : [];
@@ -3500,6 +3543,13 @@ function sigDetect(c, px) {
       if (r1 >= 0.3) add({ id: 'rev1m', grp: 'px', tone: 'warn', label: '최근 1개월 ' + sigPct(r1) + ' 상승 (단기 과열 구간)', detail: '1개월 수익률이 큰 종목은 다음 달 되돌림이 잦은 경향이 있어, 모멘텀 계산도 최근 1개월을 제외합니다(6-1, 12-1).', ev: 'proof', note: '1개월 단기 반전(Jegadeesh 1990, Lehmann 1990). 추격 매수 전에 확인할 항목입니다.' });
     }
   }
+  if (sec && sec.sector) {
+    const st = sec.stats;
+    if (st && !st.small && st.relFlow != null && st.rs20 != null) {
+      const tone = (st.relFlow > 0.2 && st.rs20 > 0) ? 'good' : (st.relFlow < -0.2 && st.rs20 < 0) ? 'bad' : 'flat';
+      add({ id: 'sector', grp: 'mkt', tone: tone, label: '소속 업종 ' + sec.sector + ': 거래대금 상대 유입 ' + sigPct(st.relFlow, 0) + ' · 20일 상대강도 ' + sigPct(st.rs20), detail: '업종 거래대금 비중 ' + (st.share * 100).toFixed(1) + '%' + (st.dPP != null ? ' (직전 60일 대비 ' + (st.dPP >= 0 ? '+' : '') + st.dPP.toFixed(1) + '%p)' : '') + ' · 분류된 ' + st.n + '개 종목 · 상대 유입 순위 ' + (sec.flowRank ? sec.flowRank + '/' + sec.flowRankOf : 'N/A') + ' · 기준일 ' + sec.asof, ev: 'proof', note: '업종 모멘텀은 개별 종목 모멘텀과 별개로 유의하다고 보고됐습니다(Moskowitz-Grinblatt 1999, 미국). 거래대금 비중 변화는 유동성 유입의 대용 지표(가설)이며 백테스트 전입니다.' });
+    } else add({ id: 'sector', grp: 'mkt', tone: 'flat', label: '소속 업종 ' + sec.sector + ': ' + (st && st.small ? '분류된 종목이 5개 미만이라 통계를 내지 않음' : '업종 통계 없음'), detail: sec.note || '', ev: 'assume', note: '표본이 작으면 업종 흐름이 몇 종목의 움직임일 뿐입니다.' });
+  } else if (sec) add({ id: 'sector', grp: 'mkt', tone: 'flat', label: '소속 업종을 확인하지 못함', detail: sec.note || '업종코드가 DART 회사개요에 없거나 아직 수집되지 않았습니다.', ev: 'assume', note: '업종을 추정해 채우지 않습니다.' });
   return { items: items, meta: meta };
 }
 function sigById(S, id) { for (let i = 0; i < S.items.length; i++) if (S.items[i].id === id) return S.items[i]; return null; }
@@ -3518,7 +3568,7 @@ const SIG_BUY = [
   { t: '거래량이 잘 터지고 조정을 충분히 받은 종목이다', ev: 'practice', why: '거래량 급증은 단기 수익 프리미엄(Gervais 외 2001)이 보고되었으나, ‘조정을 잘 받았다’(눌림목)는 규칙은 검증되지 않았습니다.', auto: (c, S) => { const v = S.meta.volRatio, h = S.meta.fromHi; return '거래 최근 5일/직전 60일 ' + (v != null ? v.toFixed(2) + '배' : 'N/A') + ' · 52주 고점 대비 ' + (h != null ? sigPct(h) : 'N/A'); } },
   { t: '정부·대기업 정책·투자와 관련이 있는지 확인했다', ev: 'assume', why: '정책 수혜 테마는 선반영과 소멸이 빠릅니다. 공시(공급계약·투자)로 확인되는 사실과 기대를 구분하세요.', auto: () => '' },
   { t: '키워드 하나에만 의존하지 않고 서로 다른 근거가 2개 이상이다', ev: 'theory', why: '단일 이야기 의존은 확증편향·테마 집착의 위험을 키웁니다(분산된 근거 확인).', auto: () => '' },
-  { t: '시장 전체 흐름(시황)을 고려했다', ev: 'practice', why: '시장 연동 상승은 시장 반전 때 함께 꺾입니다. 종목 고유 초과수익인지 확인합니다.', auto: (c) => { const k = AN_STATE.mom && AN_STATE.mom.kospi ? AN_STATE.mom.kospi.r6m : null, r = c.mom ? c.mom.ret6 : null; return '최근 6개월: 코스피 ' + (anFin(k) ? sigPct(k) : 'N/A') + ' · 종목 ' + (anFin(r) ? sigPct(r) : 'N/A'); } },
+  { t: '시장 전체 흐름(시황)을 고려했다', ev: 'practice', why: '시장 연동 상승은 시장 반전 때 함께 꺾입니다. 종목 고유 초과수익인지 확인합니다.', auto: (c, S) => { const k = AN_STATE.mom && AN_STATE.mom.kospi ? AN_STATE.mom.kospi.r6m : null, r = c.mom ? c.mom.ret6 : null; const sc = sigById(S, 'sector'); return '최근 6개월: 코스피 ' + (anFin(k) ? sigPct(k) : 'N/A') + ' · 종목 ' + (anFin(r) ? sigPct(r) : 'N/A') + (sc ? ' · ' + sc.label : ''); } },
   { t: '매수 이유를 한 문장으로 말할 수 있다 (아래 칸에 적었다)', ev: 'theory', why: '사전에 이유·반증 조건을 적어 두는 것은 사후 합리화·뇌동매매를 줄이는 사전 약속(pre-commitment)입니다.', auto: () => '', needNote: 'why' },
 ];
 const SIG_HOLD = [
@@ -3547,16 +3597,19 @@ function sigItemHtml(it) {
     '<div style="font-size:12px; margin:4px 0;">' + anEsc(it.detail || '') + '</div><div style="font-size:11.5px; color:var(--text-muted); line-height:1.5;">근거 평가: ' + anEsc(it.note || '') + '</div></details>';
 }
 function sigRenderDetectBody(c) {
-  const px = sigPx(), S = sigDetect(c, px);
+  const px = sigPx(), S = sigDetect(c, px, SIG_ST.sec);
   const fund = S.items.filter((x) => x.grp === 'fund'), pxs = S.items.filter((x) => x.grp === 'px');
   let h = '<div style="font-weight:700; font-size:13px; margin-top:6px;">재무에서 없다가 생긴 것 · 있다가 사라진 것</div>';
   h += fund.length ? fund.map(sigItemHtml).join('') : '<div style="font-size:12.5px; color:var(--text-muted); margin:4px 0;">직전 사업연도 대비 흑자/적자 전환·배당 시작/중단 같은 큰 변화는 감지되지 않았습니다.</div>';
+  h += '<div style="font-weight:700; font-size:13px; margin-top:12px;">시황: 소속 업종의 유동성·상대강도</div>';
+  const mk = S.items.filter((x) => x.grp === 'mkt');
+  h += mk.length ? mk.map(sigItemHtml).join('') : '<div style="font-size:12.5px; color:var(--text-muted); margin:4px 0;">' + (SIG_ST.secErr ? '업종 자료를 불러오지 못했습니다: ' + anEsc(SIG_ST.secErr) : '업종 자료를 불러오는 중…') + '</div>';
   h += '<div style="font-weight:700; font-size:13px; margin-top:12px;">가격·거래량 상태 (일별 주가 기준)</div>';
   h += px ? (pxs.length ? pxs.map(sigItemHtml).join('') : '<div style="font-size:12.5px; color:var(--text-muted);">일별 주가가 130거래일 미만이라 판정하지 않습니다.</div>') : '<div style="font-size:12.5px; color:var(--text-muted); margin:4px 0;">일별 주가를 불러오는 중이거나 불러오지 못했습니다(주가 차트와 같은 자료).</div>';
   return h;
 }
 function sigChecklistHtml(c) {
-  const px = sigPx(), S = sigDetect(c, px), o = sigLoad();
+  const px = sigPx(), S = sigDetect(c, px, SIG_ST.sec), o = sigLoad();
   const row = (arr, off, withBox) => arr.map((it, i) => {
     const idx = off + i, auto = it.auto ? it.auto(c, S) : '';
     return '<div style="border-top:1px solid var(--border); padding:6px 0;"><label style="display:flex; gap:8px; align-items:flex-start; font-size:13px;">' + (withBox ? '<input type="checkbox" ' + (o.c[idx] ? 'checked ' : '') + 'onchange="sigChk(' + idx + ', this.checked)" style="margin-top:3px; flex:0 0 auto;" />' : '<span style="flex:0 0 auto;">•</span>') +
@@ -3573,7 +3626,7 @@ function sigChecklistHtml(c) {
     '<div style="font-size:11.5px; color:var(--text-muted); margin-top:8px; line-height:1.5;">입력한 내용은 이 기기(브라우저)에만 종목별로 저장됩니다. 실제 매매 계획·일지는 ⑥ 내 계좌의 ‘계획’과 ‘매매일지’에서 관리하세요.</div>';
 }
 // ----- 수익률 분해 · 기대수익률 -----
-const SIG_ST = { g: null, n: 3 };
+const SIG_ST = { g: null, n: 3, sec: null, secFor: null, secErr: null };
 function sigDecompHtml(c) {
   const L = c.list, rows = [];
   const cell = (v) => '<td>' + (anFin(v) ? sigPct(v) : 'N/A') + '</td>';
@@ -3627,6 +3680,18 @@ function sigRenderSections(c) {
     anSection('🧮 기대수익률 가정 계산 (EPS 성장 × PER 변화 + 배당)', '#7c3aed', '미래 수익률은 예측할 수 없으므로 성장률·PER 변화를 가정으로 바꿔 가며 범위를 봅니다. 하나의 목표가 대신 민감도 표를 사용합니다.', '<div id="sigCalcBody">' + sigCalcHtml(c) + '</div>', false) +
     anSection('🔔 변화 감지 시그널 (없다가 생김 · 있다가 사라짐)', '#0891b2', '시장은 ‘상태’보다 ‘변화’에 반응한다는 관점입니다. 재무 변화는 공시 자료로, 가격·거래량은 일별 주가로 계산합니다. 모든 시그널에 근거 수준을 붙였고, 매수·매도 신호나 점수를 만들지 않습니다. ' + evTxt, '<div id="sigDetectBody">' + sigRenderDetectBody(c) + '</div>', false) +
     anSection('✅ 투자 판단 체크리스트 (관찰 → 시그널 → 전략 → 반성)', '#0891b2', '매수 전 10가지 질문과 보유 중 규칙입니다. 자동 참고는 계산 가능한 부분만 보여주고, 체크는 직접 합니다. 충족 개수는 ‘매수 신호’가 아니라 내가 생각을 정리했는지의 기록입니다.', '<div id="sigChecklistBody">' + sigChecklistHtml(c) + '</div>', false);
+}
+async function sigLoadSector() {
+  const name = (document.getElementById('corpName').value || '').trim();
+  if (!name || SIG_ST.secFor === name) return;
+  SIG_ST.secFor = name; SIG_ST.sec = null; SIG_ST.secErr = null;
+  try {
+    const res = await fetch('/api/sector/stock?corp_name=' + encodeURIComponent(name));
+    const d = await res.json(); if (SIG_ST.secFor !== name) return;
+    if (!res.ok) throw new Error(d.error || '조회 실패');
+    SIG_ST.sec = d;
+  } catch (e) { if (SIG_ST.secFor !== name) return; SIG_ST.secErr = e.message || String(e); }
+  try { sigRefresh(); } catch (e) { /* 갱신 실패 무시 */ }
 }
 function sigRefresh() {
   if (!AN_CTX) return;
@@ -4593,6 +4658,7 @@ function renderAnalysis() {
   if (typeof macroSeriesCache !== 'undefined' && !macroSeriesCache && !macroLoadFailed && typeof loadMacroSeries === 'function') { loadMacroSeries().then(function () { anUpdateMethods(); }).catch(function () { macroLoadFailed = true; }); }
   anLoadMomentum();
   anLoadTrend();
+  try { sigLoadSector(); } catch (e) { /* 업종 조회 실패가 분석 화면을 막지 않게 */ }
 }
 
     async function fetchLatestPrice() {
@@ -5156,6 +5222,7 @@ async function pfuExport() {
       if (tab === 'bt') { btInitUi(); }
       if (tab === 'db') { dbLoad(false); }
       if (tab === 'pf') { pfuInit(); }
+      if (tab === 'macro' && !SEC.data && !SEC.loading) secLoad(false);
       if (tab === 'macro' && macroCorrDirty && rawRows.length) computeMacroCorrelation();
       if (tab === 'financial' && subTab === 'table' && chartSel.length) renderChartPanel(false);
       if (tab !== prevTab) window.scrollTo(0, 0);
@@ -7331,6 +7398,144 @@ async function handleDbCapacity(request, env, pathname, searchParams) {
   }
 }
 // ===== /DB 용량 관리 =====
+// ===== 섹터 유동성 =====
+// 업종은 DART 회사개요(company)의 induty_code(한국표준산업분류, KSIC)를 쓴다. 앞 2자리(중분류)로 묶는다.
+// 한계: 중분류라 반도체·디스플레이 등이 '전자부품·컴퓨터…' 하나로 묶이고, 지주회사·복합기업은 주된 업종 하나로만 분류된다.
+const KSIC_DIV = {
+  "01": "농업", "02": "임업", "03": "어업", "05": "석탄·원유·가스 광업", "06": "금속 광업", "07": "비금속광물 광업", "08": "광업 지원", "10": "식료품", "11": "음료", "12": "담배", "13": "섬유(의복 제외)", "14": "의복·모피", "15": "가죽·가방·신발", "16": "목재", "17": "펄프·종이", "18": "인쇄·기록매체", "19": "석유정제·코크스", "20": "화학물질·화학제품", "21": "의료용 물질·의약품", "22": "고무·플라스틱", "23": "비금속광물제품", "24": "1차 금속", "25": "금속가공", "26": "전자부품·컴퓨터·통신장비", "27": "의료·정밀·광학기기", "28": "전기장비", "29": "기계·장비", "30": "자동차·부품", "31": "기타 운송장비", "32": "가구", "33": "기타 제품", "34": "산업용 기계 수리", "35": "전기·가스·증기", "36": "수도", "37": "하수·폐수", "38": "폐기물·원료재생", "39": "환경정화", "41": "종합건설", "42": "전문직별 공사", "45": "자동차 판매", "46": "도매·상품중개", "47": "소매", "49": "육상운송", "50": "수상운송", "51": "항공운송", "52": "창고·운송관련", "55": "숙박", "56": "음식점·주점", "58": "출판", "59": "영상·오디오 제작·배급", "60": "방송", "61": "통신", "62": "컴퓨터프로그래밍·SI", "63": "정보서비스", "64": "금융", "65": "보험·연금", "66": "금융·보험 관련서비스", "68": "부동산", "70": "연구개발", "71": "전문서비스", "72": "건축기술·엔지니어링", "73": "기타 과학기술", "74": "사업시설관리", "75": "사업지원", "76": "임대", "85": "교육", "86": "보건", "87": "사회복지", "90": "창작·예술", "91": "스포츠·오락", "96": "개인서비스",
+};
+function ksicSector(code) {
+  const c = String(code == null ? "" : code).trim();
+  if (!/^[0-9]{2,5}$/.test(c)) return null;
+  const d = c.slice(0, 2);
+  return { div: d, name: KSIC_DIV[d] || ("기타(" + d + ")") };
+}
+const SECTOR_REC = 20, SECTOR_PRI = 60, SECTOR_MIN_N = 5, SECTOR_CACHE_MS = 6 * 60 * 60 * 1000, SECTOR_TICK_BATCH = 3;
+let sectorTableReady = false;
+async function ensureSectorTable(db) {
+  if (sectorTableReady) return;
+  await db.prepare("CREATE TABLE IF NOT EXISTS corp_sector (corp_code TEXT PRIMARY KEY, induty_code TEXT, checked_at TEXT)").run();
+  sectorTableReady = true;
+}
+// 한 회사의 업종코드를 조회해 저장한다. 코드가 없거나 실패하면 induty_code=NULL로 시각만 남겨 하루 뒤에 다시 시도한다.
+async function lookupAndSaveSector(db, corpCode, proxyUrl) {
+  await ensureSectorTable(db);
+  const now = new Date().toISOString();
+  try {
+    const j = await fetchDartCompany(corpCode, proxyUrl);
+    const code = j && j.status === "000" && j.induty_code != null ? String(j.induty_code).trim() : "";
+    const ok = !!ksicSector(code);
+    await db.prepare("INSERT OR REPLACE INTO corp_sector (corp_code, induty_code, checked_at) VALUES (?, ?, ?)").bind(corpCode, ok ? code : null, now).run();
+    return { code: ok ? code : null, error: ok ? null : "업종코드를 찾지 못함: " + String((j && (j.message || j.status)) || "응답 없음").slice(0, 60) };
+  } catch (e) {
+    try { await db.prepare("INSERT OR REPLACE INTO corp_sector (corp_code, induty_code, checked_at) VALUES (?, NULL, ?)").bind(corpCode, now).run(); } catch (e2) { /* 기록 실패는 다음 틱에 다시 시도 */ }
+    return { code: null, error: String((e && e.message) || e).slice(0, 80) };
+  }
+}
+// 크론: 업종을 아직 모르는 유니버스 종목을 몇 개씩 채운다. 다 채우면 하루에 한 번만 확인(읽기 한도 보호).
+let sectorIdleDay = null;
+async function processSectorTick(env) {
+  if (!env.DART_PROXY_URL) return { skipped: "no proxy" };
+  const day = new Date().toISOString().slice(0, 10);
+  if (sectorIdleDay === day) return { skipped: "idle" };
+  await ensureSectorTable(env.DB);
+  const cutoff = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  const { results } = await env.DB.prepare(
+    "SELECT m.corp_code AS corp_code FROM market_universe_status u JOIN corp_master m ON m.stock_code = u.stock_code LEFT JOIN corp_sector s ON s.corp_code = m.corp_code WHERE u.passed = 1 AND (s.corp_code IS NULL OR (s.induty_code IS NULL AND s.checked_at < ?)) LIMIT ?"
+  ).bind(cutoff, SECTOR_TICK_BATCH).all();
+  if (!results.length) { sectorIdleDay = day; return { done: true }; }
+  let saved = 0;
+  for (const t of results) { const r = await lookupAndSaveSector(env.DB, t.corp_code, env.DART_PROXY_URL); if (r.code) saved++; }
+  return { processed: results.length, saved: saved };
+}
+function sectorMedian(a) { const x = a.filter((v) => Number.isFinite(v)).sort((p, q) => p - q); if (!x.length) return null; const m = x.length >> 1; return x.length % 2 ? x[m] : (x[m - 1] + x[m]) / 2; }
+// 순수 계산: rows=[{d,code,c,tv}], secOf={종목코드:{div,name}} → 섹터별 거래대금 비중·상대 유입·수익률·상대강도
+function sectorFlowCompute(rows, secOf) {
+  const dset = {}; rows.forEach((r) => { dset[r.d] = 1; });
+  const D = Object.keys(dset).sort();
+  const m = D.length;
+  if (m < SECTOR_REC + 5) return { error: "거래일 자료가 " + (SECTOR_REC + 5) + "일 미만입니다(현재 " + m + "일)." };
+  const rec = {}; D.slice(m - SECTOR_REC).forEach((d) => { rec[d] = 1; });
+  const priDates = D.slice(Math.max(0, m - SECTOR_REC - SECTOR_PRI), m - SECTOR_REC), pri = {}; priDates.forEach((d) => { pri[d] = 1; });
+  const hasPri = priDates.length >= 20;
+  const by = {}; // code -> {close by date, tvRec, tvPri}
+  rows.forEach((r) => {
+    if (!secOf[r.code]) return;
+    const o = by[r.code] || (by[r.code] = { c: {}, tvRec: 0, tvPri: 0, nRec: 0 });
+    if (r.c > 0) o.c[r.d] = r.c;
+    if (r.tv != null && Number.isFinite(r.tv) && r.tv >= 0) { if (rec[r.d]) { o.tvRec += r.tv; o.nRec++; } else if (pri[r.d]) o.tvPri += r.tv; }
+  });
+  const d0 = D[m - 1], d20 = D[m - 1 - SECTOR_REC], d60 = m - 1 - 60 >= 0 ? D[m - 1 - 60] : null;
+  const ret = (o, da, db) => (o.c[da] > 0 && o.c[db] > 0) ? o.c[db] / o.c[da] - 1 : null;
+  const secs = {}; let totRec = 0, totPri = 0; const allR20 = [], allR60 = [];
+  Object.keys(by).forEach((code) => {
+    const o = by[code], s = secOf[code];
+    if (o.nRec === 0) return; // 최근 20일 거래 자료가 없는 종목은 제외(거래정지·상장폐지 등)
+    const S = secs[s.div] || (secs[s.div] = { div: s.div, name: s.name, n: 0, tvRec: 0, tvPri: 0, r20: [], r60: [] });
+    S.n++; S.tvRec += o.tvRec; S.tvPri += o.tvPri; totRec += o.tvRec; totPri += o.tvPri;
+    const r20 = ret(o, d20, d0), r60 = d60 ? ret(o, d60, d0) : null;
+    if (r20 != null) { S.r20.push(r20); allR20.push(r20); } if (r60 != null) { S.r60.push(r60); allR60.push(r60); }
+  });
+  const b20 = sectorMedian(allR20), b60 = sectorMedian(allR60);
+  const list = Object.keys(secs).map((k) => {
+    const S = secs[k];
+    const share = totRec > 0 ? S.tvRec / totRec : null, sharePrev = hasPri && totPri > 0 ? S.tvPri / totPri : null;
+    const m20 = sectorMedian(S.r20), m60 = sectorMedian(S.r60);
+    return { div: S.div, name: S.name, n: S.n, share: share, sharePrev: sharePrev,
+      dPP: (share != null && sharePrev != null) ? (share - sharePrev) * 100 : null,
+      relFlow: (share != null && sharePrev > 0) ? share / sharePrev - 1 : null,
+      ret20: m20, ret60: m60,
+      rs20: (m20 != null && b20 != null) ? (1 + m20) / (1 + b20) - 1 : null, rs60: (m60 != null && b60 != null) ? (1 + m60) / (1 + b60) - 1 : null,
+      small: S.n < SECTOR_MIN_N };
+  }).sort((a, b) => (b.share || 0) - (a.share || 0));
+  const stocksN = list.reduce((s, x) => s + x.n, 0);
+  return { asof: d0, recFrom: D[m - SECTOR_REC], recDays: SECTOR_REC, priDays: priDates.length, hasPrior: hasPri, base20: b20, base60: b60, stocksN: stocksN, sectors: list };
+}
+async function sectorFlowData(env, refresh) {
+  await ensureAppSettings(env.DB);
+  if (!refresh) {
+    try { const r = await env.DB.prepare("SELECT v FROM app_settings WHERE k = 'sector_flow'").first(); if (r && r.v) { const o = JSON.parse(r.v); if (o && Date.now() - o.t < SECTOR_CACHE_MS) return Object.assign({ cached: true }, o.data, { at: o.t }); } } catch (e) { /* 새로 계산 */ }
+  }
+  await ensureSectorTable(env.DB);
+  const { results: ds } = await env.DB.prepare("SELECT market_date AS d FROM market_raw_daily GROUP BY market_date ORDER BY market_date DESC LIMIT ?").bind(SECTOR_REC + SECTOR_PRI + 1).all();
+  if (!ds.length) return { error: "저장된 일별 시세가 없습니다." };
+  const from = ds[ds.length - 1].d;
+  const { results: map } = await env.DB.prepare("SELECT m.stock_code AS code, s.induty_code AS ic FROM corp_sector s JOIN corp_master m ON m.corp_code = s.corp_code WHERE s.induty_code IS NOT NULL AND m.stock_code IS NOT NULL").all();
+  const secOf = {}; map.forEach((x) => { const s = ksicSector(x.ic); if (s) secOf[x.code] = s; });
+  const uni = await env.DB.prepare("SELECT COUNT(*) AS n FROM market_universe_status WHERE passed = 1").first();
+  const { results: rows } = await env.DB.prepare("SELECT market_date AS d, stock_code AS code, close_price AS c, trading_value AS tv FROM market_raw_daily WHERE market_date >= ? AND stock_code IN (SELECT stock_code FROM market_universe_status WHERE passed = 1)").bind(from).all();
+  const data = sectorFlowCompute(rows, secOf);
+  data.universeN = uni ? uni.n : null; data.mappedN = Object.keys(secOf).length;
+  if (!data.error) { try { await env.DB.prepare("INSERT OR REPLACE INTO app_settings (k, v, updated_at) VALUES ('sector_flow', ?, ?)").bind(JSON.stringify({ t: Date.now(), data: data }), new Date().toISOString()).run(); } catch (e) { /* 캐시 실패 무시 */ } }
+  return Object.assign({ cached: false, at: Date.now() }, data);
+}
+async function handleSector(request, env, pathname, searchParams) {
+  try {
+    if (pathname === "/api/sector/flow") {
+      const d = await sectorFlowData(env, searchParams.get("refresh") === "1");
+      return Response.json(d, { status: d.error ? 404 : 200 });
+    }
+    if (pathname === "/api/sector/stock") {
+      const name = String(searchParams.get("corp_name") || "").trim();
+      const c = await env.DB.prepare("SELECT corp_code, stock_code FROM corp_master WHERE corp_name = ?").bind(name).first();
+      if (!c) return Response.json({ error: "'" + name + "' 종목을 찾을 수 없습니다." }, { status: 404 });
+      await ensureSectorTable(env.DB);
+      let row = await env.DB.prepare("SELECT induty_code AS ic FROM corp_sector WHERE corp_code = ?").bind(c.corp_code).first();
+      if ((!row || !row.ic) && env.DART_PROXY_URL) { const r = await lookupAndSaveSector(env.DB, c.corp_code, env.DART_PROXY_URL); row = { ic: r.code }; }
+      const s = row && row.ic ? ksicSector(row.ic) : null;
+      if (!s) return Response.json({ corp_name: name, sector: null, note: "업종코드를 아직 확인하지 못했습니다." });
+      const flow = await sectorFlowData(env, false);
+      if (flow.error) return Response.json({ corp_name: name, induty_code: row.ic, sector: s.name, div: s.div, stats: null, note: flow.error });
+      const st = flow.sectors.find((x) => x.div === s.div) || null;
+      const rank = st ? flow.sectors.filter((x) => !x.small && x.relFlow != null).sort((a, b) => b.relFlow - a.relFlow).findIndex((x) => x.div === s.div) : -1;
+      return Response.json({ corp_name: name, induty_code: row.ic, sector: s.name, div: s.div, stats: st, flowRank: rank >= 0 ? rank + 1 : null, flowRankOf: flow.sectors.filter((x) => !x.small && x.relFlow != null).length, asof: flow.asof, base20: flow.base20 });
+    }
+    return Response.json({ error: "알 수 없는 요청" }, { status: 404 });
+  } catch (e) {
+    return Response.json({ error: "서버 오류: " + ((e && e.message) || String(e)) }, { status: 500 });
+  }
+}
+// ===== /섹터 유동성 =====
 
 async function handleMarketCfg(request, env, pathname, searchParams) {
   try {
@@ -8707,6 +8912,7 @@ async function handleRequest(request, env) {
 
     if (pathname === "/api/market/config" || pathname === "/api/market/preview" || pathname === "/api/market/range") return handleMarketCfg(request, env, pathname, searchParams);
     if (pathname === "/api/db/usage" || pathname === "/api/db/settings" || pathname === "/api/db/purge") return handleDbCapacity(request, env, pathname, searchParams);
+    if (pathname === "/api/sector/flow" || pathname === "/api/sector/stock") return handleSector(request, env, pathname, searchParams);
 
     if (pathname === "/api/market/refresh-universe") {
       // 실제 로직은 scheduled()의 일일 자동 갱신과 공유하는 runUniverseRefresh()에 있다.
@@ -9559,6 +9765,7 @@ async function handleScheduled(event, env, ctx) {
       if (results.length === 0) {
         // 재무 큐가 비어 있는 짝수 분에는 data.go.kr 영업이익 조회 대기열을 조금씩 처리한다.
         try { await processOpFillTick(env); } catch (e) { console.error("영업이익 조회 틱 실패:", (e && e.message) || e); }
+        if (minute % 8 === 0) { try { await processSectorTick(env); } catch (e) { console.error("업종 조회 틱 실패:", (e && e.message) || e); } } // 읽기 한도 보호: 8분에 한 번, 한 번에 3개
         return;
       }
       for (const item of results) {
