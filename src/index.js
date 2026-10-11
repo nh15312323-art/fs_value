@@ -2046,6 +2046,89 @@ function anClassify(c) {
   return { labels, head, quad, grades: G };
 }
 
+// ---------- FCF 유형 (현금흐름 관점의 설명용 분류) ----------
+// FCF = CFO − CAPEX(유형자산 취득 + 무형자산 취득). 유형자산 취득이 확인되지 않으면 FCF를 만들지 않으므로(과대평가 방지) 해당 연도는 "산출 불가"로 센다.
+// 아래 기준선(5년 중 1년 적자 허용, CAPEX/CFO 0.7, FCF/CFO 0.3, 희석 10% 등)은 VALUELAB의 가설이며 학술적으로 검증된 임계값이 아니다.
+function anFcfType(c) {
+  const L = c.list || [];
+  const lastY = L.length ? L[L.length - 1].year : 0;
+  const W = L.filter((d) => d.year > lastY - 5);
+  const last = L.length ? L[L.length - 1] : null;
+  const byY = {}; L.forEach((d) => { byY[d.year] = d; });
+  const fcfs = W.map((d) => d.fcf).filter(anFin), ocfs = W.map((d) => d.ocf).filter(anFin);
+  const nF = fcfs.length, nO = ocfs.length;
+  const posF = fcfs.filter((v) => v > 0).length, negO = ocfs.filter((v) => v <= 0).length;
+  const out = { nF, nO, nW: W.length, posF, negO, types: [], head: null, conf: nF >= 5 ? '높음' : nF >= 4 ? '보통' : '낮음', counters: [], m: {} };
+  if (!last || nF < 3) {
+    out.head = { text: '판정 보류 — FCF를 계산할 수 있는 연도가 ' + nF + '개뿐입니다(최소 3개, 4개 이상 권장)', kind: 'none' };
+    return out;
+  }
+  const y2 = byY[last.year - 2], y1 = byY[last.year - 1], y3 = byY[last.year - 3];
+  const cfom = W.map((d) => anDiv(d.ocf, d.revenue));
+  const recent = anMean(cfom.slice(-2)), earlier = cfom.length >= 4 ? anMean(cfom.slice(0, -2)) : null;
+  const cfomDown = (recent != null && earlier != null) ? recent < earlier - 0.005 : null; // 0.5%p 넘게 낮아야 '하락'(변화 없음·소수점 오차를 악화로 보지 않음)
+  const ocfUp = (anFin(last.ocf) && y2 && anFin(y2.ocf)) ? last.ocf > y2.ocf : null;
+  const fcfmUp = (anFin(last.fcfm) && y1 && anFin(y1.fcfm)) ? last.fcfm > y1.fcfm : null;
+  const cx = W.slice(-3).map((d) => (anFin(d.capex) && anFin(d.ocf) && d.ocf > 0) ? d.capex / d.ocf : null).filter(anFin);
+  const capexOcf3 = cx.length >= 2 ? anMean(cx) : null;
+  const fcfOcf = (anFin(last.fcf) && anFin(last.ocf) && last.ocf > 0) ? last.fcf / last.ocf : null;
+  const dil = (y3 && anFin(last.shares) && anFin(y3.shares) && y3.shares > 0) ? last.shares / y3.shares - 1 : null;
+  const gRev = c.growthRev;
+  out.m = { cfomRecent: recent, cfomEarlier: earlier, capexOcf3, fcfOcf, dil, lastFcf: last.fcf, lastOcf: last.ocf, gRev };
+  const T = (txt, v) => [txt, v == null ? null : !!v];
+  const pct = anPct;
+  const defs = [
+    { name: 'FCF Compounder', desc: '현금흐름이 꾸준히 양호하고 사업 규모도 함께 성장하는 유형',
+      conds: [
+        T('FCF 산출 가능 연도 4개 이상: 현재 ' + nF + '개', nF >= 4),
+        T('최근 5년 중 FCF 적자 연도 1개 이하: 현재 ' + (nF - posF) + '개', nF >= 4 ? (nF - posF) <= 1 : null),
+        T('최근 연도 FCF 흑자: 현재 ' + anFmt('eok', last.fcf), anFin(last.fcf) ? last.fcf > 0 : null),
+        T('3년 평균 FCF 마진 양수: 현재 ' + pct(c.fcfm3), c.fcfm3 != null ? c.fcfm3 > 0 : null),
+        T('매출 3년 CAGR 양수: 현재 ' + pct(gRev), gRev != null ? gRev > 0 : null),
+        T('FCF 마진 악화 아님(3년 평균 ≥ 5년 평균): 3년 ' + pct(c.fcfm3) + ' / 5년 ' + pct(c.fcfm5), c.fcfDown != null ? c.fcfDown === false : null),
+      ] },
+    { name: 'Emerging Compounder / FCF 변곡', desc: '현재 FCF는 약하거나 최근에야 흑자이지만 CFO·마진이 개선되는 유형(변곡점 후보)',
+      conds: [
+        T('최근 연도 CFO 양수: 현재 ' + anFmt('eok', last.ocf), anFin(last.ocf) ? last.ocf > 0 : null),
+        T('CFO가 2년 전보다 증가: ' + anFmt('eok', y2 ? y2.ocf : null) + ' → ' + anFmt('eok', last.ocf), ocfUp),
+        T('FCF 마진이 전년보다 개선: ' + pct(y1 ? y1.fcfm : null) + ' → ' + pct(last.fcfm), fcfmUp),
+        T('FCF가 아직 안정적이지 않음(5년 중 적자 2개 이상 또는 최근 FCF ≤ 0): 적자 ' + (nF - posF) + '개', nF >= 3 ? ((nF - posF) >= 2 || (anFin(last.fcf) && last.fcf <= 0)) : null),
+        T('매출 3년 CAGR 양수: 현재 ' + pct(gRev), gRev != null ? gRev > 0 : null),
+      ] },
+    { name: 'Growth Reinvestment', desc: '영업현금은 늘지만 성장 CAPEX가 커서 FCF가 낮은 유형(재투자가 성과로 이어지는지 확인 필요)',
+      conds: [
+        T('최근 연도 CFO 양수: 현재 ' + anFmt('eok', last.ocf), anFin(last.ocf) ? last.ocf > 0 : null),
+        T('CFO가 2년 전보다 증가', ocfUp),
+        T('3년 평균 CAPEX/CFO 70% 이상: 현재 ' + pct(capexOcf3), capexOcf3 != null ? capexOcf3 >= 0.7 : null),
+        T('최근 FCF가 CFO의 30% 이하: 현재 ' + pct(fcfOcf), fcfOcf != null ? fcfOcf <= 0.3 : null),
+        T('매출 3년 CAGR ' + pct(AN_TH.growthHigh, 0) + ' 이상: 현재 ' + pct(gRev), gRev != null ? gRev >= AN_TH.growthHigh : null),
+        T('CFO 마진 악화 아님(최근 2년이 이전보다 0.5%p 넘게 낮지 않음): ' + pct(recent) + ' vs ' + pct(earlier), cfomDown != null ? cfomDown === false : null),
+      ] },
+    { name: 'Growth Trap / FCF 악화', desc: '매출은 늘지만 현금 전환이 나빠지고 적자·희석이 반복되는 유형',
+      conds: [
+        T('매출 3년 CAGR 양수: 현재 ' + pct(gRev), gRev != null ? gRev > 0 : null),
+        T('CFO 마진 또는 FCF 마진 하락: CFO 마진 ' + pct(recent) + ' vs ' + pct(earlier) + ' / FCF 3년 ' + pct(c.fcfm3) + ' vs 5년 ' + pct(c.fcfm5), (cfomDown == null && c.fcfDown == null) ? null : (cfomDown === true || c.fcfDown === true)),
+        T('CFO 적자 2개 연도 이상 또는 3년 주식수 +10% 이상(희석): 적자 ' + negO + '개 / 희석 ' + pct(dil), (nO >= 3 || dil != null) ? (negO >= 2 || (dil != null && dil >= 0.10)) : null),
+      ] },
+  ];
+  defs.forEach((D) => { D.pass = D.conds.filter((x) => x[1] === true).length; D.unk = D.conds.filter((x) => x[1] == null).length; D.total = D.conds.length; D.full = D.pass === D.total; });
+  out.types = defs;
+  const matched = defs.filter((D) => D.full);
+  if (matched.length) out.head = { text: matched.map((D) => D.name).join(' / '), kind: 'match' };
+  else {
+    const best = defs.slice().sort((a, b) => (b.pass / b.total) - (a.pass / a.total))[0];
+    out.head = (best && best.pass / best.total >= 0.6) ? { text: '가장 유사: ' + best.name + ' (' + best.pass + '/' + best.total + ' 충족)', kind: 'near' } : { text: '뚜렷한 유형 없음(혼합)', kind: 'none' };
+  }
+  // 반대 근거: 어떤 유형이든 투자 논리를 약하게 만드는 신호를 자동으로 찾아 나열한다(없으면 없다고 표시)
+  if (dil != null && dil >= 0.05) out.counters.push('주식수가 3년간 ' + pct(dil) + ' 늘었습니다(희석) — 주당 가치가 FCF 증가보다 덜 늘 수 있음');
+  const cn = anMean(anWin(L, 'cfoni', 3)); if (cn != null && cn < 0.7) out.counters.push('최근 3년 평균 CFO/순이익이 ' + cn.toFixed(2) + '배로 낮습니다 — 이익이 현금으로 충분히 이어지지 않음');
+  const cxr = W.map((d) => d.capexRev), cxRecent = anMean(cxr.slice(-2)), cxEarlier = cxr.length >= 4 ? anMean(cxr.slice(0, -2)) : null;
+  if (cxRecent != null && cxEarlier != null && cxRecent > cxEarlier * 1.3 && cxRecent > 0.03) out.counters.push('CAPEX/매출이 ' + pct(cxEarlier) + ' → ' + pct(cxRecent) + '로 커졌습니다 — 투자 부담 증가(성장 투자인지 유지 비용인지 확인 필요)');
+  if (nF - posF >= 1) out.counters.push('최근 ' + nF + '개 연도 중 FCF 적자가 ' + (nF - posF) + '개 있습니다');
+  if (nF < 5) out.counters.push('FCF를 계산할 수 있는 연도가 ' + nF + '/5개입니다 — 자료 부족(유형자산 취득 항목 미확인 연도 포함)');
+  return out;
+}
+
 // ---------- 전체 컨텍스트 ----------
 function anBuildContext(rows, price, m) {
   const list = anBuildSeries(rows);
@@ -2087,6 +2170,7 @@ function anBuildContext(rows, price, m) {
     ttm: (function () { try { return anBuildTtmPoint(rows); } catch (e) { return null; } })(),
   };
   ctx.cls = anClassify(ctx);
+  try { ctx.fcfType = anFcfType(ctx); } catch (e) { ctx.fcfType = null; } // 보조 분류 오류가 화면 전체를 막지 않도록 분리
   return ctx;
 }
 
@@ -2227,6 +2311,26 @@ function anRenderClassify(c) {
   return anSection('🏷 종합 분류 (결과 시계열로 본 유형)', col,
     '각 항목 옆 배지는 근거 수준입니다 — 학술 검증(논문으로 성과가 확인된 방법) · 이론 근거(이론상 맞지만 입력값은 가정) · 실무 관행(널리 쓰이나 증명 안 됨) · 가정·휴리스틱(임의 기준선). 계산식·실제 입력값·한계는 맨 아래 「참고」 장의 「지표·계산식 설명서」에서 항목별로 펼쳐 볼 수 있습니다.',
     '<div style="font-size:16px; font-weight:800; color:' + col + '; margin:6px 0;">' + h.text + '</div>' + axes + q + cards, true);
+}
+
+function anRenderFcfType(c) {
+  const f = c.fcfType; if (!f) return '';
+  const col = f.head.kind === 'match' ? '#0d9488' : f.head.kind === 'near' ? '#d97706' : '#64748b';
+  const m = f.m || {};
+  const tiles = f.types.length ? anGrid([
+    anTile('FCF 산출 연도', f.nF + '/' + Math.min(5, f.nW || 5), '최근 5년 중 FCF를 계산할 수 있는 연도. 자료 신뢰도: ' + f.conf),
+    anTile('FCF 흑자 연도', f.posF + '/' + f.nF, 'FCF가 양수인 연도 수'),
+    anTile('최근 FCF', anFmt('eok', m.lastFcf), 'CFO ' + anFmt('eok', m.lastOcf) + ' − CAPEX'),
+    anTile('CFO 마진', anPct(m.cfomRecent), '최근 2년 평균 (이전 평균 ' + anPct(m.cfomEarlier) + ')'),
+    anTile('CAPEX/CFO', anPct(m.capexOcf3), '최근 3년 평균(CFO가 양수인 해만)'),
+  ]) : '';
+  const cards = f.types.map((L) => '<div style="border:1px solid var(--border); border-radius:8px; padding:8px 10px; margin-top:8px;"><div style="display:flex; justify-content:space-between; gap:8px;"><b>' + L.name + '</b><span style="font-size:12px; color:' + (L.full ? '#0d9488' : 'var(--text-muted)') + ';">' + L.pass + '/' + L.total + ' 충족' + (L.unk ? ' (미확인 ' + L.unk + ')' : '') + '</span></div><div style="font-size:11px; color:var(--text-muted); margin:2px 0 4px;">' + L.desc + '</div>' +
+    L.conds.map((x) => '<div style="font-size:12px;">' + anMark(x[1]) + ' ' + anEsc(x[0]) + '</div>').join('') + '</div>').join('');
+  const counters = f.types.length ? '<div style="margin-top:8px; padding:8px 10px; background:#fff7ed; border-radius:8px; font-size:12.5px;"><b>반대 근거(자동 탐지)</b>' +
+    (f.counters.length ? f.counters.map((t) => '<div>• ' + anEsc(t) + '</div>').join('') : '<div>탐지 항목(희석·현금 전환·CAPEX 증가·FCF 적자·자료 부족)에서 해당 없음 — 다만 이 목록이 모든 위험을 뜻하지는 않습니다.</div>') + '</div>' : '';
+  return anSection('💧 FCF 유형 (현금흐름 관점)', col,
+    '설명용 분류이며 매수·매도 신호가 아닙니다. FCF = CFO − CAPEX(유형자산 + 무형자산 취득)이고, 유형자산 취득이 확인되지 않은 연도는 FCF를 만들지 않습니다. 유형 판정 기준(적자 1년 허용, CAPEX/CFO 70%, FCF/CFO 30%, 희석 10% 등)은 VALUELAB가 정한 가설이라 학술적으로 검증된 값이 아닙니다 ' + anBadge('assume') + ' 반대 근거를 함께 확인하세요.',
+    '<div style="font-size:16px; font-weight:800; color:' + col + '; margin:6px 0;">' + anEsc(f.head.text) + '</div>' + tiles + cards + counters, false);
 }
 
 function anRenderJudge(c) {
@@ -3212,7 +3316,7 @@ function renderAnalysis() {
   const notice = needRefetch ? '<div class="card" style="background:#fffbeb; border-color:#fcd34d; font-size:12.5px;">⚠ 이 종목은 <b>감가상각·배당지급·자사주·차입금 구성 항목이 아직 저장되어 있지 않습니다</b>. EBITDA, 순차입금, 총주주환원성향 등은 N/A로 표시되며, 위쪽에서 이 종목을 <b>다시 조회/저장</b>하면 채워집니다(DART 호출량은 기존과 같음).</div>' : '';
   const A = anRenderAreas(c);
   // 스토리 순서: 유형 → 사업의 질 → 이익의 진위 → 안전 → 성장 → 자본배분 → 가격 → 시장의 시선 → 결론, 마지막에 참고(설명서·설정)
-  el.innerHTML = notice + anRenderClassify(c) +
+  el.innerHTML = notice + anRenderClassify(c) + anRenderFcfType(c) +
     anChapter('①', '좋은 사업인가?', '높은 자본수익률(ROIC)을 낼 수 있는 구조이고, 그 이유가 무엇인가', '버핏·멍거(경제적 해자), 그린왈드(진입장벽), 피셔(질적 우수성)가 가장 먼저 묻는 질문. 숫자로는 ROIC·매출총이익률·자산회전율을 봅니다.') + A.quality + anRenderRoic4(c) + A.capeff +
     anChapter('②', '이익이 현금으로 확인되는가?', '장부상 이익이 실제 주주가 가져갈 수 있는 현금으로 이어지는가', '버핏의 오너어닝스, 슬로언(1996)의 발생액 연구: 현금이 뒷받침되지 않는 이익은 지속성이 낮습니다.') + A.cash +
     anChapter('③', '재무적으로 안전한가?', '빚 때문에 사업이 흔들리거나 기회를 놓치지 않는가', '그레이엄·클라먼·막스: "먼저 잃지 않는 것". 좋은 사업도 과도한 차입 앞에서는 위험합니다.') + A.bs +
