@@ -821,6 +821,41 @@ const HTML_PAGE = `<!doctype html>
     </div>
 
     <div class="card">
+      <div class="card-title">1-1. 저장 기준 설정 (바꾼 뒤부터 매일 이 기준으로 시세를 받습니다)</div>
+      <div class="row">
+        <label style="font-size:13px;">하루 거래대금 ≥ <input id="cfgTv" type="number" min="0" step="1" style="width:90px" /> 억원</label>
+        <label style="font-size:13px;">시가총액 ≥ <input id="cfgMc" type="number" min="0" step="10" style="width:100px" /> 억원</label>
+        <button class="primary" onclick="saveMarketCfg()">저장</button>
+        <button onclick="previewCfg()">이 기준이면 몇 종목? (미리보기)</button>
+      </div>
+      <div id="cfgMsg" class="meta-line" style="white-space:pre-line;"></div>
+      <details class="adv"><summary>어떻게 적용되나요? (꼭 읽어보세요)</summary>
+        <div class="meta-line">• 저장 후 <b>다음 일일 수집부터</b>(한국시간 18:01 자동, 또는 위 「오늘자 시세 받기」) 이 기준이 적용됩니다. 스크리닝의 하한도 이 값을 따릅니다.<br />
+        • <b>이미 저장된 과거 시세는 지우지 않습니다.</b> 기준을 올리면 새 기준 미만 종목은 더 이상 갱신되지 않을 뿐입니다.<br />
+        • 기준을 <b>내리면</b> 새로 통과하는 종목은 약 250일치 이력을 받아야 하고, 무료 한도 때문에 <b>하루 약 150종목씩</b> 순서대로(거래대금 큰 종목부터) 채웁니다. 신규가 많으면 며칠 걸립니다.<br />
+        • 거래대금을 0으로 두면 그날 거래가 적었던 종목도 빠지지 않아 이력에 구멍이 생기지 않습니다(저장량은 늘어납니다).</div>
+      </details>
+    </div>
+
+    <div class="card">
+      <div class="card-title">1-2. 기간 지정 시세 가져오기 (이력 늘리기 · 구멍 메우기)</div>
+      <div class="row">
+        <label style="font-size:13px;">시작일 <input id="rgFrom" type="date" /></label>
+        <label style="font-size:13px;">종료일 <input id="rgTo" type="date" /></label>
+        <button class="primary" onclick="rangeStart()">수집 시작</button>
+        <button onclick="rangeStatusShow()">진행 확인</button>
+        <button onclick="rangeCancel()">취소</button>
+      </div>
+      <div id="rgMsg" class="meta-line" style="white-space:pre-line;"></div>
+      <details class="adv"><summary>설명</summary>
+        <div class="meta-line">• 지정한 기간의 <b>날짜별 전체 시세</b>를 위 저장 기준(거래대금·시가총액)으로 걸러 받아 저장합니다. 이미 있는 날짜·종목은 건드리지 않고(쓰기 0), 시가총액이 비어 있던 행만 채웁니다.<br />
+        • 12-1 모멘텀·52주 고가는 약 253거래일(1년+)의 이력이 필요한데 기본 수집은 약 250달력일(≈170거래일)이라 「자료 부족」일 수 있습니다. <b>과거 쪽으로 기간을 늘리면 이 항목이 채워집니다.</b><br />
+        • 서버가 <b>4분에 1쪽(250행)</b>씩, 하루 최대 약 15,000행까지만 처리해 무료 쓰기 한도(하루 10만 건)를 지킵니다. 하루치 전 종목(약 1,000~1,500행)당 약 20분, 하루에 약 10거래일 속도라 긴 기간은 며칠 걸립니다. 화면을 꺼도 계속 진행되고, 한도에 닿으면 다음 날 이어서 합니다.<br />
+        • 한 번에 최대 400일, 종료일은 오늘 이전. 주말은 건너뛰고 공휴일은 자동으로 감지해 건너뜁니다.</div>
+      </details>
+    </div>
+
+    <div class="card">
       <div class="card-title">2. 재무 데이터 (DART)</div>
       <div class="row">
         <button onclick="toggleDbList()">DB 저장 종목 보기</button>
@@ -4346,7 +4381,7 @@ async function pfuExport() {
         document.getElementById(btns[k]).className = k === tab ? 'toggle-active' : '';
       });
       if (tab === 'momentum' && !screenAutoLoaded) { screenAutoLoaded = true; loadScreen('top', true); }
-      if (tab === 'data') { loadDataSummary(); checkMarketStatus(); }
+      if (tab === 'data') { loadDataSummary(); checkMarketStatus(); loadMarketCfg(); rangeStatusShow(); }
       if (tab === 'bt') { btInitUi(); }
       if (tab === 'pf') { pfuInit(); }
       if (tab === 'macro' && macroCorrDirty && rawRows.length) computeMacroCorrelation();
@@ -4374,6 +4409,82 @@ async function pfuExport() {
       }
     }
 
+    // ----- 저장 기준 설정 / 기간 수집 (데이터 관리) -----
+    function adminKey() { try { return (typeof PFU !== 'undefined' && PFU.key) || sessionStorage.getItem('pfKey') || ''; } catch (e) { return ''; } }
+    async function adminFetch(url, body) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const headers = { 'content-type': 'application/json' }; const k = adminKey(); if (k) headers['x-pf-key'] = k;
+        const res = await fetch(url, { method: 'POST', headers: headers, body: JSON.stringify(body) });
+        const d = await res.json().catch(function () { return { error: 'HTTP ' + res.status }; });
+        if ((res.status === 401 || res.status === 403) && attempt === 0) {
+          const k2 = window.prompt('이 변경에는 관리 키(Cloudflare에 등록한 PF_KEY)가 필요합니다. 키를 입력하세요.');
+          if (!k2) return { ok: false, status: res.status, data: d };
+          try { sessionStorage.setItem('pfKey', k2.trim()); } catch (e) {}
+          continue;
+        }
+        return { ok: res.ok, status: res.status, data: d };
+      }
+    }
+    async function loadMarketCfg() {
+      try {
+        const res = await fetch('/api/market/config', { cache: 'no-store' }); const d = await res.json();
+        if (!res.ok) throw new Error(d.error || '실패');
+        document.getElementById('cfgTv').value = d.cfg.minTvEok; document.getElementById('cfgMc').value = d.cfg.minMcapEok;
+        document.getElementById('cfgMsg').textContent = '현재 적용 중: 하루 거래대금 ≥ ' + sN(d.cfg.minTvEok) + '억 · 시가총액 ≥ ' + sN(d.cfg.minMcapEok) + '억' + (d.cfg.custom ? ' (사용자 설정, ' + String(d.cfg.updatedAt || '').slice(0, 16).replace('T', ' ') + ')' : ' (기본값)') + (d.protected ? '' : '\\n※ 접근 키(PF_KEY)가 설정되어 있지 않아 누구나 이 기준을 바꿀 수 있습니다. 키를 등록하면 변경에 키가 필요합니다.');
+      } catch (e) { document.getElementById('cfgMsg').textContent = '설정을 불러오지 못했습니다: ' + e.message; }
+    }
+    async function saveMarketCfg() {
+      const el = document.getElementById('cfgMsg');
+      const tv = document.getElementById('cfgTv').value, mc = document.getElementById('cfgMc').value;
+      if (tv === '' || mc === '') { el.textContent = '두 값을 모두 입력하세요(0도 가능).'; return; }
+      if (Number(tv) === 0 && Number(mc) <= 100 && !window.confirm('거래대금 0 · 시가총액 ' + mc + '억 이하는 거의 전 종목(약 2,500개 이상)을 저장합니다. 초기 수집에 한 달 이상 걸리고 쓰기 한도를 오래 점유할 수 있습니다. 그래도 저장할까요?')) return;
+      el.textContent = '저장 중...';
+      const r = await adminFetch('/api/market/config', { min_tv_eok: tv, min_mcap_eok: mc });
+      if (!r.ok) { el.textContent = '저장 실패: ' + (r.data.error || r.status); return; }
+      await loadMarketCfg();
+      el.textContent += '\\n저장했습니다. 다음 일일 수집부터 적용됩니다. 바로 적용하려면 「오늘자 시세 받기」를 누르세요.';
+    }
+    async function previewCfg() {
+      const el = document.getElementById('cfgMsg');
+      const tv = document.getElementById('cfgTv').value, mc = document.getElementById('cfgMc').value;
+      if (tv === '' || mc === '') { el.textContent = '두 값을 모두 입력하세요.'; return; }
+      try {
+        el.textContent = '현재 저장 종목 목록 확인 중...';
+        const kr = await fetch('/api/market/preview?mode=known'); const kd = await kr.json(); if (!kr.ok) throw new Error(kd.error || '실패');
+        const known = new Set(kd.codes); let page = 1, basDt = null, pass = 0, fresh = 0, total = null;
+        for (let guard = 0; guard < 40; guard++) {
+          const r = await fetch('/api/market/preview?tv=' + encodeURIComponent(tv) + '&mcap=' + encodeURIComponent(mc) + '&page=' + page + (basDt ? '&bas_dt=' + basDt : ''));
+          const d = await r.json(); if (!r.ok) throw new Error(d.error || '실패');
+          basDt = d.bas_dt; total = d.total; pass += d.pass.length; d.pass.forEach(function (c) { if (!known.has(c)) fresh++; });
+          el.textContent = '미리보기 계산 중... ' + Math.min(page * d.size, d.total || 0) + ' / ' + (d.total || 0) + '개 확인';
+          if (d.done) break; page++;
+        }
+        const days = Math.ceil(fresh / 150);
+        el.textContent = '기준일 ' + basDt + ' 기준, 하루 거래대금 ≥ ' + sN(Number(tv)) + '억 · 시가총액 ≥ ' + sN(Number(mc)) + '억이면\\n• 통과 종목: ' + sN(pass) + '개 (거래대금 조건만 통과한 종목 ' + sN(total) + '개 중)\\n• 그중 이력이 아직 없어 새로 받아야 할 종목: ' + sN(fresh) + '개 → 하루 150종목씩 약 ' + sN(days) + '일 소요\\n• 매일 추가 저장량: 약 ' + sN(pass) + '행(쓰기 약 ' + sN(pass * 2) + '건/일, 무료 한도 10만 건 중)\\n(아직 저장하지 않았습니다. 마음에 들면 「저장」을 누르세요.)';
+      } catch (e) { el.textContent = '미리보기 오류: ' + e.message; }
+    }
+    function rgFmt(j) {
+      if (!j) return '진행 중인 기간 수집이 없습니다.';
+      const d = function (x) { return x ? String(x).slice(0, 4) + '-' + String(x).slice(4, 6) + '-' + String(x).slice(6, 8) : ''; };
+      return (j.done ? (j.error ? '⚠ 중단: ' + j.error : '✔ 완료') : '진행 중') + ' — ' + d(j.from) + ' ~ ' + d(j.to) + '\\n현재 날짜 ' + d(j.cur > j.to ? j.to : j.cur) + ' · 처리한 거래일 ' + sN(j.tradingDates) + '일 · 휴장 감지 ' + sN(j.skipped) + '일 · 저장 시도 ' + sN(j.rows) + '행\\n적용 기준: 거래대금 ≥ ' + sN(j.minTv / 1e8) + '억 · 시가총액 ≥ ' + sN(j.minMcap / 1e8) + '억 · 오늘 처리 ' + sN(j.budgetRows) + '행(하루 상한 15,000)';
+    }
+    async function rangeStatusShow() {
+      const el = document.getElementById('rgMsg');
+      try { const r = await fetch('/api/market/range', { cache: 'no-store' }); const d = await r.json(); if (!r.ok) throw new Error(d.error || '실패'); el.textContent = rgFmt(d.job); } catch (e) { el.textContent = '오류: ' + e.message; }
+    }
+    async function rangeStart() {
+      const el = document.getElementById('rgMsg'); const from = document.getElementById('rgFrom').value, to = document.getElementById('rgTo').value;
+      if (!from || !to) { el.textContent = '시작일과 종료일을 모두 선택하세요.'; return; }
+      el.textContent = '시작 요청 중...';
+      const r = await adminFetch('/api/market/range', { from: from, to: to });
+      if (!r.ok) { el.textContent = '시작하지 못했습니다: ' + (r.data.error || r.status); return; }
+      el.textContent = '시작했습니다. 서버가 자동으로 이어서 처리합니다(화면을 꺼도 됩니다).\\n' + rgFmt(r.data.job);
+    }
+    async function rangeCancel() {
+      if (!window.confirm('진행 중인 기간 수집을 취소할까요? 이미 저장된 시세는 그대로 남습니다.')) return;
+      const r = await adminFetch('/api/market/range', { cancel: true });
+      document.getElementById('rgMsg').textContent = r.ok ? '취소했습니다.' : '취소 실패: ' + (r.data.error || r.status);
+    }
     async function refreshMarketUniverse() {
       const el = document.getElementById('marketStatus');
       el.textContent = '공공데이터포털에서 오늘자 통과 종목 받는 중...';
@@ -4381,7 +4492,7 @@ async function pfuExport() {
         const res = await fetch('/api/market/refresh-universe?force=1');
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || '갱신 실패');
-        el.textContent = data.bas_dt + ' 기준 ' + data.universe_size + '개 종목(거래대금 15억 이상)을 확인했습니다. 시세 추가 작업을 시작했고, 약 ' + (data.pages || 1) + '번의 1분 주기(홀수 분)에 나눠 서버가 알아서 처리합니다. 처음 보는 종목은 백필 큐에 등록됩니다(화면을 닫아도 계속 진행됩니다).';
+        el.textContent = data.bas_dt + ' 기준 ' + data.universe_size + '개 종목(설정한 거래대금 기준 이상)을 확인했습니다. 시세 추가 작업을 시작했고, 약 ' + (data.pages || 1) + '번의 1분 주기(홀수 분)에 나눠 서버가 알아서 처리합니다. 처음 보는 종목은 백필 큐에 등록됩니다(화면을 닫아도 계속 진행됩니다).';
         checkMarketStatus();
       } catch (e) {
         el.textContent = '오류: ' + e.message;
@@ -4416,7 +4527,7 @@ async function pfuExport() {
       }
     }
 
-    // ===== 모멘텀 스크리닝 화면 (모멘텀 8 + 관심도 2 = 10가지 Top 50) =====
+    // ===== 모멘텀 스크리닝 화면 (모멘텀 8 + 관심도 2 = 10가지 Top 100) =====
     const SCREEN_LISTS = [
       { key: 'rw', label: '복합 점수(권장)', desc: '「2~3개월」과 「2~6개월」 수익률(최근 1개월 제외)을 후보 안에서의 퍼센타일 순위로 바꿔 가중평균한 점수(0~100)입니다. 극단적인 급등주에 덜 흔들리고 1개월 단기반전을 피합니다.' },
       { key: 'm16', label: '6-1 모멘텀', desc: '21거래일 전 종가 ÷ 126거래일 전 종가 − 1. 최근 1개월을 건너뛴 6개월 모멘텀(Jegadeesh & Titman 1993의 형태).' },
@@ -4508,7 +4619,7 @@ async function pfuExport() {
       const w = meta.weights || {};
       let stTxt;
       if (newFmt) {
-        stTxt = '기준일 시세 ' + sN(meta.asof_rows) + '종목 중 보통주 · ' + (meta.pcMcap != null ? '시총 하위 ' + meta.pcMcap + '% 제외 · 20일 평균 거래대금 하위 ' + meta.pcTv + '% 제외' : '시총 ≥ ' + sN(meta.minMcapEok) + '억 · 20일 평균 거래대금 ≥ ' + sN(meta.minTvEok) + '억') + (meta.cutMcEok != null ? ' (이번 컷: 시총 ' + sN(meta.cutMcEok) + '억 · 20일 평균 거래대금 ' + sX(meta.cutTvEok, 1) + '억 이상만 통과)' : '') + ' · 주가 ≥ ' + sN(meta.minPrice) + '원 통과 ' + sN(meta.passed_floor) + '종목 · 각 목록 상위 50개' +
+        stTxt = '기준일 시세 ' + sN(meta.asof_rows) + '종목 중 보통주 · ' + (meta.pcMcap != null ? '시총 하위 ' + meta.pcMcap + '% 제외 · 20일 평균 거래대금 하위 ' + meta.pcTv + '% 제외' : '시총 ≥ ' + sN(meta.minMcapEok) + '억 · 20일 평균 거래대금 ≥ ' + sN(meta.minTvEok) + '억') + (meta.cutMcEok != null ? ' (이번 컷: 시총 ' + sN(meta.cutMcEok) + '억 · 20일 평균 거래대금 ' + sX(meta.cutTvEok, 1) + '억 이상만 통과)' : '') + ' · 주가 ≥ ' + sN(meta.minPrice) + '원 통과 ' + sN(meta.passed_floor) + '종목 · 각 목록 상위 ' + (meta.topN || 50) + '개' +
           ' · 복합 가중 2~3개월 ' + sX(w.w3) + ' / 2~6개월 ' + sX(w.w6) + (screenData.saved ? ' · 주간 결과로 저장됨' : '');
       } else {
         stTxt = '구버전 결과: 시총 ≥ ' + sN(meta.minMcapEok) + '억 · 하루 거래대금 ≥ ' + sN(meta.minTvEok) + '억';
@@ -6131,6 +6242,168 @@ async function fetchKrxDailyUniverse(basDt, minTradingValue, apiKey) {
   return all;
 }
 
+// ============================================================
+// 저장 기준(유니버스) 설정 + 기간 지정 시세 가져오기
+// 기준(하루 거래대금·시가총액 하한)은 사용자가 데이터 관리에서 바꾸고, 바꾼 뒤부터 매일 자동 수집이 이 기준을 쓴다.
+// 이미 저장된 과거 시세는 지우지 않는다(기준을 올려도 그대로, 내리면 새로 통과한 종목만 추가로 받는다).
+// ============================================================
+const UNIVERSE_LIMITS = { tvEokMax: 100000, mcapEokMax: 10000000 };
+let universeCfgCache = null; // { t, cfg }
+let appSettingsReady = false;
+async function ensureAppSettings(db) {
+  if (appSettingsReady) return;
+  await db.prepare("CREATE TABLE IF NOT EXISTS app_settings (k TEXT PRIMARY KEY, v TEXT, updated_at TEXT)").run();
+  appSettingsReady = true;
+}
+function universeCfgFrom(minTvEok, minMcapEok, custom, updatedAt) {
+  return { minTvEok: minTvEok, minMcapEok: minMcapEok, minTv: minTvEok * 1e8, minMcap: minMcapEok * 1e8, custom: !!custom, updatedAt: updatedAt || null };
+}
+async function getUniverseCfg(env, fresh) {
+  const def = universeCfgFrom(MARKET_MIN_TRADING_VALUE / 1e8, MARKET_MIN_MCAP / 1e8, false, null);
+  if (!fresh && universeCfgCache && Date.now() - universeCfgCache.t < 30000) return universeCfgCache.cfg;
+  let cfg = def;
+  try {
+    await ensureAppSettings(env.DB);
+    const r = await env.DB.prepare("SELECT v, updated_at FROM app_settings WHERE k = 'universe_cfg'").first();
+    if (r && r.v) {
+      const o = JSON.parse(r.v);
+      if (Number.isFinite(o.minTvEok) && o.minTvEok >= 0 && Number.isFinite(o.minMcapEok) && o.minMcapEok >= 0) cfg = universeCfgFrom(o.minTvEok, o.minMcapEok, true, r.updated_at);
+    }
+  } catch (e) { /* 설정을 못 읽으면 기본값으로 계속 동작 */ }
+  universeCfgCache = { t: Date.now(), cfg: cfg };
+  return cfg;
+}
+// PF_KEY가 설정돼 있으면 설정 변경·기간 수집 시작에 키가 필요하다(공개 주소에서 아무나 쓰기 한도를 소진시키지 못하게). 미설정이면 기존 데이터 관리 기능처럼 열려 있다.
+function adminAuthError(request, env) {
+  const key = env.PF_KEY ? String(env.PF_KEY) : "";
+  if (key.length < 12) return null;
+  return pfAuthError(request, env);
+}
+function ymdOk(s) {
+  if (!/^\d{8}$/.test(s)) return false;
+  const y = +s.slice(0, 4), m = +s.slice(4, 6), d = +s.slice(6, 8), dt = new Date(Date.UTC(y, m - 1, d));
+  return y >= 2000 && dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+function ymdDow(s) { return new Date(Date.UTC(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8))).getUTCDay(); }
+
+const RANGE_PAGE = 250;            // 한 틱에 처리하는 행 수(일일 추가와 같은 크기)
+const RANGE_DAILY_ROW_CAP = 15000; // 기간 수집이 하루(UTC)에 쓰는 행 상한. 행 1개 = 쓰기 약 2건 → 약 3만 건(무료 한도 10만의 30%)
+const RANGE_MAX_DAYS = 400;        // 한 번에 지정할 수 있는 최대 기간(달력일)
+async function rangeStatus(env) {
+  const row = await env.DB.prepare("SELECT v FROM market_job WHERE k = 'range'").first();
+  if (!row) return null;
+  try { return JSON.parse(row.v); } catch (e) { return null; }
+}
+async function startRangeJob(env, from, to) {
+  if (!ymdOk(from) || !ymdOk(to)) return { error: "날짜 형식이 올바르지 않습니다." , status: 400 };
+  if (from > to) return { error: "시작일이 종료일보다 늦습니다.", status: 400 };
+  const kstToday = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10).replace(/-/g, "");
+  if (to > kstToday) return { error: "종료일은 오늘(" + kstToday + ")보다 늦을 수 없습니다.", status: 400 };
+  const span = Math.round((Date.UTC(+to.slice(0, 4), +to.slice(4, 6) - 1, +to.slice(6, 8)) - Date.UTC(+from.slice(0, 4), +from.slice(4, 6) - 1, +from.slice(6, 8))) / 86400000) + 1;
+  if (span > RANGE_MAX_DAYS) return { error: "한 번에 최대 " + RANGE_MAX_DAYS + "일까지 지정할 수 있습니다(지정: " + span + "일). 나눠서 요청하세요.", status: 400 };
+  await ensureMarketQueueColumns(env.DB);
+  const cur = await rangeStatus(env);
+  if (cur && !cur.done) return { error: "이미 진행 중인 기간 수집이 있습니다(" + cur.from + "~" + cur.to + "). 끝나거나 취소한 뒤 다시 시작하세요.", status: 409 };
+  const cfg = await getUniverseCfg(env, true);
+  const job = { from: from, to: to, cur: from, page: 1, rows: 0, tradingDates: 0, skipped: 0, fails: 0, startedAt: new Date().toISOString(), minTv: cfg.minTv, minMcap: cfg.minMcap, budgetDay: todayStr(), budgetRows: 0, done: false, error: null };
+  await env.DB.prepare("INSERT OR REPLACE INTO market_job (k, v) VALUES ('range', ?)").bind(JSON.stringify(job)).run();
+  return { ok: true, job: job, calendarDays: span };
+}
+// cron에서 호출: 진행 중인 기간 수집이 있으면 한 쪽(최대 250행)을 처리한다. 일을 했으면 true.
+async function processRangeJobTick(env) {
+  const row = await env.DB.prepare("SELECT v FROM market_job WHERE k = 'range'").first();
+  if (!row) return false;
+  let job; try { job = JSON.parse(row.v); } catch (e) { await env.DB.prepare("DELETE FROM market_job WHERE k = 'range'").run(); return false; }
+  if (job.done) return false;
+  const today = todayStr();
+  if (job.budgetDay !== today) { job.budgetDay = today; job.budgetRows = 0; }
+  if (job.budgetRows >= RANGE_DAILY_ROW_CAP) return false; // 오늘 몫을 다 썼다 → 다른 작업에 양보하고 내일 이어서 한다
+  const save = () => env.DB.prepare("INSERT OR REPLACE INTO market_job (k, v) VALUES ('range', ?)").bind(JSON.stringify(job)).run();
+  while (job.cur <= job.to && (ymdDow(job.cur) === 0 || ymdDow(job.cur) === 6)) { job.cur = addDaysStr(job.cur, 1); job.page = 1; } // 주말은 호출하지 않는다
+  if (job.cur > job.to) { job.done = true; job.finishedAt = new Date().toISOString(); await save(); return true; }
+  let page;
+  try {
+    page = await fetchKrxPage({ basDt: job.cur, beginTrPrc: job.minTv, numOfRows: RANGE_PAGE, pageNo: job.page }, env.DATA_GO_KR_KEY);
+    if (page.resultCode && page.resultCode !== "00") throw new Error("API resultCode " + page.resultCode);
+  } catch (e) {
+    job.fails = (job.fails || 0) + 1;
+    console.error("기간 수집 쪽 조회 실패:", job.cur, job.page, (e && e.message) || e);
+    if (job.fails >= 5) { job.done = true; job.error = "공공데이터 조회가 연속 실패해 중단했습니다(" + ((e && e.message) || e) + "). 같은 기간으로 다시 시작하면 이미 받은 날짜는 건너뜁니다."; }
+    await save();
+    return true;
+  }
+  job.fails = 0;
+  const rows = page.items.filter((it) => it.srtnCd && it.clpr > 0 && it.mrktTotAmt != null && it.mrktTotAmt >= job.minMcap);
+  // 이미 있는 행은 건드리지 않는다(쓰기 0). 단, 예전에 시가총액 없이 저장된 행은 시가총액만 채운다.
+  await multiRowInsert(
+    env.DB,
+    "INSERT INTO market_raw_daily (market_date, stock_code, close_price, volume, trading_value, market_cap)",
+    6, rows, (it) => [it.basDt, it.srtnCd, it.clpr, it.trqu, it.trPrc, it.mrktTotAmt],
+    "ON CONFLICT(market_date, stock_code) DO UPDATE SET market_cap = excluded.market_cap WHERE market_raw_daily.market_cap IS NULL"
+  );
+  job.rows += rows.length; job.budgetRows += rows.length;
+  const empty = job.page === 1 && page.items.length === 0;
+  const lastPage = page.items.length < RANGE_PAGE || job.page * RANGE_PAGE >= (page.totalCount || 0);
+  if (empty) { job.skipped++; job.cur = addDaysStr(job.cur, 1); job.page = 1; }
+  else if (lastPage) { job.tradingDates++; job.cur = addDaysStr(job.cur, 1); job.page = 1; }
+  else job.page++;
+  if (job.cur > job.to) { job.done = true; job.finishedAt = new Date().toISOString(); }
+  await save();
+  return true;
+}
+
+async function handleMarketCfg(request, env, pathname, searchParams) {
+  try {
+    const protectedBy = !!(env.PF_KEY && String(env.PF_KEY).length >= 12);
+    if (pathname === "/api/market/config") {
+      if (request.method === "POST") {
+        const bad = adminAuthError(request, env); if (bad) return bad;
+        const body = await request.json().catch(() => null);
+        const tv = body && body.min_tv_eok !== "" ? Number(body.min_tv_eok) : NaN, mc = body && body.min_mcap_eok !== "" ? Number(body.min_mcap_eok) : NaN;
+        if (!Number.isFinite(tv) || tv < 0 || tv > UNIVERSE_LIMITS.tvEokMax) return Response.json({ error: "하루 거래대금 하한은 0~" + UNIVERSE_LIMITS.tvEokMax + "억원 범위여야 합니다." }, { status: 400 });
+        if (!Number.isFinite(mc) || mc < 0 || mc > UNIVERSE_LIMITS.mcapEokMax) return Response.json({ error: "시가총액 하한은 0~" + UNIVERSE_LIMITS.mcapEokMax + "억원 범위여야 합니다." }, { status: 400 });
+        await ensureAppSettings(env.DB);
+        await env.DB.prepare("INSERT OR REPLACE INTO app_settings (k, v, updated_at) VALUES ('universe_cfg', ?, ?)").bind(JSON.stringify({ minTvEok: tv, minMcapEok: mc }), new Date().toISOString()).run();
+        universeCfgCache = null;
+        return Response.json({ ok: true, cfg: await getUniverseCfg(env, true) });
+      }
+      return Response.json({ cfg: await getUniverseCfg(env, true), defaults: universeCfgFrom(MARKET_MIN_TRADING_VALUE / 1e8, MARKET_MIN_MCAP / 1e8, false, null), protected: protectedBy, dailyCap: MARKET_DAILY_WRITE_CAP });
+    }
+    // 미리보기: 입력한 기준이면 기준일에 몇 종목이 통과하고 그중 새로 백필해야 할 종목이 몇 개인지. 한 번에 한 쪽씩(클라이언트가 이어서 호출). 쓰기 없음.
+    if (pathname === "/api/market/preview") {
+      if (!env.DATA_GO_KR_KEY) return Response.json({ error: "DATA_GO_KR_KEY 미설정" }, { status: 500 });
+      if (searchParams.get("mode") === "known") {
+        const { results } = await env.DB.prepare("SELECT stock_code FROM market_universe_status WHERE backfilled = 1").all();
+        return Response.json({ codes: results.map((r) => r.stock_code) });
+      }
+      const nz = (k) => { const v = Number(searchParams.get(k)); return Number.isFinite(v) && v >= 0 ? v : NaN; };
+      const tv = nz("tv"), mc = nz("mcap"), pageNo = Math.max(1, Math.round(Number(searchParams.get("page")) || 1));
+      if (!Number.isFinite(tv) || !Number.isFinite(mc)) return Response.json({ error: "거래대금(tv)·시가총액(mcap) 하한(억원)이 필요합니다." }, { status: 400 });
+      let basDt = searchParams.get("bas_dt");
+      if (!basDt) { const r = await env.DB.prepare("SELECT MAX(market_date) AS d FROM market_raw_daily").first(); basDt = r && r.d; }
+      if (!basDt) return Response.json({ error: "저장된 시세가 없어 기준일을 정할 수 없습니다." }, { status: 404 });
+      const page = await fetchKrxPage({ basDt: basDt, beginTrPrc: tv * 1e8, numOfRows: RANGE_PAGE, pageNo: pageNo }, env.DATA_GO_KR_KEY);
+      const pass = page.items.filter((it) => it.srtnCd && it.clpr > 0 && it.mrktTotAmt != null && it.mrktTotAmt >= mc * 1e8).map((it) => it.srtnCd);
+      return Response.json({ bas_dt: basDt, page: pageNo, size: RANGE_PAGE, total: page.totalCount, n: page.items.length, pass: pass, done: page.items.length < RANGE_PAGE || pageNo * RANGE_PAGE >= (page.totalCount || 0) });
+    }
+    if (pathname === "/api/market/range") {
+      if (request.method === "POST") {
+        const bad = adminAuthError(request, env); if (bad) return bad;
+        if (!env.DATA_GO_KR_KEY) return Response.json({ error: "DATA_GO_KR_KEY 미설정" }, { status: 500 });
+        const body = await request.json().catch(() => null) || {};
+        if (body.cancel) { await env.DB.prepare("DELETE FROM market_job WHERE k = 'range'").run(); return Response.json({ ok: true, cancelled: true }); }
+        const r = await startRangeJob(env, String(body.from || "").replace(/-/g, ""), String(body.to || "").replace(/-/g, ""));
+        if (r.error) return Response.json({ error: r.error }, { status: r.status || 400 });
+        return Response.json(r);
+      }
+      return Response.json({ job: await rangeStatus(env), dailyRowCap: RANGE_DAILY_ROW_CAP, maxDays: RANGE_MAX_DAYS });
+    }
+    return Response.json({ error: "알 수 없는 요청입니다." }, { status: 404 });
+  } catch (e) {
+    return Response.json({ error: "서버 오류: " + ((e && e.message) || String(e)) }, { status: 500 });
+  }
+}
+
 // [일일 시세 추가 방식 — 무료 한도 설계]
 // 예전에는 종목마다 API를 따로 불러(종목당 fetch 1~4 + D1 6~9건) 하루치를 붙였고, 1,300종목이면 15시간이 걸렸다.
 // 이제는 "기준일 하나로 전체 종목을 한 번에 주는" 공공데이터 호출(basDt + beginTrPrc)을 쪽(page)별로 받아
@@ -6142,6 +6415,7 @@ async function runUniverseRefresh(env, force) {
     throw new Error("DATA_GO_KR_KEY 환경변수(시크릿)가 설정되지 않았습니다. Cloudflare Workers 설정에서 추가해주세요.");
   }
   await ensureMarketQueueColumns(env.DB);
+  const cfg = await getUniverseCfg(env, true);
   let basDt = null;
   let total = 0;
   const today = new Date();
@@ -6149,7 +6423,7 @@ async function runUniverseRefresh(env, force) {
     const d = new Date(today);
     d.setUTCDate(d.getUTCDate() - back);
     const ds = `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}`;
-    const probe = await fetchKrxPage({ basDt: ds, beginTrPrc: MARKET_MIN_TRADING_VALUE, numOfRows: 1, pageNo: 1 }, env.DATA_GO_KR_KEY);
+    const probe = await fetchKrxPage({ basDt: ds, beginTrPrc: cfg.minTv, numOfRows: 1, pageNo: 1 }, env.DATA_GO_KR_KEY);
     if (probe.items.length > 0) { basDt = ds; total = probe.totalCount; break; }
   }
   if (!basDt) {
@@ -6159,7 +6433,7 @@ async function runUniverseRefresh(env, force) {
   if (!force && lastRow && lastRow.v === basDt) {
     return { bas_dt: basDt, universe_size: total, job_started: false, note: "이미 이 기준일의 시세를 추가했습니다(건너뜀)." };
   }
-  const job = { basDt, nextPage: 1, pageSize: MARKET_APPEND_PAGE, total, startedAt: new Date().toISOString(), fails: 0, appended: 0, queued: 0 };
+  const job = { basDt, nextPage: 1, pageSize: MARKET_APPEND_PAGE, total, startedAt: new Date().toISOString(), fails: 0, appended: 0, queued: 0, minTv: cfg.minTv, minMcap: cfg.minMcap };
   await env.DB.prepare("INSERT OR REPLACE INTO market_job (k, v) VALUES ('append', ?)").bind(JSON.stringify(job)).run();
   return { bas_dt: basDt, universe_size: total, job_started: true, pages: Math.ceil(total / MARKET_APPEND_PAGE) };
 }
@@ -6173,7 +6447,7 @@ async function processAppendJobTick(env) {
 
   let page;
   try {
-    page = await fetchKrxPage({ basDt: job.basDt, beginTrPrc: MARKET_MIN_TRADING_VALUE, numOfRows: job.pageSize, pageNo: job.nextPage }, env.DATA_GO_KR_KEY);
+    page = await fetchKrxPage({ basDt: job.basDt, beginTrPrc: job.minTv != null ? job.minTv : MARKET_MIN_TRADING_VALUE, numOfRows: job.pageSize, pageNo: job.nextPage }, env.DATA_GO_KR_KEY);
     if (page.resultCode && page.resultCode !== "00") throw new Error("API resultCode " + page.resultCode);
   } catch (e) {
     job.fails = (job.fails || 0) + 1;
@@ -6183,7 +6457,7 @@ async function processAppendJobTick(env) {
     return true;
   }
 
-  const rows = page.items.filter((it) => it.srtnCd && it.clpr > 0 && it.mrktTotAmt != null && it.mrktTotAmt >= MARKET_MIN_MCAP);
+  const rows = page.items.filter((it) => it.srtnCd && it.clpr > 0 && it.mrktTotAmt != null && it.mrktTotAmt >= (job.minMcap != null ? job.minMcap : MARKET_MIN_MCAP));
   const { results: doneRows } = await env.DB.prepare("SELECT stock_code FROM market_universe_status WHERE backfilled = 1").all();
   const done = new Set(doneRows.map((r) => r.stock_code));
   const toAppend = rows.filter((it) => done.has(it.srtnCd));
@@ -7380,6 +7654,8 @@ async function handleRequest(request, env) {
       catch (e) { return Response.json({ error: (e && e.message) || String(e) }, { status: 400 }); }
     }
 
+    if (pathname === "/api/market/config" || pathname === "/api/market/preview" || pathname === "/api/market/range") return handleMarketCfg(request, env, pathname, searchParams);
+
     if (pathname === "/api/market/refresh-universe") {
       // 실제 로직은 scheduled()의 일일 자동 갱신과 공유하는 runUniverseRefresh()에 있다.
       // 이 라우트는 일부러 가볍게 만들었다: KRX 조회 + market_fetch_queue에 등록만 하고, 실제 D1 쓰기(가격
@@ -7394,12 +7670,13 @@ async function handleRequest(request, env) {
       const lastRow = await env.DB.prepare("SELECT MAX(market_date) AS d FROM market_raw_daily").first();
       const basDt = lastRow && lastRow.d;
       if (!basDt) return Response.json({ error: "저장된 시세가 없습니다." }, { status: 404 });
+      const cfgF = await getUniverseCfg(env);
       const [allP, tvP, stored] = await Promise.all([
         fetchKrxPage({ basDt: basDt, numOfRows: 1, pageNo: 1 }, env.DATA_GO_KR_KEY),
-        fetchKrxPage({ basDt: basDt, beginTrPrc: MARKET_MIN_TRADING_VALUE, numOfRows: 1, pageNo: 1 }, env.DATA_GO_KR_KEY),
+        fetchKrxPage({ basDt: basDt, beginTrPrc: cfgF.minTv, numOfRows: 1, pageNo: 1 }, env.DATA_GO_KR_KEY),
         env.DB.prepare("SELECT COUNT(*) AS c FROM market_raw_daily WHERE market_date = ?").bind(basDt).first(),
       ]);
-      return Response.json({ bas_dt: basDt, all: allP.totalCount, tv_pass: tvP.totalCount, stored: stored ? stored.c : null, min_tv_eok: MARKET_MIN_TRADING_VALUE / 1e8, min_mcap_eok: MARKET_MIN_MCAP / 1e8 });
+      return Response.json({ bas_dt: basDt, all: allP.totalCount, tv_pass: tvP.totalCount, stored: stored ? stored.c : null, min_tv_eok: cfgF.minTvEok, min_mcap_eok: cfgF.minMcapEok });
     }
 
     if (pathname === "/api/market/status") {
@@ -7417,8 +7694,8 @@ async function handleRequest(request, env) {
         backfilled_total: backfilledRow?.c ?? 0,
         backfilled_today: todayRow?.c ?? 0,
         daily_cap: MARKET_DAILY_WRITE_CAP,
-        min_trading_value: MARKET_MIN_TRADING_VALUE,
-        min_mcap: MARKET_MIN_MCAP,
+        min_trading_value: (await getUniverseCfg(env)).minTv,
+        min_mcap: (await getUniverseCfg(env)).minMcap,
         append_job: await (async () => { try { const r = await env.DB.prepare("SELECT v FROM market_job WHERE k = 'append'").first(); return r ? JSON.parse(r.v) : null; } catch (e) { return null; } })(),
       });
     }
@@ -7548,7 +7825,7 @@ const WEEKLY_SCREEN_UTC_DOW = 5;
 const WEEKLY_SCREEN_UTC_HOUR = 16;
 const KOSPI_INDEX_API = "https://apis.data.go.kr/1160100/GetMarketIndexInfoService_V2/getStockMarketIndex_V2";
 const KOSPI_NAME = "코스피";
-const SCREEN_TOP_N = 50;
+const SCREEN_TOP_N = 100;
 // 기본 필터(한국 시장 실무 관행 + 학계의 "초소형·저유동 종목 제외" 관행). 학술적으로 "정답"인 임계값은 없고, 값을 낮추면 거래비용·호가 문제로
 // 실제로는 사기 어려운 종목이 늘어난다는 점이 핵심이다(Hou·Xue·Zhang 2020: 이상현상 상당수가 초소형주에서 나오며 이를 제외하면 재현성이 크게 떨어진다).
 const SCREEN_DEFAULT_MCAP_EOK = 500;  // 시가총액 절대 하한(억원) = 저장 유니버스 하한. 실제 거름은 아래 "하위 N% 제외"가 한다.
@@ -7686,6 +7963,7 @@ function chunkArr(arr, n) {
 // ------------------------------------------------------------
 async function backtestScreenDate(env, o) {
   await ensureMarketQueueColumns(env.DB);
+  const ucfg = await getUniverseCfg(env);
   const { results: calRows } = await env.DB.prepare("SELECT market_date, close_price FROM market_index_daily WHERE idx_name = ? ORDER BY market_date DESC LIMIT 400").bind(KOSPI_NAME).all();
   const cal = calRows.map((r) => r.market_date);
   const ci = (k, d, lo, hi) => { const v = o[k] == null || o[k] === "" ? NaN : Number(o[k]); return Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : d; };
@@ -7728,8 +8006,8 @@ async function backtestScreenDate(env, o) {
     "  CASE WHEN q3 IS NOT NULL THEN PERCENT_RANK() OVER (PARTITION BY (q3 IS NOT NULL) ORDER BY q3) END AS p3," +
     "  CASE WHEN m6 IS NOT NULL THEN PERCENT_RANK() OVER (PARTITION BY (m6 IS NOT NULL) ORDER BY m6) END AS p6 FROM nf" +
     ") SELECT sc, c0, cf, CASE WHEN ?12 > 0 AND ?13 > 0 THEN (CASE WHEN p3 IS NOT NULL AND p6 IS NOT NULL THEN ?12 * p3 + ?13 * p6 END) WHEN ?12 > 0 THEN p3 ELSE p6 END AS rw FROM p";
-  const binds = [d0, dS, d3, d6, dF, minPrice, dA, MARKET_MIN_TRADING_VALUE, pcm, pct];
-  if (hasMc) binds.push(MARKET_MIN_MCAP);
+  const binds = [d0, dS, d3, d6, dF, minPrice, dA, ucfg.minTv, pcm, pct];
+  if (hasMc) binds.push(ucfg.minMcap);
   else binds.push(null);
   binds.push(nw3, nw6);
   const { results } = await env.DB.prepare(sql).bind(...binds).all();
@@ -7745,19 +8023,20 @@ async function computeScreenLists(env, opts) {
   opts = opts || {};
   await ensureScreenTables(env.DB);
   await ensureMarketQueueColumns(env.DB); // market_cap 컬럼 보장
+  const ucfg = await getUniverseCfg(env);
 
   const clamped = [];
   let minMcap = Number(opts.minMcapEok);
-  if (!Number.isFinite(minMcap) || minMcap <= 0) minMcap = SCREEN_DEFAULT_MCAP_EOK;
+  if (!Number.isFinite(minMcap) || minMcap <= 0) minMcap = ucfg.minMcapEok; // 지정이 없으면 저장 기준(데이터 관리에서 설정)을 따른다
   let minTv = Number(opts.minTvEok);
-  if (!Number.isFinite(minTv) || minTv <= 0) minTv = SCREEN_DEFAULT_TV_EOK;
+  if (!Number.isFinite(minTv) || minTv <= 0) minTv = ucfg.minTvEok;
   let minPrice = opts.minPrice == null || opts.minPrice === "" ? NaN : Number(opts.minPrice);
   if (!Number.isFinite(minPrice) || minPrice < 0) minPrice = SCREEN_DEFAULT_MIN_PRICE;
   const pctOf = (v, d) => { const x = v == null || v === "" ? NaN : Number(v); return Number.isFinite(x) && x >= 0 && x <= 90 ? x : d; };
   const pcMcap = pctOf(opts.pcMcap, SCREEN_DEFAULT_PCT_MCAP);
   const pcTv = pctOf(opts.pcTv, SCREEN_DEFAULT_PCT_TV);
-  const floorMcapEok = MARKET_MIN_MCAP / 1e8;
-  const floorTvEok = MARKET_MIN_TRADING_VALUE / 1e8;
+  const floorMcapEok = ucfg.minMcapEok;
+  const floorTvEok = ucfg.minTvEok;
   if (minMcap < floorMcapEok) { clamped.push("시가총액 하한을 " + floorMcapEok + "억원으로 올렸습니다(저장된 종목은 그 이상만 있음)."); minMcap = floorMcapEok; }
   if (minTv < floorTvEok) { clamped.push("거래대금 하한을 " + floorTvEok + "억원으로 올렸습니다(저장된 종목은 그 이상만 있음)."); minTv = floorTvEok; }
 
@@ -7916,7 +8195,7 @@ async function computeScreenLists(env, opts) {
   const meta = {
     backfilled: bfRow ? bfRow.c : null,
     asof: pts.d0, computed_at: new Date().toISOString(), points: pts, kospi,
-    minMcapEok: minMcap, minTvEok: minTv, pcMcap, pcTv, hotPct: SCREEN_HOT_PCT, cutMcEok, cutTvEok, minPrice, weights: nw, clamped, avgDays: SCREEN_AVG_DAYS,
+    topN: SCREEN_TOP_N, minMcapEok: minMcap, minTvEok: minTv, pcMcap, pcTv, hotPct: SCREEN_HOT_PCT, cutMcEok, cutTvEok, minPrice, weights: nw, clamped, avgDays: SCREEN_AVG_DAYS,
     mom, zMinObs: { z10: SCREEN_Z10_MIN_OBS, z20: SCREEN_Z20_MIN_OBS }, asof_rows: meta0 ? meta0.total : null, no_mcap: meta0 ? meta0.nomc : null, passed_floor: passedN,
   };
   return { meta, lists };
@@ -8274,6 +8553,11 @@ async function handleScheduled(event, env, ctx) {
       return;
     }
 
+    // 사용자가 지정한 기간의 시세 수집: 4분에 한 번(minute % 4 === 3)은 이쪽을 우선하고, 다른 일이 없는 틱에는 아래에서 이어서 처리한다.
+    if (minute % 4 === 3) {
+      try { if (await processRangeJobTick(env)) return; } catch (e) { console.error("기간 수집 틱 실패:", (e && e.message) || e); }
+    }
+
     const today = todayStr();
     let capLeft = null; // 필요할 때만 계산(신규 종목을 처리할 때)
     const getCapLeft = async () => {
@@ -8296,14 +8580,17 @@ async function handleScheduled(event, env, ctx) {
     // 2) 없으면 신규 백필 대상(한도가 남아있을 때만, 한 번에 적게)
     if (marketItems.length === 0) {
       const left = await getCapLeft();
-      if (left <= 0) return;
+      if (left <= 0) { try { await processRangeJobTick(env); } catch (e) { console.error("기간 수집 틱 실패:", (e && e.message) || e); } return; }
       const r2 = await env.DB
         .prepare("SELECT stock_code, corp_name, is_new FROM market_fetch_queue WHERE is_new = 1 ORDER BY trv DESC LIMIT ?")
         .bind(Math.min(MARKET_NEW_BATCH_SIZE, left))
         .all();
       marketItems = r2.results;
     }
-    if (marketItems.length === 0) return;
+    if (marketItems.length === 0) {
+      try { await processRangeJobTick(env); } catch (e) { console.error("기간 수집 틱 실패:", (e && e.message) || e); }
+      return;
+    }
 
     const end = todayStr();
     const begin = addDaysStr(end, -MARKET_BACKFILL_CALENDAR_DAYS);
