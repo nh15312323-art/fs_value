@@ -31,7 +31,7 @@ const pg = await b.newPage({ viewport: { width: 390, height: 800 } });
 const errs = []; pg.on('pageerror', (e) => errs.push(String(e))); pg.on('console', (m) => { if (m.type() === 'error' && !/404|401|409/.test(m.text())) errs.push(m.text()); });
 await pg.goto('http://localhost:' + port + '/'); await pg.waitForTimeout(400);
 let fail = 0; const ok = (n, v, d) => { if (!v) fail++; console.log((v ? 'PASS' : 'FAIL') + '  ' + n + (d ? '  ' + d : '')); };
-await pg.click('#tabBtnPf'); await pg.waitForTimeout(100);
+await pg.click('#bn_pf'); await pg.waitForTimeout(100);
 ok('탭 전환: 키 입력 칸만 보이고 본문은 숨김', await pg.isVisible('#pfuKey') && !(await pg.isVisible('#pfuMain')));
 await pg.fill('#pfuKey', 'wrongwrongwrong'); await pg.click('#pfuGate button'); await pg.waitForTimeout(200);
 ok('틀린 키 → 오류 문구, 본문 안 열림', (await pg.innerText('#pfuGateMsg')).includes('맞지 않') && !(await pg.isVisible('#pfuMain')));

@@ -150,7 +150,16 @@ const HTML_PAGE = `<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light" />
+  <meta name="theme-color" content="#2563eb" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="VALUELAB" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="format-detection" content="telephone=no" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <title>DART 재무데이터</title>
   <style>
     :root {
@@ -339,9 +348,92 @@ const HTML_PAGE = `<!doctype html>
     .saved-chip small { color: var(--text-muted); margin-left: 4px; }
     .saved-chip.recent { border-style: dashed; }
     .watchlist-chip .x { color: var(--text-muted); font-weight: 700; }
+    /* ================= 아이폰·모바일 최적화 ================= */
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; color-scheme: light; }
+    body { padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); -webkit-tap-highlight-color: rgba(37,99,235,.15); }
+    button, input, select, textarea, summary, .combo-item, label { touch-action: manipulation; }
+    #bnav { display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; background: rgba(255,255,255,.97); border-top: 1px solid var(--border); padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+    #bnav button { flex: 1; border: 0; background: transparent; border-radius: 0; min-height: 56px; padding: 6px 2px 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11.5px; font-weight: 700; color: var(--text-muted); }
+    #bnav button .ic { font-size: 21px; line-height: 1; }
+    #bnav button.on { color: var(--primary); }
+    #moreSheet { position: fixed; inset: 0; z-index: 62; display: none; }
+    #moreSheet .ms-bg { position: absolute; inset: 0; background: rgba(15,23,42,.45); }
+    #moreSheet .ms-body { position: absolute; left: 0; right: 0; bottom: 0; max-width: 640px; margin: 0 auto; background: #fff; border-radius: 16px 16px 0 0; padding: 12px 14px calc(18px + env(safe-area-inset-bottom)); }
+    #moreSheet .ms-body button { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; min-height: 54px; font-size: 16px; font-weight: 600; margin-top: 8px; padding: 10px 14px; }
+    #moreSheet .ms-body button.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+    #lockScreen { position: fixed; inset: 0; z-index: 100; background: var(--bg); display: none; align-items: center; justify-content: center; padding: 20px; }
+    #lockScreen .lk-box { width: 100%; max-width: 380px; background: #fff; border: 1px solid var(--border); border-radius: 16px; padding: 22px 18px; box-shadow: 0 10px 30px rgba(15,23,42,.12); }
+    #lockScreen .lk-ico { font-size: 34px; text-align: center; }
+    #lockScreen .lk-t { font-size: 18px; font-weight: 800; text-align: center; margin: 6px 0 4px; }
+    #lockScreen .lk-s { font-size: 13px; color: var(--text-muted); line-height: 1.55; margin-bottom: 12px; text-align: center; }
+    #lockScreen input[type=text] { width: 100%; -webkit-text-security: disc; }
+    #lockScreen .lk-rem { display: flex; align-items: center; gap: 8px; font-size: 13.5px; margin: 10px 0; }
+    #lockScreen .lk-rem input { width: 20px; height: 20px; }
+    #lockScreen button.primary { width: 100%; min-height: 48px; font-size: 16px; font-weight: 700; }
+    #lkMsg { font-size: 13px; color: var(--danger); min-height: 18px; margin-top: 8px; text-align: center; line-height: 1.5; }
+    #privCover { position: fixed; inset: 0; z-index: 110; background: #0f172a; color: #fff; display: none; align-items: center; justify-content: center; font-size: 18px; font-weight: 800; }
+    .stickybtn { position: sticky; bottom: 0; background: #fff; padding: 10px 0 2px; z-index: 2; }
+    @media (max-width: 760px) {
+      #bnav { display: flex; }
+      #mainNav { display: none; }
+      body { padding-bottom: calc(84px + env(safe-area-inset-bottom)); font-size: 15px; line-height: 1.55; }
+      input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea { font-size: 16px !important; min-height: 44px; }
+      input[type=checkbox], input[type=radio] { width: 22px; height: 22px; }
+      button { min-height: 42px; }
+      button.primary, .seg button { min-height: 48px; }
+      .chips button, .subnav button { min-height: 40px; }
+      .combo-item { min-height: 46px; font-size: 15px; }
+      .combo-item .cc { font-size: 13px; }
+      .combo-hint, .meta-line, .pfc-m, .pfl { font-size: 13.5px; }
+      .tscroll { -webkit-overflow-scrolling: touch; }
+      table { font-size: 13px; }
+      .an-tbl { font-size: 13px; }
+      [style*="font-size:11px"], [style*="font-size: 11px"] { font-size: 12.5px !important; }
+      [style*="font-size:12px"], [style*="font-size: 12px"] { font-size: 13px !important; }
+      [style*="font-size:12.5px"] { font-size: 13.5px !important; }
+      [style*="font-size:13px"] { font-size: 14px !important; }
+      #fabTop { bottom: calc(76px + env(safe-area-inset-bottom)); right: 12px; }
+      #pfuFab { bottom: calc(128px + env(safe-area-inset-bottom)); right: 12px; padding: 14px 20px; font-size: 16px; }
+      #pfuToast { bottom: calc(80px + env(safe-area-inset-bottom)); font-size: 14px; }
+      .pf-sheet-body { max-height: calc(100vh - 12px); max-height: calc(100dvh - 12px); padding-bottom: calc(22px + env(safe-area-inset-bottom)); overscroll-behavior: contain; }
+      #pfuSheet .row > input:not([type=checkbox]) { flex: 1 1 30%; min-width: 0; width: auto !important; }
+      .pf-kpi b { font-size: 18px; }
+      label { max-width: 100%; }
+      label select { display: block; width: 100%; max-width: 100%; margin-top: 4px; text-overflow: ellipsis; }
+      select { max-width: 100%; }
+    }
+    @media (max-width: 380px) { #bnav button { font-size: 11px; } .pf-kpi { grid-template-columns: repeat(2, 1fr); } }
   </style>
 </head>
 <body>
+  <nav id="bnav" aria-label="주 메뉴">
+    <button id="bn_momentum" onclick="switchTab('momentum')"><span class="ic">🔎</span><span>스크리닝</span></button>
+    <button id="bn_financial" onclick="switchTab('financial')"><span class="ic">📈</span><span>종목분석</span></button>
+    <button id="bn_pf" onclick="switchTab('pf')"><span class="ic">💼</span><span>내 계좌</span></button>
+    <button id="bn_more" onclick="toggleMore()"><span class="ic">☰</span><span>더보기</span></button>
+  </nav>
+  <div id="moreSheet">
+    <div class="ms-bg" onclick="closeMore()"></div>
+    <div class="ms-body">
+      <b style="font-size:15px;">메뉴 더보기</b>
+      <button id="mn_macro" onclick="switchTab('macro')">🌐 ③ 거시·상관</button>
+      <button id="mn_data" onclick="switchTab('data')">🗄️ ④ 데이터 관리</button>
+      <button id="mn_bt" onclick="switchTab('bt')">🧪 ⑤ 백테스트</button>
+      <button onclick="closeMore(); appLock('잠겼습니다. 키를 입력하면 다시 열립니다.')">🔒 지금 잠그기</button>
+    </div>
+  </div>
+  <div id="lockScreen" role="dialog" aria-modal="true" aria-label="접근 키 입력">
+    <div class="lk-box">
+      <div class="lk-ico">🔒</div>
+      <div class="lk-t">접근 키 입력</div>
+      <div class="lk-s">이 사이트는 본인만 쓰도록 잠겨 있습니다. Cloudflare에 등록한 <b>PF_KEY</b> 값을 입력하세요.</div>
+      <input id="lkKey" type="text" name="pf-access-code" placeholder="접근 키" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" data-lpignore="true" data-1p-ignore="true" onkeydown="if(event.key==='Enter')lockSubmit()" />
+      <label class="lk-rem"><input type="checkbox" id="lkRem" /> 이 기기에서 30일간 기억 (분실·공용 기기에서는 끄세요)</label>
+      <button class="primary" onclick="lockSubmit()">열기</button>
+      <div id="lkMsg"></div>
+    </div>
+  </div>
+  <div id="privCover" aria-hidden="true">🔒 VALUELAB</div>
   <div id="globalError"></div>
   <button id="fabTop" onclick="window.scrollTo({ top: 0, behavior: 'smooth' })" title="맨 위로">▲</button>
   <div class="topbar">
@@ -679,6 +771,7 @@ const HTML_PAGE = `<!doctype html>
         <button onclick="pfuPanel('ledger')" id="pfuNb_ledger">원장</button>
         <button onclick="pfuPanel('check')" id="pfuNb_check">행동 점검</button>
         <button onclick="pfuPanel('policy')" id="pfuNb_policy">정책</button>
+        <button onclick="appLock('잠겼습니다. 키를 입력하면 다시 열립니다.')" id="pfuNb_lock" title="화면 잠금">🔒 잠금</button>
       </div>
       <div id="pfuMsg" class="meta-line"></div>
 
@@ -786,6 +879,7 @@ const HTML_PAGE = `<!doctype html>
         <input id="pftQty" type="number" inputmode="numeric" placeholder="수량(주)" style="width:110px;" oninput="pfuPreview()" />
         <input id="pftPrice" type="number" inputmode="decimal" placeholder="체결가" style="flex:1; min-width:110px;" oninput="pfuPreview()" />
       </div>
+      <div class="row" id="pftAmtRow" style="margin-top:6px;"><input id="pftAmt" type="number" inputmode="numeric" min="0" placeholder="금액(원)으로 수량 계산 (선택)" style="flex:1;" oninput="pfuAmtToQty()" /><span id="pftAmtHint" class="meta-line" style="margin:0;"></span></div>
       <div id="pftQuick" class="chips"></div>
       <div id="pftPrev" class="pf-prev">종목을 고르면 현재가와 체결 후 비중이 여기에 미리 계산됩니다.</div>
       <div id="pftEmoWrap"><div style="font-size:12.5px; color:var(--text-muted);">지금 감정 (선택 — 기록해 두면 행동 점검에 쓰입니다)</div><div class="chips" id="pftEmo"></div></div>
@@ -795,7 +889,7 @@ const HTML_PAGE = `<!doctype html>
         <input id="pftNote" placeholder="메모" style="width:100%; margin-top:6px;" />
       </details>
       <div id="pftWarn"></div>
-      <div class="row" style="margin-top:12px;"><button class="primary" id="pftGo" onclick="pfuSubmitTrade(false)" style="flex:1; padding:12px;">기록하기</button></div>
+      <div class="row stickybtn" style="margin-top:12px;"><button class="primary" id="pftGo" onclick="pfuSubmitTrade(false)" style="flex:1; padding:12px;">기록하기</button></div>
     </div>
   </div>
   </div><!-- /tabPf -->
@@ -932,6 +1026,128 @@ const HTML_PAGE = `<!doctype html>
     }
     window.addEventListener('error', (e) => showGlobalError('스크립트 오류: ' + (e.message || e)));
     window.addEventListener('unhandledrejection', (e) => showGlobalError('처리되지 않은 오류: ' + (e.reason && e.reason.message ? e.reason.message : e.reason)));
+
+    // ===== 접근 키 보관 · 잠금 화면 · 모든 /api 호출에 키 자동 첨부 =====
+    function keyGet() {
+      try { if (typeof PFU !== 'undefined' && PFU.key) return PFU.key; } catch (e) {}
+      try { const s = sessionStorage.getItem('pfKey'); if (s) return s; } catch (e) {}
+      try { const r = JSON.parse(localStorage.getItem('pfKeyR') || 'null'); if (r && r.k && r.exp > Date.now()) return r.k; if (r) localStorage.removeItem('pfKeyR'); } catch (e) {}
+      return '';
+    }
+    function keySave(k, remember) {
+      try { sessionStorage.setItem('pfKey', k); } catch (e) {}
+      try { if (remember) localStorage.setItem('pfKeyR', JSON.stringify({ k: k, exp: Date.now() + 30 * 86400000 })); else localStorage.removeItem('pfKeyR'); } catch (e) {}
+    }
+    function keyClear() {
+      try { sessionStorage.removeItem('pfKey'); } catch (e) {}
+      try { localStorage.removeItem('pfKeyR'); } catch (e) {}
+      try { if (typeof PFU !== 'undefined') PFU.key = ''; } catch (e) {}
+    }
+    function keyRemembered() { try { return !!localStorage.getItem('pfKeyR'); } catch (e) { return false; } }
+    const _fetch0 = window.fetch.bind(window);
+    window.fetch = function (input, init) {
+      let url = ''; try { url = typeof input === 'string' ? input : ((input && input.url) || ''); } catch (e) {}
+      const own = url.indexOf('/api/') === 0 || url.indexOf(location.origin + '/api/') === 0;
+      if (!own) return _fetch0(input, init);
+      const k = keyGet();
+      if (k) { init = Object.assign({}, init || {}); const h = new Headers(init.headers || {}); if (!h.has('x-pf-key')) h.set('x-pf-key', k); init.headers = h; }
+      return _fetch0(input, init).then(function (res) {
+        if (res.status === 401 && url.indexOf('/api/pf/') < 0 && url.indexOf('/api/auth/') < 0) appLock('접근 키가 필요하거나 맞지 않습니다. 다시 입력하세요.', true);
+        return res;
+      });
+    };
+    let appBooted = false, lockedAt = 0;
+    function appLock(msg, keepNothing) {
+      keyClear();
+      try { if (typeof PFU !== 'undefined') { PFU.st = null; } } catch (e) {}
+      ['pfuSummary', 'pfuAlerts', 'pfuHold'].forEach(function (i) { const e = document.getElementById(i); if (e) e.innerHTML = ''; });
+      const m = document.getElementById('pfuMain'), g = document.getElementById('pfuGate'); if (m) m.style.display = 'none'; if (g) g.style.display = '';
+      const f = document.getElementById('pfuFab'); if (f) f.style.display = 'none';
+      const sh = document.getElementById('pfuSheet'); if (sh) sh.style.display = 'none';
+      closeMore();
+      document.getElementById('lkMsg').textContent = msg || ''; document.getElementById('lkKey').value = '';
+      document.getElementById('lockScreen').style.display = 'flex';
+      setTimeout(function () { try { document.getElementById('lkKey').focus(); } catch (e) {} }, 60);
+    }
+    function showLock(msg) { appLock(msg); }
+    async function lockSubmit() {
+      const msg = document.getElementById('lkMsg'); const k = document.getElementById('lkKey').value.trim();
+      if (!k) { msg.textContent = '키를 입력하세요.'; return; }
+      msg.style.color = '#64748b'; msg.textContent = '확인 중...';
+      try {
+        const res = await _fetch0('/api/auth/status', { cache: 'no-store', headers: { 'x-pf-key': k } });
+        const d = await res.json().catch(function () { return {}; });
+        msg.style.color = '';
+        if (res.status === 429) { msg.textContent = d.error || '시도가 너무 많습니다. 잠시 후 다시 시도하세요.'; return; }
+        if (!d.ok) { msg.textContent = '키가 맞지 않습니다.'; return; }
+        keySave(k, document.getElementById('lkRem').checked);
+        document.getElementById('lockScreen').style.display = 'none'; document.getElementById('lkKey').value = '';
+        if (!appBooted) { appBooted = true; bootRoute(); }
+        else {
+          try { if (document.getElementById('tabPf').style.display !== 'none' && PFU.inited && !PFU.key) { document.getElementById('pfuKey').value = k; pfuUnlock(); } } catch (e) {}
+          if (curTab === 'momentum' && !document.querySelector('#tabMomentum table')) { try { loadScreen('top', true); } catch (e) {} }
+        }
+      } catch (e) { msg.style.color = ''; msg.textContent = '확인하지 못했습니다: ' + e.message; }
+    }
+    async function bootAuth() {
+      try {
+        const k = keyGet();
+        const res = await _fetch0('/api/auth/status', { cache: 'no-store', headers: k ? { 'x-pf-key': k } : {} });
+        const d = await res.json().catch(function () { return null; });
+        if (res.status === 429) { appLock((d && d.error) || '시도가 너무 많습니다.'); return false; }
+        if (d && d.protected && !d.ok) { appLock(''); return false; }
+      } catch (e) { /* 상태를 못 읽으면(오프라인 등) 기존처럼 계속 */ }
+      return true;
+    }
+    // 개인정보 가림막: 앱 전환기(멀티태스킹) 미리보기에 계좌 내용이 보이지 않게 하고, 5분 이상 자리를 비우면 잠근다.
+    document.addEventListener('visibilitychange', function () {
+      const cv = document.getElementById('privCover'); if (!cv) return;
+      if (document.visibilityState === 'hidden') { lockedAt = Date.now(); if (curTab === 'pf' && keyGet()) cv.style.display = 'flex'; }
+      else {
+        cv.style.display = 'none';
+        if (lockedAt && Date.now() - lockedAt > 5 * 60000 && keyGet() && !keyRemembered()) appLock('오래 자리를 비워 잠겼습니다. 키를 다시 입력하세요.');
+        lockedAt = 0;
+      }
+    });
+    window.addEventListener('pagehide', function () { const cv = document.getElementById('privCover'); if (cv && curTab === 'pf' && keyGet()) cv.style.display = 'flex'; });
+    window.addEventListener('pageshow', function () { const cv = document.getElementById('privCover'); if (cv) cv.style.display = 'none'; });
+
+    // ===== 메뉴 이동: 하단 메뉴바 · 더보기 · 뒤로가기/링크(#탭) · 마지막 탭 기억 =====
+    const TAB_IDS = ['momentum', 'financial', 'macro', 'data', 'bt', 'pf'];
+    let curTab = 'financial';
+    function toggleMore() { const e = document.getElementById('moreSheet'); e.style.display = e.style.display === 'block' ? 'none' : 'block'; }
+    function closeMore() { const e = document.getElementById('moreSheet'); if (e) e.style.display = 'none'; }
+    function updateBnav(tab) {
+      ['momentum', 'financial', 'pf'].forEach(function (k) { const b = document.getElementById('bn_' + k); if (b) b.className = k === tab ? 'on' : ''; });
+      const more = ['macro', 'data', 'bt'].indexOf(tab) >= 0; const mb = document.getElementById('bn_more'); if (mb) mb.className = more ? 'on' : '';
+      ['macro', 'data', 'bt'].forEach(function (k) { const b = document.getElementById('mn_' + k); if (b) b.className = k === tab ? 'on' : ''; });
+    }
+    function navRecord(tab, mode) {
+      try { if (mode === 'replace') history.replaceState({ tab: tab }, '', '#' + tab); else if (mode !== 'none') history.pushState({ tab: tab }, '', '#' + tab); } catch (e) {}
+      try { localStorage.setItem('lastTab', tab); } catch (e) {}
+    }
+    function bootRoute() {
+      let t = (location.hash || '').replace('#', '');
+      if (TAB_IDS.indexOf(t) < 0) { t = ''; try { t = localStorage.getItem('lastTab') || ''; } catch (e) {} }
+      if (TAB_IDS.indexOf(t) < 0) t = 'financial';
+      if (t !== 'financial') switchTab(t, 'replace'); else { navRecord('financial', 'replace'); updateBnav('financial'); }
+    }
+    window.addEventListener('popstate', function (ev) {
+      let t = (ev.state && ev.state.tab) || (location.hash || '').replace('#', '');
+      if (TAB_IDS.indexOf(t) >= 0 && t !== curTab) switchTab(t, 'none');
+    });
+    // ===== 입력 효율: 모바일 키보드 종류·엔터키 문구·자동 대문자/교정 끄기 =====
+    function tuneInputs() {
+      Array.prototype.forEach.call(document.querySelectorAll('input,textarea'), function (el) {
+        if (el.__tuned) return; el.__tuned = 1;
+        const t = (el.getAttribute('type') || 'text').toLowerCase();
+        if (t === 'number' && !el.hasAttribute('inputmode') && el.getAttribute('min') !== null && Number(el.getAttribute('min')) >= 0) el.setAttribute('inputmode', 'decimal'); // 음수가 필요한 칸은 기본 숫자 키보드(마이너스 포함)를 유지
+        if ((t === 'text' || t === 'number' || t === 'search') && !el.hasAttribute('enterkeyhint')) el.setAttribute('enterkeyhint', el.closest('.combo') ? 'search' : 'done');
+        if ((t === 'text' || t === 'search') && !el.hasAttribute('autocapitalize')) el.setAttribute('autocapitalize', 'off');
+        if (el.closest('.combo')) { el.setAttribute('autocorrect', 'off'); el.setAttribute('spellcheck', 'false'); }
+      });
+    }
+    try { let _tq = 0; new MutationObserver(function () { if (_tq) return; _tq = requestAnimationFrame(function () { _tq = 0; tuneInputs(); }); }).observe(document.body, { childList: true, subtree: true }); } catch (e) {}
 
     // --- 관심종목(워치리스트): 로그인 없이 이 브라우저에만 저장되는 반복조회용 즐겨찾기 ---
     const WATCHLIST_KEY = 'fs_watchlist';
@@ -4081,7 +4297,7 @@ function pfuInit() {
     else if (b.getAttribute('data-act') === 'policy') pfuPanel('policy');
     else if (b.getAttribute('data-act') === 'deposit') pfuOpenSheet('deposit');
   });
-  try { const k = sessionStorage.getItem('pfKey'); if (k) { document.getElementById('pfuKey').value = k; pfuUnlock(); } } catch (e) {}
+  try { const k = keyGet(); if (k) { document.getElementById('pfuKey').value = k; pfuUnlock(); } } catch (e) {}
 }
 function pfuPanel(p) {
   PFU.panel = p;
@@ -4142,12 +4358,20 @@ function pfuOpenSheet(side, name) {
   document.getElementById('pftWarn').innerHTML = '';
   PFU.emo = ''; PFU.reason = ''; PFU.q = null;
   Array.prototype.forEach.call(document.querySelectorAll('#pftEmo button, #pftReason button'), function (b) { b.className = ''; });
-  ['pftQty', 'pftPrice', 'pftFee', 'pftTax', 'pftNote'].forEach(function (i) { document.getElementById(i).value = ''; });
+  ['pftQty', 'pftPrice', 'pftFee', 'pftTax', 'pftNote', 'pftAmt'].forEach(function (i) { document.getElementById(i).value = ''; }); document.getElementById('pftAmtHint').textContent = '';
   document.getElementById('pftDate').value = pfuToday();
   document.getElementById('pftName').value = name || '';
   pfuSetSide(side || 'buy');
   if (name) pfuPickTrade({ n: name });
   else setTimeout(function () { if (side === 'buy' || side === 'sell') document.getElementById('pftName').focus(); }, 80);
+}
+function pfuAmtToQty() {
+  const amt = Number(document.getElementById('pftAmt').value), px = Number(document.getElementById('pftPrice').value), h = document.getElementById('pftAmtHint');
+  if (!(amt > 0)) { h.textContent = ''; return; }
+  if (!(px > 0)) { h.textContent = '체결가를 먼저 입력하세요.'; return; }
+  const q = Math.floor(amt / px); document.getElementById('pftQty').value = q > 0 ? q : '';
+  h.textContent = q > 0 ? '= ' + q.toLocaleString('ko-KR') + '주 (약 ' + Math.round(q * px).toLocaleString('ko-KR') + '원)' : '금액이 1주 가격보다 작습니다.';
+  pfuPreview();
 }
 function pfuCloseSheet() { document.getElementById('pfuSheet').style.display = 'none'; }
 function pfuSetSide(side) {
@@ -4155,7 +4379,7 @@ function pfuSetSide(side) {
   Array.prototype.forEach.call(document.querySelectorAll('#pftSeg button'), function (b) { b.classList.toggle('on', b.getAttribute('data-side') === side); });
   const cash = side === 'deposit' || side === 'withdraw';
   document.getElementById('pftStockRow').style.display = cash ? 'none' : '';
-  document.getElementById('pftQty').style.display = cash ? 'none' : '';
+  document.getElementById('pftQty').style.display = cash ? 'none' : ''; document.getElementById('pftAmtRow').style.display = cash ? 'none' : '';
   document.getElementById('pftPrice').placeholder = cash ? '금액(원)' : '체결가';
   document.getElementById('pftReasonWrap').style.display = side === 'sell' ? '' : 'none';
   document.getElementById('pftEmoWrap').style.display = cash ? 'none' : '';
@@ -4373,7 +4597,9 @@ async function pfuExport() {
 }
 
 
-    function switchTab(tab) {
+    function switchTab(tab, navMode) {
+      const prevTab = curTab; curTab = tab;
+      navRecord(tab, navMode || (tab === prevTab ? 'replace' : 'push')); updateBnav(tab); closeMore();
       const tabs = { financial: 'tabFinancial', momentum: 'tabMomentum', macro: 'tabMacro', data: 'tabData', bt: 'tabBt', pf: 'tabPf' };
       const btns = { financial: 'tabBtnFinancial', momentum: 'tabBtnMomentum', macro: 'tabBtnMacro', data: 'tabBtnData', bt: 'tabBtnBt', pf: 'tabBtnPf' };
       Object.keys(tabs).forEach(function (k) {
@@ -4386,8 +4612,8 @@ async function pfuExport() {
       if (tab === 'pf') { pfuInit(); }
       if (tab === 'macro' && macroCorrDirty && rawRows.length) computeMacroCorrelation();
       if (tab === 'financial' && subTab === 'table' && chartSel.length) renderChartPanel(false);
-      window.scrollTo(0, 0);
-      setTimeout(setNavVars, 30);
+      if (tab !== prevTab) window.scrollTo(0, 0);
+      setTimeout(setNavVars, 30); tuneInputs();
       const fab = document.getElementById('pfuFab'); if (fab) fab.style.display = (tab === 'pf' && PFU.key) ? 'block' : 'none';
     }
 
@@ -4410,20 +4636,12 @@ async function pfuExport() {
     }
 
     // ----- 저장 기준 설정 / 기간 수집 (데이터 관리) -----
-    function adminKey() { try { return (typeof PFU !== 'undefined' && PFU.key) || sessionStorage.getItem('pfKey') || ''; } catch (e) { return ''; } }
+    function adminKey() { return keyGet(); }
     async function adminFetch(url, body) {
-      for (let attempt = 0; attempt < 2; attempt++) {
-        const headers = { 'content-type': 'application/json' }; const k = adminKey(); if (k) headers['x-pf-key'] = k;
-        const res = await fetch(url, { method: 'POST', headers: headers, body: JSON.stringify(body) });
-        const d = await res.json().catch(function () { return { error: 'HTTP ' + res.status }; });
-        if ((res.status === 401 || res.status === 403) && attempt === 0) {
-          const k2 = window.prompt('이 변경에는 관리 키(Cloudflare에 등록한 PF_KEY)가 필요합니다. 키를 입력하세요.');
-          if (!k2) return { ok: false, status: res.status, data: d };
-          try { sessionStorage.setItem('pfKey', k2.trim()); } catch (e) {}
-          continue;
-        }
-        return { ok: res.ok, status: res.status, data: d };
-      }
+      // 접근 키는 전역 fetch 래퍼가 자동으로 붙인다. 키가 없거나 틀리면 잠금 화면이 열린다.
+      const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const d = await res.json().catch(function () { return { error: 'HTTP ' + res.status }; });
+      return { ok: res.ok, status: res.status, data: d };
     }
     async function loadMarketCfg() {
       try {
@@ -5096,7 +5314,7 @@ async function pfuExport() {
     // ===== DB에 저장된 종목 목록 =====
     // 무료 한도 절약: 서버는 PK 인덱스만 훑는 집계 1회(+ corp_master 조인), 결과는 브라우저에 캐시하고 새 저장이 있을 때만 다시 받는다.
     let dbListShown = [];
-    function escHtml(t) { return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function escHtml(t) { return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
     async function loadDbCompanies(force) {
       if (dbCompanies && !force) return dbCompanies;
       const res = await fetch('/api/db/companies', force ? { cache: 'no-store' } : undefined); // 새로고침 버튼은 브라우저 30초 캐시를 건너뜀
@@ -5710,6 +5928,8 @@ async function pfuExport() {
       wrapEl.style.display = 'block';
       macroCorrDirty = false;
     }
+    tuneInputs();
+    bootAuth().then(function (ok) { if (ok) { appBooted = true; bootRoute(); } });
   </script>
 </body>
 </html>`;
@@ -6274,10 +6494,9 @@ async function getUniverseCfg(env, fresh) {
   return cfg;
 }
 // PF_KEY가 설정돼 있으면 설정 변경·기간 수집 시작에 키가 필요하다(공개 주소에서 아무나 쓰기 한도를 소진시키지 못하게). 미설정이면 기존 데이터 관리 기능처럼 열려 있다.
-function adminAuthError(request, env) {
-  const key = env.PF_KEY ? String(env.PF_KEY) : "";
-  if (key.length < 12) return null;
-  return pfAuthError(request, env);
+async function adminAuthError(request, env) {
+  if (!pfKeyOn(env)) return null;
+  return authGate(request, env);
 }
 function ymdOk(s) {
   if (!/^\d{8}$/.test(s)) return false;
@@ -6357,7 +6576,7 @@ async function handleMarketCfg(request, env, pathname, searchParams) {
     const protectedBy = !!(env.PF_KEY && String(env.PF_KEY).length >= 12);
     if (pathname === "/api/market/config") {
       if (request.method === "POST") {
-        const bad = adminAuthError(request, env); if (bad) return bad;
+        const bad = await adminAuthError(request, env); if (bad) return bad;
         const body = await request.json().catch(() => null);
         const tv = body && body.min_tv_eok !== "" ? Number(body.min_tv_eok) : NaN, mc = body && body.min_mcap_eok !== "" ? Number(body.min_mcap_eok) : NaN;
         if (!Number.isFinite(tv) || tv < 0 || tv > UNIVERSE_LIMITS.tvEokMax) return Response.json({ error: "하루 거래대금 하한은 0~" + UNIVERSE_LIMITS.tvEokMax + "억원 범위여야 합니다." }, { status: 400 });
@@ -6388,7 +6607,7 @@ async function handleMarketCfg(request, env, pathname, searchParams) {
     }
     if (pathname === "/api/market/range") {
       if (request.method === "POST") {
-        const bad = adminAuthError(request, env); if (bad) return bad;
+        const bad = await adminAuthError(request, env); if (bad) return bad;
         if (!env.DATA_GO_KR_KEY) return Response.json({ error: "DATA_GO_KR_KEY 미설정" }, { status: 500 });
         const body = await request.json().catch(() => null) || {};
         if (body.cancel) { await env.DB.prepare("DELETE FROM market_job WHERE k = 'range'").run(); return Response.json({ ok: true, cancelled: true }); }
@@ -7193,7 +7412,7 @@ async function pfBuildState(env) {
   return { policy: policy || null, trades: tr.slice().reverse(), plans: plans, planVersions: planVersions, journal: journal, ledger: { cash: ledger.cash, realized: ledger.realized, fees: ledger.fees, deposits: ledger.deposits, errors: ledger.errors, positions: ledger.positions }, summary: summary, behavior: behavior, kelly: pfKelly(ledger.sells), asof: new Date().toISOString(), heldWithoutPrice: held.filter((c) => !prices[c]) };
 }
 async function handlePf(request, env, pathname, searchParams) {
-  const bad = pfAuthError(request, env);
+  const bad = await authGate(request, env);
   if (bad) return bad;
   try {
     await ensurePfTables(env.DB);
@@ -7326,15 +7545,67 @@ async function handlePf(request, env, pathname, searchParams) {
   }
 }
 
+// ===== 보안: 응답 헤더 · 접근 키 시도 제한 · 홈 화면 앱(PWA) 자원 =====
+const APP_ICON_B64 = "iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAIAAADdvvtQAAAB7ElEQVR42u3dyw3CMBBAQQdRAi2ExkJZVEYLoQhu3JDyI/Z6Z+44wjyZ5MAyjNNcYKuLLUBACAgBISAQEAJCQAgIBISAEBACAgEhIASEgEBACAgBISAEBAJCQAgIAYGAEBACQkAgIASEgBAQfF1twTlez9uel98fbyeQemquIKC89bTckIBi1NNsQwIKU0+bDQkIASEgBISAQEAICAEhIBAQAkJACAgEhIAQEAICASEgBISAEBAICAEhIAQEAkJACAgBwS/pRtz1OmrOCRSgntLwqDkBBahHQ3kD6n7UnIDC1KMhT2EICAEhIAQEAkJACAgBgYAQEAJCQCAgBISAEBAICAEhIAQEAkJACAgBkVS16RymZDiBqtVT/LI4c0CmZAiolU9dQ7kCMiVDQCAgBISAEBACsgUICAEhIAQEAkJACAgBgYAQEAJCQCAgBISAEBAICAEhIASEgEBACAgBISAQEAJCQAgIBISAEBACAgEhIASEgFb4x380LVkz23V7PoGOff/LV8t23Z6/wo7ahbXrZLtuz/dA+/di2wrZrnuCYZxmd4J4CkNACAgBgYAQEAJCQCAgBISAEBAICAEhIAQEAkJACAgBISAQEAJCQAgIBISAEBACAgEhIASEgEBACAgBISAEBAJCQATzASY9VWvxWyPqAAAAAElFTkSuQmCC";
+const SEC_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+function withSecurityHeaders(res, pathname) {
+  const h = new Headers(res.headers);
+  h.set("content-security-policy", SEC_CSP);
+  h.set("x-content-type-options", "nosniff");
+  h.set("x-frame-options", "DENY");
+  h.set("referrer-policy", "no-referrer");
+  h.set("permissions-policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
+  h.set("strict-transport-security", "max-age=31536000");
+  h.set("cross-origin-opener-policy", "same-origin");
+  if (pathname.startsWith("/api/")) h.set("cache-control", "no-store");
+  else if (pathname === "/" && !h.has("cache-control")) h.set("cache-control", "no-cache");
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+}
+const AUTH_MAX_FAILS = 8;
+const AUTH_WINDOW_MS = 15 * 60 * 1000;
+function pfKeyOn(env) { return !!(env.PF_KEY && String(env.PF_KEY).length >= 12); }
+// 키 대조 + 실패 횟수 제한(IP당 15분에 8회). 키를 아예 보내지 않은 요청은 횟수에 넣지 않는다. 제한 장치의 DB 오류로 정상 사용이 막히지는 않게(통과) 둔다.
+async function authGate(request, env) {
+  if (!pfKeyOn(env)) return pfAuthError(request, env);
+  const given = request.headers.get("x-pf-key") || "";
+  if (!given) return pfAuthError(request, env);
+  const ip = request.headers.get("cf-connecting-ip") || "unknown";
+  const now = Date.now();
+  let row = null;
+  try {
+    try { row = await env.DB.prepare("SELECT n, ws FROM auth_fail WHERE ip = ?").bind(ip).first(); }
+    catch (e) { await env.DB.prepare("CREATE TABLE IF NOT EXISTS auth_fail (ip TEXT PRIMARY KEY, n INTEGER NOT NULL, ws INTEGER NOT NULL)").run(); }
+    if (row && now - row.ws < AUTH_WINDOW_MS && row.n >= AUTH_MAX_FAILS) {
+      const wait = Math.max(1, Math.ceil((AUTH_WINDOW_MS - (now - row.ws)) / 1000));
+      return Response.json({ error: "접근 키를 여러 번 틀려 잠시 잠겼습니다. 약 " + Math.ceil(wait / 60) + "분 뒤에 다시 시도하세요.", code: "locked" }, { status: 429, headers: { "retry-after": String(wait) } });
+    }
+  } catch (e) { /* 제한 장치 오류는 무시 */ }
+  const bad = pfAuthError(request, env);
+  try {
+    if (bad) {
+      await env.DB.prepare("INSERT INTO auth_fail (ip, n, ws) VALUES (?, 1, ?) ON CONFLICT(ip) DO UPDATE SET n = CASE WHEN ? - ws >= ? THEN 1 ELSE n + 1 END, ws = CASE WHEN ? - ws >= ? THEN ? ELSE ws END")
+        .bind(ip, now, now, AUTH_WINDOW_MS, now, AUTH_WINDOW_MS, now).run();
+    } else if (row) {
+      await env.DB.prepare("DELETE FROM auth_fail WHERE ip = ?").bind(ip).run();
+    }
+  } catch (e) { /* 기록 실패는 무시 */ }
+  return bad;
+}
+function appIconResponse() {
+  const bin = atob(APP_ICON_B64); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return new Response(u8, { headers: { "content-type": "image/png", "cache-control": "public, max-age=86400" } });
+}
+const APP_MANIFEST = { name: "VALUELAB 한국주식 스크리닝·재무분석", short_name: "VALUELAB", start_url: "/", scope: "/", display: "standalone", background_color: "#f8fafc", theme_color: "#2563eb", lang: "ko", icons: [{ src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" }] };
+
 export default {
   async fetch(request, env) {
     try {
-      return await handleRequest(request, env);
+      return withSecurityHeaders(await handleRequest(request, env), new URL(request.url).pathname);
     } catch (e) {
       // 라우트 하나하나에 try/catch를 다 붙이는 대신, 맨 바깥에서 한 번에 받아서 "화면에 원인이 보이는"
       // 일관된 JSON 에러로 바꿔준다. 콘솔에도 남겨서 Cloudflare Observability에서 스택을 확인할 수 있다.
       console.error("처리되지 않은 오류:", e && e.stack ? e.stack : e);
-      return Response.json({ error: (e && e.message) || "알 수 없는 오류가 발생했습니다." }, { status: 500 });
+      return withSecurityHeaders(Response.json({ error: (e && e.message) || "알 수 없는 오류가 발생했습니다." }, { status: 500 }), "/api/");
     }
   },
 
@@ -7350,7 +7621,26 @@ export default {
 async function handleRequest(request, env) {
     const { pathname, searchParams } = new URL(request.url);
 
+    if (pathname === "/manifest.webmanifest") return new Response(JSON.stringify(APP_MANIFEST), { headers: { "content-type": "application/manifest+json; charset=utf-8", "cache-control": "public, max-age=3600" } });
+    if (pathname === "/icon-192.png" || pathname === "/apple-touch-icon.png") return appIconResponse();
+
+    // 접근 키 상태 확인(화면이 잠금 여부를 알기 위함). 키 값은 응답에 담지 않는다.
+    if (pathname === "/api/auth/status") {
+      const on = pfKeyOn(env);
+      if (!on) return Response.json({ protected: false, ok: true });
+      if (!request.headers.get("x-pf-key")) return Response.json({ protected: true, ok: false });
+      const bad = await authGate(request, env);
+      if (bad && bad.status === 429) return bad;
+      return Response.json({ protected: true, ok: !bad });
+    }
+
     if (pathname.startsWith("/api/pf/")) return handlePf(request, env, pathname, searchParams);
+
+    // PF_KEY가 설정돼 있으면 나머지 /api 호출(데이터 수집·조회 모두)도 키가 있어야 한다: 공개 주소로 외부 API 한도와 DB 쓰기 한도를 소진시키는 것을 막는다.
+    if (pathname.startsWith("/api/") && pfKeyOn(env)) {
+      const bad = await authGate(request, env);
+      if (bad) return bad;
+    }
 
     if (pathname === "/") {
       return new Response(HTML_PAGE, { headers: { "content-type": "text/html; charset=utf-8" } });

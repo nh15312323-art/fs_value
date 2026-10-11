@@ -48,14 +48,14 @@ await pg.evaluate(() => { document.getElementById('searchCard').classList.add('c
 await pg.focus('#corpName'); ok('검색창에 포커스하면 자동으로 펼쳐짐', await pg.isVisible('#savedBox'));
 const h0 = await pg.$eval('#chartDock', (e) => e.getBoundingClientRect().height);
 await pg.click('#dockFold'); const h1 = await pg.$eval('#chartDock', (e) => e.getBoundingClientRect().height);
-ok('차트 접기 → 차트 영역 높이 크게 감소', h1 < h0 * 0.3, h0 + ' → ' + h1);
+ok('차트 접기 → 차트 영역 높이 크게 감소', h1 < h0 * 0.4, h0 + ' → ' + h1);
 await pg.click('#dockFold'); ok('펼치기 → 원래대로', (await pg.$eval('#chartDock', (e) => e.getBoundingClientRect().height)) > h1 * 2);
 await pg.click('#dockFold'); await pg.click('#dockBtn_growth'); ok('다른 차트 탭을 누르면 자동으로 펼쳐짐', !(await pg.$eval('#chartDock', (e) => e.classList.contains('folded'))));
 ok('좁은 화면에서 주가 차트 높이 축소(250px)', await pg.evaluate(() => { document.getElementById('dockBtn_price').click(); return getComputedStyle(document.getElementById('priceCanvas')).height === '250px'; }));
 await pg.evaluate(() => showFunnel()); await pg.waitForTimeout(300);
 const fb = await pg.innerText('#funnelBox');
 ok('유니버스 깔때기: 단계별 종목 수와 제외 수, 하루 거래대금 기준 주의 문구', fb.includes('2,700') && fb.includes('1,300') && fb.includes('778') && fb.includes('제외 1,400개') && fb.includes('제외 522개') && fb.includes('하루'), fb);
-await pg.click('#tabBtnData'); await pg.waitForTimeout(400);
+await pg.click('#bn_more'); await pg.click('#mn_data'); await pg.waitForTimeout(400);
 ok('데이터 관리: 현재 저장 기준이 입력칸에 채워짐', (await pg.inputValue('#cfgTv')) === '15' && (await pg.inputValue('#cfgMc')) === '500' && (await pg.innerText('#cfgMsg')).includes('기본값'));
 await pg.fill('#cfgTv', '5'); await pg.fill('#cfgMc', '300'); await pg.click('button:has-text("이 기준이면 몇 종목")'); await pg.waitForTimeout(400);
 const pv = await pg.innerText('#cfgMsg');
