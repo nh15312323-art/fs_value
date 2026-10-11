@@ -8,6 +8,7 @@ const lineOf = (p) => text.split('\n').find((x) => x.startsWith(p));
 const code = [
   lineOf('const MARKET_MIN_TRADING_VALUE'), lineOf('const MARKET_MIN_MCAP'),
   between('const WEEKLY_SCREEN_UTC_DOW', 'let screenTablesReady'),
+  between('async function screenCacheGet', 'function parseIndexXml'),
   'async function ensureScreenTables() {} async function ensureMarketQueueColumns() {}',
   'const __cfg = { minTvEok: 15, minMcapEok: 500, minTv: 1.5e9, minMcap: 5e10 }; async function getUniverseCfg() { return __cfg; }',
   between('async function computeScreenLists', 'async function saveScreenLists'),
@@ -22,6 +23,7 @@ function mkEnv(nDays) {
   const db = new DatabaseSync(':memory:');
   db.exec('CREATE TABLE market_index_daily (market_date TEXT, idx_name TEXT, close_price REAL, PRIMARY KEY (market_date, idx_name));' +
     'CREATE TABLE market_raw_daily (market_date TEXT, stock_code TEXT, close_price REAL, volume REAL, trading_value REAL, market_cap REAL, PRIMARY KEY (market_date, stock_code));' +
+    'CREATE TABLE screen_cache (cache_key TEXT PRIMARY KEY, payload TEXT, created_at TEXT);' +
     'CREATE TABLE market_universe_status (stock_code TEXT PRIMARY KEY, corp_name TEXT, backfilled INTEGER);');
   const days = []; for (let i = 0; i < nDays; i++) days.push(String(20250101 + i)); // 오름차순 가짜 날짜
   const idx = db.prepare('INSERT INTO market_index_daily VALUES (?,?,?)'), raw = db.prepare('INSERT INTO market_raw_daily VALUES (?,?,?,?,?,?)');
@@ -39,7 +41,8 @@ function mkEnv(nDays) {
       raw.run(d, sc, 1000 + i + k, 1000, tv, 1000e8);
     });
   });
-  return { db, days, DB: { prepare: (sql) => { const st = db.prepare(sql); return { bind: (...b) => ({ all: async () => ({ results: st.all(...b) }), first: async () => st.get(...b) || null }), all: async () => ({ results: st.all() }), first: async () => st.get() || null, run: async () => st.run() }; } } };
+  const cnt = { lag: 0, withq: 0 };
+  return { db, days, cnt, DB: { prepare: (sql) => { if (sql.indexOf('LAG(') >= 0) cnt.lag++; if (sql.indexOf('PERCENT_RANK') >= 0) cnt.withq++; const st = db.prepare(sql); return { bind: (...b) => ({ all: async () => ({ results: st.all(...b) }), first: async () => st.get(...b) || null, run: async () => st.run(...b) }), all: async () => ({ results: st.all() }), first: async () => st.get() || null, run: async () => st.run() }; } } };
 }
 
 (async () => {
@@ -77,6 +80,18 @@ function mkEnv(nDays) {
   const r4 = await S.computeScreenLists({ DB: e2.DB }, { pcMcap: 0, pcTv: 0, minPrice: 0, minTvEok: 20 });
   check('설정보다 낮은 값을 직접 지정하면 설정값으로 올리고 안내', r4.meta.minTvEok === 60 && r4.meta.clamped.some((x) => x.indexOf('60억') >= 0));
   check('Top N = 100으로 변경됨(meta.topN)', r2.meta.topN === 100);
+  // 캐시: 같은 조건으로 다시 실행하면 무거운 SQL(252일 LAG 스캔·순위 계산)을 다시 돌리지 않고 같은 결과를 돌려준다
+  const e5 = mkEnv(270);
+  const o5 = { pcMcap: 0, pcTv: 0, minMcapEok: 500, minTvEok: 15, minPrice: 0 };
+  S.__cfg.minTvEok = 15; S.__cfg.minTv = 1.5e9;
+  const a1 = await S.computeScreenLists({ DB: e5.DB }, o5);
+  const lag1 = e5.cnt.lag, rk1 = e5.cnt.withq;
+  const a2 = await S.computeScreenLists({ DB: e5.DB }, o5);
+  check('같은 조건 2번째 실행은 무거운 SQL을 다시 돌리지 않음', lag1 === 1 && rk1 === 1 && e5.cnt.lag === 1 && e5.cnt.withq === 1, 'LAG ' + lag1 + '→' + e5.cnt.lag + ', 순위SQL ' + rk1 + '→' + e5.cnt.withq);
+  check('캐시 결과가 처음 계산과 동일(목록 rw)', a2.meta.cached === true && JSON.stringify(a2.lists.rw) === JSON.stringify(a1.lists.rw));
+  const a3 = await S.computeScreenLists({ DB: e5.DB }, Object.assign({}, o5, { pcMcap: 10 }));
+  check('조건을 바꾸면 새로 계산하되 52주 고가(LAG) 결과는 재사용', a3.meta.cached !== true && e5.cnt.lag === 1 && e5.cnt.withq === 2, 'LAG ' + e5.cnt.lag + ', 순위SQL ' + e5.cnt.withq);
+  check('재사용해도 12-1·52주 고가 값이 같음', JSON.stringify(a3.lists.rw.map((q) => q.m121)) !== undefined && a3.meta.mom.ready === true);
   console.log(fail ? '\n실패 ' + fail + '건' : '\n전체 통과');
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });
