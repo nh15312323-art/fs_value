@@ -10,7 +10,7 @@ const KEY = 'abcdefghijklmnop'; const posted = [];
 const policy = { risk_budget_pct: 0.5, max_position_pct: 15, min_cash_pct: 10, cash_needs_krw: 0, fee_rate_pct: 0.015, adv_limit_pct: 1 };
 const state = { policy, trades: [{ id: 1, trade_date: '20250102', side: 'buy', corp_name: '테스트전자', stock_code: '111111', qty: 100, price: 10000, fee: 150, tax: 0, voided: false }], plans: [{ plan_key: 1, version: 1, corp_name: '테스트전자', status: '보유', thesis: '논리', disproof: '반증', entry_low: 9000, entry_high: 10500, risk_price: 8000, tranche_json: '[{"cond":"1차","weightPct":50},{"cond":"2차","weightPct":50}]' }], planVersions: [], journal: [], ledger: { cash: 9000000, realized: 0, fees: 150, deposits: 10000000, errors: [], positions: [{ code: '111111', name: '테스트전자', qty: 100, cost: 1000150, avg: 10001.5, realized: 0 }] },
   summary: { total: 10100000, cash: 9000000, cashPct: 0.89, mv: 1100000, cost: 1000150, unreal: 99850, realized: 0, fees: 150, rows: [{ code: '111111', name: '테스트전자', qty: 100, avg: 10001.5, cost: 1000150, close: 11000, priceDate: '20250102', mv: 1100000, unreal: 99850, unrealPct: 0.0998, sector: '전자', weight: 0.109 }], top1: 0.109, top3: 0.109, top5: 0.109, sectors: [{ name: '전자', mv: 1100000, weight: 0.109 }], warnings: [{ level: 'review', code: 'cash_needs', msg: '현금 경고 테스트' }], partial: false },
-  behavior: { disposition: { n: 2, nWin: 1, nLose: 1, enough: false }, activity: { trades90: 1, buys: 1, sells: 0, costTotal: 150, costPct: 0.00001 }, compliance: { buys: 1, planLinked: 1, planLinkedPct: 1, warned: 0, warnedPct: 0, avgdown: 0 }, emotions: { 평온: 1 }, matrix: { goodGood: 0, goodBad: 0, badGood: 0, badBad: 0 }, matrixN: 0 }, asof: 'x', heldWithoutPrice: [] };
+  behavior: { disposition: { n: 2, nWin: 1, nLose: 1, enough: false }, activity: { trades90: 1, buys: 1, sells: 0, costTotal: 150, costPct: 0.00001 }, compliance: { buys: 1, planLinked: 1, planLinkedPct: 1, warned: 0, warnedPct: 0, avgdown: 0 }, emotions: { 평온: 1 }, matrix: { goodGood: 0, goodBad: 0, badGood: 0, badBad: 0 }, matrixN: 0 }, kelly: { n: 40, nWin: 20, nLose: 20, enough: true, p: 0.5, q: 0.5, W: 0.2, L: 0.1, payoff: 2, fRaw: 2.5, f: 1, capped: true, edge: true, half: 1, quarter: 0.625, fLow: 0.9, fHigh: 1, fragile: false }, asof: 'x', heldWithoutPrice: [] };
 const srv = http.createServer((q, r) => {
   if (q.url === '/') { r.setHeader('content-type', 'text/html;charset=utf-8'); return r.end(HTML_PAGE); }
   r.setHeader('content-type', 'application/json');
@@ -68,6 +68,7 @@ const co = await pg.innerText('#pfcOut');
 // 총자산 10.1M, 위험예산 0.5% = 50,500 / 주당손실 1000 = 50주. 집중도: 15% = 1,515,000 − 1,100,000 = 415,000/10000 = 41주 → 최소 41
 ok('계산기: 한도 중 최소(집중도 41주) 채택', co.includes('41주') && co.includes('집중도'), co.slice(0, 120));
 ok('계획된 분할 수량(50:50 → 21+20)', co.includes('1차 21주') && co.includes('2차 20주'), co);
-await pg.click('#pfuNb_check'); ok('행동 점검: 표본 부족 시 결론 보류 문구', (await pg.innerText('#pfuBeh')).includes('표본이 부족'));
+await pg.click('#pfuNb_check'); ok('켈리 참고값: 1/4 켈리·100% 초과 경고·정책 우선 문구', (await pg.innerText('#pfuBeh')).includes('1/4 켈리 62.5%') && (await pg.innerText('#pfuBeh')).includes('100%로 잘랐') && (await pg.innerText('#pfuBeh')).includes('항상 우선'), (await pg.innerText('#pfuBeh')).slice(-400));
+ok('행동 점검: 표본 부족 시 결론 보류 문구', (await pg.innerText('#pfuBeh')).includes('표본이 부족'));
 ok('콘솔/페이지 오류 없음', errs.length === 0, JSON.stringify(errs));
 await b.close(); srv.close(); console.log(fail ? '\n실패 ' + fail : '\n전부 통과'); process.exit(fail ? 1 : 0);
