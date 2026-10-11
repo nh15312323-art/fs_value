@@ -17,9 +17,10 @@ const annualSrc = unescapeTpl(between('function btBuildAnnual(keys, o) {', '// �
 const lineOf = (prefix) => { const l = text.split('\n').find((x) => x.startsWith(prefix)); if (!l) throw new Error('소스에서 줄을 찾지 못했습니다: ' + prefix); return l; };
 const fcfSrc = between('function anFcfType(c) {', '// ---------- 전체 컨텍스트');
 const screenExtra = between('const SCREEN_MOM_DAYS', 'const SCREEN_LIST_KEYS');
+const fiscalClient = unescapeTpl(between('function btSplitFiscal(comps) {', 'async function checkFiscalMonths'));
 const code = [
   screenExtra,
-  keys, server, nextDay,
+  keys, server, nextDay, fiscalClient, // server 구간에 결산월 함수가 이미 포함됨
   [lineOf('const AN_TH ='), lineOf('const anFin ='), lineOf('const anDiv ='), lineOf('const anPct ='), lineOf('const anMean ='), lineOf('const anWin ='), 'const anFmt = (k, v) => String(v);'].join('\n'),
   fcfSrc,
   'const FLOW_KEYS_ = FLOW_KEYS; const CF_CUM_KEYS = CF_CUMULATIVE_KEYS; const isUsable = (r) => !r.error && r.fs_div != null;',
@@ -28,7 +29,7 @@ const code = [
   'const anBuildSeries = (rows) => { const ys = rows.filter((r) => r.reprt_code === "11011").map((r) => Number(r.bsns_year)); return ys.length ? [{ year: Math.max(...ys) }] : []; };',
   'const BT_FACTORS = { f: { fn: () => 1 } }; const btRankAvg = (a) => a.map((_, i) => i / a.length);',
   annualSrc,
-  'return { SCREEN_EXTRA_SQL, SCREEN_JUMP_LIMIT, screenExtraMetric, getTTMFlow, getIsolatedQ4, toQuarterlyRows, firstCloseAfter, btBuildAnnual, anFcfType, setStocks: (s) => { BT.stocks = s; }, getBT: () => BT };',
+  'return { SCREEN_EXTRA_SQL, SCREEN_JUMP_LIMIT, screenExtraMetric, getTTMFlow, getIsolatedQ4, toQuarterlyRows, firstCloseAfter, btBuildAnnual, anFcfType, parseAccMt, fiscalSkipDates, btSplitFiscal, fiscalBanner, setStocks: (s) => { BT.stocks = s; }, getBT: () => BT };',
 ].join('\n');
 const T = new Function(code)();
 
@@ -128,6 +129,54 @@ for (const y of [2024, 2025]) {
   const mE = T.screenExtraMetric(exm.E0, last('E0'));
   check('E: 완만한 하락 → 고가 대비 < 1, 불연속 아님', mE.extra === 'ok' && mE.hi52 < 1 && near(mE.hi52, last('E0') / 250), JSON.stringify(mE));
   check('종목 자체가 없으면 nodata', T.screenExtraMetric(undefined, 100).extra === 'nodata');
+  // ⑤ 결산월
+  check('결산월 파싱: "12" / "03" / 3', T.parseAccMt({ status: '000', acc_mt: '12' }) === 12 && T.parseAccMt({ status: '000', acc_mt: '03' }) === 3 && T.parseAccMt({ status: '000', acc_mt: 3 }) === 3);
+  check('결산월 파싱: 오류 응답·범위 밖·누락은 null', T.parseAccMt({ status: '013' }) === null && T.parseAccMt({ status: '000', acc_mt: '13' }) === null && T.parseAccMt({ status: '000' }) === null && T.parseAccMt(null) === null);
+  check('날짜 기반 값 생략 조건: 확인된 비12월만', T.fiscalSkipDates(3) === true && T.fiscalSkipDates(12) === false && T.fiscalSkipDates(null) === false);
+  const sp = T.btSplitFiscal([{ corp_name: 'A', acc_mt: 12 }, { corp_name: 'B', acc_mt: 3 }, { corp_name: 'C', acc_mt: null }, { corp_name: 'D', acc_mt: 9 }]);
+  check('백테스트 분리: 12월·미확인은 사용, 확인된 비12월은 제외', sp.use.map((c) => c.corp_name).join() === 'A,C' && sp.excluded.map((c) => c.corp_name).join() === 'B,D' && sp.unknownN === 1, JSON.stringify({ use: sp.use.length, ex: sp.excluded.length, unk: sp.unknownN }));
+  check('경고 배너: 비12월에만 표시', T.fiscalBanner(3).includes('결산월이 3월') && T.fiscalBanner(12) === '' && T.fiscalBanner(null) === '');
+
+  // fetchPeriodRow 통합 검사: 모의 DART·시세 응답으로 결산월별 동작 확인
+  const os = require('os'), { pathToFileURL } = require('url');
+  const tmp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'fsv-')), 'idx.mjs');
+  fs.writeFileSync(tmp, text + '\nexport { fetchPeriodRow };\n');
+  const { fetchPeriodRow } = await import(pathToFileURL(tmp).href);
+  const dates = []; for (let d = new Date(Date.UTC(2024, 11, 10)); d <= new Date(Date.UTC(2025, 3, 20)); d.setUTCDate(d.getUTCDate() + 1)) { if (d.getUTCDay() % 6) dates.push(d.toISOString().slice(0, 10).replace(/-/g, '')); }
+  const naverText = "[['날짜','시가','고가','저가','종가','거래량']," + dates.map((x, i) => '["' + x + '","1","1","1","' + (100 + i) + '","10"]').join(',') + ']';
+  let calls = {};
+  const mockFetch = (companyReply) => async (url) => {
+    const u = new URL(url); const ep = u.searchParams.get('endpoint'); const key = u.searchParams.get('source') === 'naver_price' ? 'naver' : ep;
+    calls[key] = (calls[key] || 0) + 1;
+    const json = (o) => ({ json: async () => o, text: async () => JSON.stringify(o) });
+    if (key === 'naver') return { text: async () => naverText, json: async () => ({}) };
+    if (ep === 'fnlttSinglAcntAll') return json({ status: '000', list: [{ rcept_no: '20250320000123', sj_div: 'IS', account_id: 'ifrs-full_Revenue', account_nm: '매출액', account_detail: '-', thstrm_amount: '1,000' }] });
+    if (ep === 'company') return json(companyReply);
+    return json({ status: '013' });
+  };
+  const mkFiscalDb = (initial) => { const st = { fiscal: initial == null ? null : initial, inserts: 0 };
+    return { st, prepare: (sql) => ({ run: async () => ({}), bind: (...b) => ({
+      first: async () => (/FROM corp_fiscal/.test(sql) ? (st.fiscal == null ? null : { acc_mt: st.fiscal }) : null),
+      run: async () => { if (/INSERT OR REPLACE INTO corp_fiscal/.test(sql)) { st.fiscal = b[1]; st.inserts++; } return {}; },
+      all: async () => ({ results: [] }) }) }) }; };
+  const PERIOD = { year: 2024, code: '11011', label: '사업보고서', order: 4 };
+  const realFetch = globalThis.fetch;
+  try {
+    calls = {}; globalThis.fetch = mockFetch({ status: '000', acc_mt: '03' }); let db = mkFiscalDb(null);
+    let r = await fetchPeriodRow('C_MAR', '000001', PERIOD, 'https://proxy.example/exec', db);
+    check('3월 결산: 결산월을 조회·저장하고 날짜 기반 값은 만들지 않음', db.st.fiscal === 3 && r.price_at_filing == null && r.price_at_period_end == null && r.price_next_day == null && r.filing_date == null && !calls.naver, JSON.stringify({ fiscal: db.st.fiscal, pf: r.price_at_filing, naver: calls.naver || 0 }));
+    check('3월 결산이어도 재무 값 자체는 정상 저장 대상(매출 1000)', r.revenue === 1000 && r.fs_div === 'CFS', 'revenue=' + r.revenue);
+    calls = {}; globalThis.fetch = mockFetch({ status: '000', acc_mt: '12' }); db = mkFiscalDb(null);
+    r = await fetchPeriodRow('C_DEC', '000002', PERIOD, 'https://proxy.example/exec', db);
+    check('12월 결산: 기존처럼 공시일·다음 거래일 가격 계산', db.st.fiscal === 12 && r.filing_date === '20250320' && r.price_at_filing > 0 && r.price_next_day > r.price_at_filing && r.price_at_period_end > 0, JSON.stringify({ f: r.filing_date, p: r.price_at_filing, n: r.price_next_day }));
+    calls = {}; globalThis.fetch = mockFetch({ status: '900', message: '미지원' }); db = mkFiscalDb(null);
+    r = await fetchPeriodRow('C_FAIL', '000003', PERIOD, 'https://proxy.example/exec', db);
+    await fetchPeriodRow('C_FAIL', '000003', { ...PERIOD, year: 2023 }, 'https://proxy.example/exec', db);
+    check('조회 실패: 12월로 가정해 기존대로 계산하고 저장은 안 함, 같은 회사를 반복 조회하지 않음', db.st.fiscal == null && r.price_at_filing > 0 && calls.company === 1, JSON.stringify({ fiscal: db.st.fiscal, company: calls.company }));
+    calls = {}; globalThis.fetch = mockFetch({ status: '000', acc_mt: '12' }); db = mkFiscalDb(9);
+    r = await fetchPeriodRow('C_KNOWN', '000004', PERIOD, 'https://proxy.example/exec', db);
+    check('이미 9월 결산으로 저장됨: 회사개요를 다시 조회하지 않고 날짜 기반 값 생략', !calls.company && r.price_at_filing == null && !calls.naver, JSON.stringify(calls));
+  } finally { globalThis.fetch = realFetch; }
   console.log(fail ? '\n실패 ' + fail + '건' : '\n전체 통과');
   process.exit(fail ? 1 : 0);
 })();

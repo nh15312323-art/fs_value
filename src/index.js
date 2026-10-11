@@ -576,6 +576,11 @@ const HTML_PAGE = `<!doctype html>
         <button onclick="toggleDbList()">DB 저장 종목 보기</button>
         <span class="meta-line" style="margin:0;">개별 종목은 ② 종목분석에서 "분석하기"를 누르면 없을 때 자동으로 받습니다.</span>
       </div>
+      <div class="row" style="margin-top:8px;">
+        <button onclick="checkFiscalMonths()" title="저장된 종목의 결산월을 DART 회사개요에서 확인합니다">결산월 확인 (12월 결산이 아닌 종목 찾기)</button>
+        <span class="meta-line" style="margin:0;">12월 결산이 아닌 회사는 공시시점 주가·PER 등 날짜 기반 값이 틀어져 백테스트에서 제외하고 경고합니다.</span>
+      </div>
+      <div id="fiscalStatus" class="meta-line" style="white-space:pre-line;"></div>
       <div id="dbListWrap" style="display:none; margin-top:10px; padding:10px; background:var(--bg); border:1px solid var(--border); border-radius:8px;">
         <div class="row" style="align-items:center;">
           <input id="dbListFilter" oninput="renderDbList()" placeholder="종목명/종목코드로 거르기" style="flex:1; min-width:140px;" />
@@ -696,6 +701,7 @@ const HTML_PAGE = `<!doctype html>
     })();
 
     let rawRows = [];      // DB/DART에서 받아온, 가공 안 된 원본 기간별 데이터
+    let AN_ACCMT = null;   // 현재 종목의 결산월(모르면 null). 12월이 아니면 날짜 기반 값이 부정확하다는 경고를 띄운다.
     let currentRows = [];  // 현재 화면에 표시 중인 데이터 (분기별 변환 or 연간 그대로)
     let viewMode = 'quarterly';
     // 실제 데이터가 있는 행만 분석에 사용 (공시 전이라 비어있는 행/오류 행 제외)
@@ -3059,6 +3065,41 @@ function btTrials(sig) {
 function btResetTrials() { try { localStorage.removeItem(BT.trialsKey); } catch (e) { /* 무시 */ } btMsg('시도 기록을 지웠습니다.'); }
 function btMsg(t) { const el = document.getElementById('btStatus'); if (el) el.textContent = t; }
 
+// 결산월이 12월이 아닌 법인은 날짜 기반 값(공시일·기간말 주가 등)을 믿을 수 없어 백테스트에서 뺀다. 결산월을 아직 모르는 종목은 12월로 가정해 포함하되 개수를 알린다.
+function btSplitFiscal(comps) {
+  const use = [], excluded = []; let unknownN = 0;
+  comps.forEach((c) => {
+    if (c.acc_mt == null) { unknownN++; use.push(c); }
+    else if (Number(c.acc_mt) === 12) use.push(c);
+    else excluded.push(c);
+  });
+  return { use: use, excluded: excluded, unknownN: unknownN };
+}
+function fiscalBanner(accMt) {
+  if (accMt == null || Number(accMt) === 12) return '';
+  return '<div class="card" style="background:#fef2f2; border-color:#fca5a5; font-size:12.5px;">⚠ 이 회사는 <b>결산월이 ' + Number(accMt) + '월</b>입니다(12월 결산 아님). 재무제표 시계열(연간·분기·TTM)은 보고서 기준이라 그대로 볼 수 있지만, <b>날짜에 의존하는 값</b>(공시시점 주가·PER·PBR·FCF Yield, 기간말 주가, 공시 후 주가 등락)은 12월 결산을 전제로 만들어져 <b>이 종목에서는 비어 있거나 부정확할 수 있습니다</b>. 위에서 이 종목을 다시 조회/저장하면 그런 값은 계산하지 않고 비워둡니다.</div>';
+}
+async function checkFiscalMonths() {
+  const st = document.getElementById('fiscalStatus');
+  if (!st || st.dataset.busy === '1') return;
+  st.dataset.busy = '1';
+  try {
+    let saved = 0, errs = 0, guard = 0, firstErr = null;
+    while (guard++ < 200) {
+      const r = await fetch('/api/fiscal/refresh?limit=10');
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || '결산월 확인 실패');
+      saved += d.saved || 0; errs += d.errors || 0; if (d.firstError && !firstErr) firstErr = d.firstError;
+      st.textContent = '결산월 확인 중... 저장 ' + saved + '개' + (errs ? ', 확인 못한 종목 ' + errs + '개' : '');
+      if (d.done || !d.processed || !d.saved) break;
+    }
+    const r2 = await fetch('/api/fiscal/summary'); const s2 = await r2.json();
+    const non = s2.nonDecember || [];
+    st.textContent = '확인된 종목 ' + s2.checked + '개 중 12월 결산이 아닌 종목 ' + non.length + '개' + (non.length ? ': ' + non.map((c) => (c.corp_name || c.corp_code) + '(' + c.acc_mt + '월)').join(', ') : '') +
+      (errs ? '\\n확인 못한 종목 ' + errs + '개 — 이유: ' + firstErr + ' (DART 프록시가 회사개요 조회를 지원하지 않으면 계속 실패합니다. 이 경우 모든 종목을 12월 결산으로 가정합니다.)' : '');
+  } catch (e) { st.textContent = '오류: ' + (e.message || e); } finally { st.dataset.busy = '0'; }
+}
+
 async function btBackfillNextDay() {
   if (BT.backfilling) return;
   BT.backfilling = true;
@@ -3082,8 +3123,13 @@ async function btLoadStocks() {
   try {
     btMsg('저장된 종목 목록을 확인하는 중...');
     const r0 = await fetch('/api/db/companies'); const d0 = await r0.json();
-    const comps = d0.companies || [];
-    if (!comps.length) { btMsg('저장된 재무 데이터가 없습니다. 먼저 종목을 조회·저장해 주세요.'); return; }
+    const comps0 = d0.companies || [];
+    if (!comps0.length) { btMsg('저장된 재무 데이터가 없습니다. 먼저 종목을 조회·저장해 주세요.'); return; }
+    const fs = btSplitFiscal(comps0);
+    const comps = fs.use;
+    BT.fiscalNote = (fs.excluded.length ? '12월 결산이 아니라 제외: ' + fs.excluded.length + '개(' + fs.excluded.slice(0, 5).map((c) => c.corp_name).join(', ') + (fs.excluded.length > 5 ? ' 외' : '') + '). ' : '') +
+      (fs.unknownN ? '결산월 미확인 ' + fs.unknownN + '개는 12월 결산으로 가정(④ 데이터 관리의 「결산월 확인」 권장).' : '');
+    if (!comps.length) { btMsg('백테스트에 쓸 수 있는 12월 결산 종목이 없습니다. ' + BT.fiscalNote); return; }
     const by = {};
     for (let i = 0; i < comps.length; i += 8) {
       const part = comps.slice(i, i + 8);
@@ -3094,7 +3140,7 @@ async function btLoadStocks() {
       (d.rows || []).forEach((row) => { (by[row.corp_code] = by[row.corp_code] || []).push(row); });
     }
     BT.stocks = comps.map((c) => ({ code: c.corp_code, name: c.corp_name, rows: by[c.corp_code] || [] })).filter((s) => s.rows.length);
-    btMsg('불러오기 완료: ' + BT.stocks.length + '개 종목 (' + BT.stocks.reduce((a, s) => a + s.rows.length, 0) + '개 기간). 아래에서 방법을 고르고 실행하세요.');
+    btMsg('불러오기 완료: ' + BT.stocks.length + '개 종목 (' + BT.stocks.reduce((a, s) => a + s.rows.length, 0) + '개 기간). ' + (BT.fiscalNote || '') + ' 아래에서 방법을 고르고 실행하세요.');
     document.getElementById('btFinInfo').textContent = '불러온 종목 ' + BT.stocks.length + '개';
   } catch (e) { btMsg('오류: ' + (e.message || e)); } finally { BT.loading = false; }
 }
@@ -3314,7 +3360,7 @@ function renderAnalysis() {
   if (!c) { el.innerHTML = ''; return; }
   AN_CTX = c;
   const needRefetch = !c.last.r || !anRefetched(c.last.r);
-  const notice = needRefetch ? '<div class="card" style="background:#fffbeb; border-color:#fcd34d; font-size:12.5px;">⚠ 이 종목은 <b>감가상각·배당지급·자사주·차입금 구성 항목이 아직 저장되어 있지 않습니다</b>. EBITDA, 순차입금, 총주주환원성향 등은 N/A로 표시되며, 위쪽에서 이 종목을 <b>다시 조회/저장</b>하면 채워집니다(DART 호출량은 기존과 같음).</div>' : '';
+  const notice = fiscalBanner(AN_ACCMT) + (needRefetch ? '<div class="card" style="background:#fffbeb; border-color:#fcd34d; font-size:12.5px;">⚠ 이 종목은 <b>감가상각·배당지급·자사주·차입금 구성 항목이 아직 저장되어 있지 않습니다</b>. EBITDA, 순차입금, 총주주환원성향 등은 N/A로 표시되며, 위쪽에서 이 종목을 <b>다시 조회/저장</b>하면 채워집니다(DART 호출량은 기존과 같음).</div>' : '');
   const A = anRenderAreas(c);
   // 스토리 순서: 유형 → 사업의 질 → 이익의 진위 → 안전 → 성장 → 자본배분 → 가격 → 시장의 시선 → 결론, 마지막에 참고(설명서·설정)
   el.innerHTML = notice + anRenderClassify(c) + anRenderFcfType(c) +
@@ -3472,6 +3518,7 @@ function renderAnalysis() {
           const res = await fetch(\`/api/fetch-and-save?corp_name=\${encodeURIComponent(corpName)}&year=\${p.year}&reprt_code=\${p.code}\`);
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || '저장 실패');
+          if (data.acc_mt != null) AN_ACCMT = data.acc_mt;
           rows.push(data.row);
         } catch (e) {
           rows.push({ period_label: \`\${p.year} \${p.label}\`, bsns_year: String(p.year), reprt_code: p.code, error: e.message });
@@ -3876,6 +3923,7 @@ function renderAnalysis() {
       catch (e) { statusEl.textContent = '오류: ' + e.message; statusEl.className = 'error'; return; }
       if (seq !== analyzeSeq) return;
       rawRows = data.rows;
+      AN_ACCMT = data.acc_mt != null ? data.acc_mt : null;
       if (rawRows.filter(isUsable).length === 0) {
         statusEl.textContent = '"' + data.corp_name + '"은(는) 저장된 재무데이터가 없어 DART에서 새로 받아옵니다(약 1~2분, 화면을 켜두세요).';
         await fetchAndSave();
@@ -4591,7 +4639,7 @@ function renderAnalysis() {
         '· 수준(환율 1,300원 등)이 아니라 같은 기간의 <b>변화</b>를 비교합니다. 수준끼리 비교하면 시간 추세 때문에 가짜 상관이 생기기 쉽습니다(Granger &amp; Newbold, 1974).<br />' +
         '· "같은 해 주가수익률"은 동행성, "다음 해 주가수익률(선행)"은 거시 변화가 이후 주가를 예측했는지를 봅니다. 주가는 배당을 뺀 종가 수익률이고 시장(코스피) 효과를 제거하지 않았습니다.<br />' +
         '· 표의 칸이 많아(5×6) 5% 수준에서도 우연히 * 가 1~2개는 나올 수 있고, 표본이 수년뿐이라 <b>인과나 예측 근거가 아닌 참고용</b>입니다.<br />' +
-        '· 회계기간은 12월 결산 기준(분기말 3·6·9·12월)으로 가정합니다. 결산월이 다른 회사는 기간이 어긋납니다.</div>';
+        '· 회계기간은 12월 결산 기준(분기말 3·6·9·12월)으로 가정합니다. 결산월이 다른 회사는 기간이 어긋나므로 이 표를 믿지 마세요(④ 데이터 관리의 「결산월 확인」으로 12월 결산이 아닌 종목을 찾을 수 있습니다).</div>';
       statusEl.textContent = '';
       wrapEl.style.display = 'block';
       macroCorrDirty = false;
@@ -5380,6 +5428,54 @@ async function getTTMFlow(db, corpCode, year, quarterNum, keys, ov) {
   return result;
 }
 
+// ============================================================
+// 결산월(회계연도 종료월) — 12월 결산이 아닌 법인은 날짜 기반 값(기간말·공시일 주가, PER·PBR 등)이 틀어지므로 따로 다룬다
+// ============================================================
+// DART 회사개요(company)의 acc_mt(결산월)를 한 번 조회해 corp_fiscal 표에 저장한다. 조회가 안 되면(프록시 미지원·오류) 기존처럼 12월 결산으로 가정하고 진행한다.
+let fiscalTableReady = false;
+const fiscalLookupTried = new Set(); // 이 실행 환경에서 이미 조회를 시도한 회사(실패해도 같은 회사를 계속 두드리지 않기 위함)
+async function ensureFiscalTable(db) {
+  if (fiscalTableReady) return;
+  await db.prepare("CREATE TABLE IF NOT EXISTS corp_fiscal (corp_code TEXT PRIMARY KEY, acc_mt INTEGER NOT NULL, checked_at TEXT)").run();
+  fiscalTableReady = true;
+}
+function parseAccMt(j) {
+  if (!j || j.status !== "000" || j.acc_mt == null) return null;
+  const n = Number(String(j.acc_mt).replace(/[^0-9]/g, ""));
+  return Number.isInteger(n) && n >= 1 && n <= 12 ? n : null;
+}
+const fiscalSkipDates = (accMt) => accMt != null && accMt !== 12; // 결산월이 확인됐고 12월이 아닐 때만 날짜 기반 값을 만들지 않는다
+async function fetchDartCompany(corpCode, proxyUrl, timeoutMs = 15000) {
+  const url = new URL(proxyUrl);
+  url.searchParams.set("endpoint", "company");
+  url.searchParams.set("corp_code", corpCode);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(url.toString(), { signal: controller.signal });
+    return await resp.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function getAccMt(db, corpCode) {
+  await ensureFiscalTable(db);
+  const r = await db.prepare("SELECT acc_mt FROM corp_fiscal WHERE corp_code = ?").bind(corpCode).first();
+  return r ? r.acc_mt : null;
+}
+async function lookupAndSaveAccMt(db, corpCode, proxyUrl) {
+  try {
+    const j = await fetchDartCompany(corpCode, proxyUrl);
+    const m = parseAccMt(j);
+    if (m == null) return { accMt: null, error: "결산월을 찾지 못함: " + String((j && (j.message || j.status)) || "응답 없음").slice(0, 60) };
+    await ensureFiscalTable(db);
+    await db.prepare("INSERT OR REPLACE INTO corp_fiscal (corp_code, acc_mt, checked_at) VALUES (?, ?, ?)").bind(corpCode, m, new Date().toISOString()).run();
+    return { accMt: m };
+  } catch (e) {
+    return { accMt: null, error: String((e && e.message) || e).slice(0, 80) };
+  }
+}
+
 async function fetchPeriodRow(corpCode, stockCode, period, proxyUrl, db) {
   const emptyRow = (extra) => {
     const row = {
@@ -5477,10 +5573,20 @@ async function fetchPeriodRow(corpCode, stockCode, period, proxyUrl, db) {
     delete row.capex_ppe;
     delete row.capex_intangible;
 
+    // 결산월 확인: 12월 결산이 아닌 법인은 아래 날짜 기반 값(기간말·공시일 주가, PER·PBR·FCF Yield 등)이 12월 결산 가정으로 계산되면 틀리므로 만들지 않는다(틀린 값보다 빈 값이 낫다).
+    let accMt = null;
+    if (db) {
+      try {
+        accMt = await getAccMt(db, corpCode);
+        if (accMt == null && !fiscalLookupTried.has(corpCode)) { fiscalLookupTried.add(corpCode); accMt = (await lookupAndSaveAccMt(db, corpCode, proxyUrl)).accMt; }
+      } catch (e) { /* 결산월을 못 알아내도 기존대로 진행 */ }
+    }
+    const skipDates = fiscalSkipDates(accMt);
+
     // 회계기간 말일(분기말/반기말/연말) 종가 — 공시일 주가와 비교해 "실적 발표 전후 주가 상승률"을 보기 위함
     try {
       const periodEnd = periodEndDateStr(period.year, period.code);
-      if (periodEnd && stockCode) {
+      if (periodEnd && stockCode && !skipDates) {
         const pePrices = await fetchNaverPrices(stockCode, addDaysStr(periodEnd, -15), periodEnd, proxyUrl);
         row.price_at_period_end = closeAsOf(pePrices, periodEnd);
       }
@@ -5488,7 +5594,7 @@ async function fetchPeriodRow(corpCode, stockCode, period, proxyUrl, db) {
 
     // 공시일자(rcept_no 앞 8자리) 기준 종가로 그 시점 PER/PBR/FCF Yield 계산
     const rceptNo = dart.list[0] && dart.list[0].rcept_no;
-    if (rceptNo && stockCode) {
+    if (rceptNo && stockCode && !skipDates) {
       const rceptDate = rceptNo.slice(0, 8);
       const filingDate = effectiveFilingDate(rceptDate, period.year, period.code);
       const filingCapped = filingDate !== rceptDate; // 상한 적용(정정공시 등)이면 월말이 휴장일일 수 있어 다음 영업일 종가를 쓴다
@@ -5755,8 +5861,9 @@ async function handleRequest(request, env) {
 
       const row = await fetchPeriodRow(corpRow.corp_code, corpRow.stock_code, { year, ...periodMeta }, env.DART_PROXY_URL, env.DB);
       await saveRowsToDb(env.DB, [row]);
+      let accMt = null; try { accMt = await getAccMt(env.DB, corpRow.corp_code); } catch (e) { /* 표시용이라 실패해도 진행 */ }
 
-      return Response.json({ corp_name: corpRow.corp_name, corp_code: corpRow.corp_code, row });
+      return Response.json({ corp_name: corpRow.corp_name, corp_code: corpRow.corp_code, acc_mt: accMt, row });
     }
 
     if (pathname === "/api/queue-fetch") {
@@ -5795,9 +5902,10 @@ async function handleRequest(request, env) {
 
     if (pathname === "/api/db/companies") {
       // financial_raw의 PK 인덱스(corp_code, bsns_year, reprt_code)만으로 집계되는 쿼리라 테이블 본문을 읽지 않는다.
+      await ensureFiscalTable(env.DB);
       const { results } = await env.DB.prepare(
-        "SELECT f.corp_code AS corp_code, m.corp_name AS corp_name, m.stock_code AS stock_code, COUNT(*) AS n, MIN(f.bsns_year) AS first_year, MAX(f.bsns_year) AS last_year " +
-        "FROM financial_raw f LEFT JOIN corp_master m ON m.corp_code = f.corp_code GROUP BY f.corp_code ORDER BY m.corp_name"
+        "SELECT f.corp_code AS corp_code, m.corp_name AS corp_name, m.stock_code AS stock_code, x.acc_mt AS acc_mt, COUNT(*) AS n, MIN(f.bsns_year) AS first_year, MAX(f.bsns_year) AS last_year " +
+        "FROM financial_raw f LEFT JOIN corp_master m ON m.corp_code = f.corp_code LEFT JOIN corp_fiscal x ON x.corp_code = f.corp_code GROUP BY f.corp_code ORDER BY m.corp_name"
       ).all();
       const companies = results.filter((r) => r.corp_name);
       return new Response(JSON.stringify({ companies }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "private, max-age=30" } });
@@ -5813,7 +5921,31 @@ async function handleRequest(request, env) {
         .bind(corpRow.corp_code)
         .all();
 
-      return Response.json({ corp_name: corpRow.corp_name, corp_code: corpRow.corp_code, rows: results });
+      let accMt = null; try { accMt = await getAccMt(env.DB, corpRow.corp_code); } catch (e) { /* 표시용이라 실패해도 진행 */ }
+      return Response.json({ corp_name: corpRow.corp_name, corp_code: corpRow.corp_code, acc_mt: accMt, rows: results });
+    }
+
+    if (pathname === "/api/fiscal/refresh") {
+      // 저장된 종목 중 결산월을 아직 모르는 회사를 한 번에 최대 15개씩 조회해 저장한다(무료 플랜 하위요청 한도 때문). 같은 호출을 반복해도 결과는 같다.
+      await ensureFiscalTable(env.DB);
+      const limit = Math.min(Math.max(Number(searchParams.get("limit")) || 10, 1), 15);
+      const { results: todo } = await env.DB.prepare(
+        "SELECT f.corp_code AS corp_code FROM financial_raw f LEFT JOIN corp_fiscal x ON x.corp_code = f.corp_code WHERE x.corp_code IS NULL GROUP BY f.corp_code LIMIT ?"
+      ).bind(limit).all();
+      let saved = 0, errors = 0, firstError = null;
+      for (const t of todo) {
+        const r = await lookupAndSaveAccMt(env.DB, t.corp_code, env.DART_PROXY_URL);
+        if (r.accMt != null) saved++; else { errors++; if (!firstError) firstError = r.error || "알 수 없는 오류"; }
+      }
+      return Response.json({ processed: todo.length, saved, errors, firstError, done: todo.length < limit });
+    }
+    if (pathname === "/api/fiscal/summary") {
+      await ensureFiscalTable(env.DB);
+      const tot = await env.DB.prepare("SELECT COUNT(*) AS n FROM corp_fiscal").first();
+      const { results: non } = await env.DB.prepare(
+        "SELECT x.corp_code AS corp_code, m.corp_name AS corp_name, x.acc_mt AS acc_mt FROM corp_fiscal x LEFT JOIN corp_master m ON m.corp_code = x.corp_code WHERE x.acc_mt != 12 ORDER BY x.acc_mt, m.corp_name"
+      ).all();
+      return Response.json({ checked: tot ? tot.n : 0, nonDecember: non });
     }
 
     if (pathname === "/api/backtest/fin-batch") {
