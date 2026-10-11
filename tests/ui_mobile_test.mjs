@@ -107,6 +107,12 @@ await pg.evaluate(() => { Object.defineProperty(document, 'visibilityState', { v
 ok('앱 전환(백그라운드) 시 계좌 화면 가림막 표시', await pg.isVisible('#privCover'));
 await pg.evaluate(() => { Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true }); document.dispatchEvent(new Event('visibilitychange')); });
 ok('돌아오면 가림막 해제(5분 미만)', !(await pg.isVisible('#privCover')) && !(await pg.isVisible('#lockScreen')));
+// 한글·전각 문자가 섞인 키(태블릿 키보드): 전송 오류 대신 안내
+await pg.evaluate(() => appLock('')); await pg.waitForTimeout(100);
+await pg.fill('#lkKey', 'abcdefghijklmnop한글'); await pg.click('#lockScreen button.primary'); await pg.waitForTimeout(150);
+ok('한글 섞인 키: fetch 오류 없이 영문 키보드 안내', (await pg.innerText('#lkMsg')).includes('영문 키보드') && !(await pg.innerText('#lkMsg')).includes('ISO-8859'));
+await pg.fill('#lkKey', ' ' + KEY + '\u200b '); await pg.click('#lockScreen button.primary'); await pg.waitForTimeout(500);
+ok('앞뒤 공백·보이지 않는 문자는 자동 제거되어 열림(키에 s 같은 글자가 있어도 보존)', !(await pg.isVisible('#lockScreen')) && await pg.evaluate(() => keyClean('as df') === 'asdf'));
 // 새로고침해도 기억된 키로 자동 진입
 await pg.reload(); await pg.waitForTimeout(700);
 ok('새로고침: 기억된 키로 잠금 없이 바로 진입, 마지막 탭(내 계좌) 복원', !(await pg.isVisible('#lockScreen')) && await pg.isVisible('#tabPf'));

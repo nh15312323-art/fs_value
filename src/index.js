@@ -487,7 +487,7 @@ const HTML_PAGE = `<!doctype html>
       <div class="lk-ico">🔒</div>
       <div class="lk-t">접근 키 입력</div>
       <div class="lk-s">이 사이트는 본인만 쓰도록 잠겨 있습니다. Cloudflare에 등록한 <b>PF_KEY</b> 값을 입력하세요.</div>
-      <input id="lkKey" type="text" name="pf-access-code" placeholder="접근 키" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" data-lpignore="true" data-1p-ignore="true" onkeydown="if(event.key==='Enter')lockSubmit()" />
+      <input id="lkKey" type="text" lang="en" inputmode="text" name="pf-access-code" placeholder="접근 키" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" data-lpignore="true" data-1p-ignore="true" onkeydown="if(event.key==='Enter')lockSubmit()" />
       <label class="lk-rem"><input type="checkbox" id="lkRem" /> 이 기기에서 30일간 기억 (분실·공용 기기에서는 끄세요)</label>
       <button class="primary" onclick="lockSubmit()">열기</button>
       <div id="lkMsg"></div>
@@ -830,7 +830,7 @@ const HTML_PAGE = `<!doctype html>
     <div class="card" id="pfuGate">
       <div class="card-title">접근 키</div>
       <div style="font-size:12.5px; color:var(--text-muted); margin-bottom:8px;">이 사이트 주소는 공개라서 보유 내역은 키가 있어야 저장·조회됩니다. Cloudflare → 이 Worker → Settings → Variables and Secrets에 <b>PF_KEY</b>(12자 이상 무작위 문자열, Secret 형식)를 등록한 뒤 같은 값을 아래에 입력하세요.</div>
-      <div class="row"><input id="pfuKey" type="text" name="pf-access-code" placeholder="접근 키" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" style="flex:1; min-width:180px; -webkit-text-security: disc;" /><button onclick="pfuUnlock()">열기</button></div>
+      <div class="row"><input id="pfuKey" type="text" lang="en" inputmode="text" name="pf-access-code" placeholder="접근 키" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" style="flex:1; min-width:180px; -webkit-text-security: disc;" /><button onclick="pfuUnlock()">열기</button></div>
       <div id="pfuGateMsg" class="meta-line"></div>
     </div>
     <div id="pfuMain" style="display:none;">
@@ -1097,10 +1097,13 @@ const HTML_PAGE = `<!doctype html>
     window.addEventListener('unhandledrejection', (e) => showGlobalError('처리되지 않은 오류: ' + (e.reason && e.reason.message ? e.reason.message : e.reason)));
 
     // ===== 접근 키 보관 · 잠금 화면 · 모든 /api 호출에 키 자동 첨부 =====
+    // 키는 영문·숫자·기호(ASCII)만 가능하다. 태블릿 키보드가 한글/전각 문자·보이지 않는 문자를 섞으면 전송 자체가 실패하므로 입력 단계에서 걸러 안내한다.
+    function keyClean(v) { return String(v == null ? '' : v).replace(/[\\u200B-\\u200D\\uFEFF\\s]/g, ''); }
+    function keyBad(k) { return /[^\\x21-\\x7e]/.test(k) ? '키에 한글·전각 문자 등 영문 키보드로 칠 수 없는 글자가 섞여 있습니다. 키보드를 영어로 바꾸고 다시 입력하세요(복사해 붙여넣는 경우 앞뒤 공백·특수 따옴표 확인).' : ''; }
     function keyGet() {
-      try { if (typeof PFU !== 'undefined' && PFU.key) return PFU.key; } catch (e) {}
-      try { const s = sessionStorage.getItem('pfKey'); if (s) return s; } catch (e) {}
-      try { const r = JSON.parse(localStorage.getItem('pfKeyR') || 'null'); if (r && r.k && r.exp > Date.now()) return r.k; if (r) localStorage.removeItem('pfKeyR'); } catch (e) {}
+      try { if (typeof PFU !== 'undefined' && PFU.key && !keyBad(PFU.key)) return PFU.key; } catch (e) {}
+      try { const s = sessionStorage.getItem('pfKey'); if (s && !keyBad(s)) return s; } catch (e) {}
+      try { const r = JSON.parse(localStorage.getItem('pfKeyR') || 'null'); if (r && r.k && !keyBad(r.k) && r.exp > Date.now()) return r.k; if (r) localStorage.removeItem('pfKeyR'); } catch (e) {}
       return '';
     }
     function keySave(k, remember) {
@@ -1140,8 +1143,9 @@ const HTML_PAGE = `<!doctype html>
     }
     function showLock(msg) { appLock(msg); }
     async function lockSubmit() {
-      const msg = document.getElementById('lkMsg'); const k = document.getElementById('lkKey').value.trim();
+      const msg = document.getElementById('lkMsg'); const k = keyClean(document.getElementById('lkKey').value);
       if (!k) { msg.textContent = '키를 입력하세요.'; return; }
+      if (keyBad(k)) { msg.style.color = ''; msg.textContent = keyBad(k); return; }
       msg.style.color = '#64748b'; msg.textContent = '확인 중...';
       try {
         const res = await _fetch0('/api/auth/status', { cache: 'no-store', headers: { 'x-pf-key': k } });
@@ -4377,8 +4381,9 @@ function renderAnalysis() {
 ${PF_CLIENT_FUNCS}
 const PFU = { key: '', st: null, panel: 'home', qc: {}, side: 'buy', emo: '', reason: '', q: null, inited: false };
 async function pfuUnlock() {
-  const k = document.getElementById('pfuKey').value.trim(); const g = document.getElementById('pfuGateMsg');
+  const k = keyClean(document.getElementById('pfuKey').value); const g = document.getElementById('pfuGateMsg');
   if (!k) { g.textContent = '키를 입력하세요.'; return; }
+  if (keyBad(k)) { g.style.color = '#dc2626'; g.textContent = keyBad(k); return; }
   PFU.key = k; g.textContent = '확인 중...';
   try {
     const r = await pfuApi('/api/pf/ping');
