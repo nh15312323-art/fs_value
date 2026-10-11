@@ -11,6 +11,7 @@ const code = [
   between('function addDaysStr(', '\n}\n') + '\n}\n',
   between('async function multiRowInsert(', '\n}\n') + '\n}\n',
   between('function pfAuthError(', 'const PF_STATUSES'),
+  between('const AUTH_MAX_FAILS', 'function appIconResponse'),
   'async function ensureMarketQueueColumns() {}',
   'async function fetchKrxPage(p) { calls.push(p); return krx(p); }',
   between('const UNIVERSE_LIMITS', 'async function runUniverseRefresh('),
