@@ -11,11 +11,18 @@ import { createRequire } from 'node:module';
 const require = createRequire('/opt/npm-tools/node_modules/');
 const { chromium } = require('playwright');
 
+const posts = [];
 const srv = http.createServer((q, r) => {
   if (q.url === '/') { r.setHeader('content-type','text/html;charset=utf-8'); return r.end(HTML_PAGE); }
   r.setHeader('content-type','application/json');
   if (q.url.startsWith('/api/stock/list')) return r.end(JSON.stringify({ stocks: [] }));
   if (q.url.startsWith('/api/db/companies')) return r.end(JSON.stringify({ companies: [] }));
+  if (q.url.startsWith('/api/market/config') && q.method === 'GET') return r.end(JSON.stringify({ cfg: { minTvEok: 15, minMcapEok: 500, custom: false }, defaults: {}, protected: false }));
+  if (q.url.startsWith('/api/market/config') && q.method === 'POST') { let b = ''; q.on('data', (c) => b += c); q.on('end', () => { posts.push(['cfg', JSON.parse(b)]); r.end(JSON.stringify({ ok: true })); }); return; }
+  if (q.url.startsWith('/api/market/preview?mode=known')) return r.end(JSON.stringify({ codes: ['000010'] }));
+  if (q.url.startsWith('/api/market/preview')) return r.end(JSON.stringify({ bas_dt: '20251010', page: 1, size: 250, total: 3, n: 3, pass: ['000010', '000020', '000030'], done: true }));
+  if (q.url.startsWith('/api/market/range') && q.method === 'GET') return r.end(JSON.stringify({ job: null }));
+  if (q.url.startsWith('/api/market/range') && q.method === 'POST') { let b = ''; q.on('data', (c) => b += c); q.on('end', () => { posts.push(['range', JSON.parse(b)]); r.end(JSON.stringify({ ok: true, job: { from: '20250106', to: '20250110', cur: '20250106', tradingDates: 0, skipped: 0, rows: 0, minTv: 1.5e9, minMcap: 5e10, budgetRows: 0, done: false } })); }); return; }
   if (q.url.startsWith('/api/market/funnel')) return r.end(JSON.stringify({ bas_dt: '20251010', all: 2700, tv_pass: 1300, stored: 778, min_tv_eok: 15, min_mcap_eok: 500 }));
   r.statusCode = 404; r.end('{}');
 }).listen(0);
@@ -48,5 +55,14 @@ ok('좁은 화면에서 주가 차트 높이 축소(250px)', await pg.evaluate((
 await pg.evaluate(() => showFunnel()); await pg.waitForTimeout(300);
 const fb = await pg.innerText('#funnelBox');
 ok('유니버스 깔때기: 단계별 종목 수와 제외 수, 하루 거래대금 기준 주의 문구', fb.includes('2,700') && fb.includes('1,300') && fb.includes('778') && fb.includes('제외 1,400개') && fb.includes('제외 522개') && fb.includes('하루'), fb);
+await pg.click('#tabBtnData'); await pg.waitForTimeout(400);
+ok('데이터 관리: 현재 저장 기준이 입력칸에 채워짐', (await pg.inputValue('#cfgTv')) === '15' && (await pg.inputValue('#cfgMc')) === '500' && (await pg.innerText('#cfgMsg')).includes('기본값'));
+await pg.fill('#cfgTv', '5'); await pg.fill('#cfgMc', '300'); await pg.click('button:has-text("이 기준이면 몇 종목")'); await pg.waitForTimeout(400);
+const pv = await pg.innerText('#cfgMsg');
+ok('미리보기: 통과 3개 중 신규 2개, 하루 150종목 기준 1일', pv.includes('통과 종목: 3개') && pv.includes('새로 받아야 할 종목: 2개') && pv.includes('약 1일'), pv);
+await pg.click('#tabData button:has-text("저장")'); await pg.waitForTimeout(300);
+ok('저장 요청 본문에 두 값 전달', posts.some((p) => p[0] === 'cfg' && p[1].min_tv_eok === '5' && p[1].min_mcap_eok === '300'));
+await pg.fill('#rgFrom', '2025-01-06'); await pg.fill('#rgTo', '2025-01-10'); await pg.click('button:has-text("수집 시작")'); await pg.waitForTimeout(300);
+ok('기간 수집 시작 요청과 진행 문구', posts.some((p) => p[0] === 'range' && p[1].from === '2025-01-06') && (await pg.innerText('#rgMsg')).includes('진행 중'), await pg.innerText('#rgMsg'));
 ok('콘솔/페이지 오류 없음', errs.length === 0, JSON.stringify(errs));
 await b.close(); srv.close(); console.log(fail ? '\n실패 ' + fail : '\n전부 통과'); process.exit(fail ? 1 : 0);

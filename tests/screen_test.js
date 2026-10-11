@@ -9,8 +9,9 @@ const code = [
   lineOf('const MARKET_MIN_TRADING_VALUE'), lineOf('const MARKET_MIN_MCAP'),
   between('const WEEKLY_SCREEN_UTC_DOW', 'let screenTablesReady'),
   'async function ensureScreenTables() {} async function ensureMarketQueueColumns() {}',
+  'const __cfg = { minTvEok: 15, minMcapEok: 500, minTv: 1.5e9, minMcap: 5e10 }; async function getUniverseCfg() { return __cfg; }',
   between('async function computeScreenLists', 'async function saveScreenLists'),
-  'return { computeScreenLists, zFromSqKey };',
+  'return { computeScreenLists, zFromSqKey, __cfg };',
 ].join('\n');
 const S = new Function(code)();
 
@@ -69,6 +70,13 @@ function mkEnv(nDays) {
   check('S1 52주 고가 대비 = 1.00(신고가)', x && Math.abs(x.hi52 - 1) < 1e-9, x && String(x.hi52));
   // S1(k=0) 종가 = 1000 + i. c21 = i=248 → 1248, c252 = i=269-252=17 → 1017
   check('S1 12-1 = 1248/1017 − 1', x && Math.abs(x.m121 - (1248 / 1017 - 1)) < 1e-9, x && String(x.m121));
+  // 저장 기준(설정)을 따르는지: 하한을 올리면 올려서 적용하고 안내, 지정이 없으면 설정값이 기본
+  S.__cfg.minTvEok = 60; S.__cfg.minTv = 6e9;
+  const r3 = await S.computeScreenLists({ DB: e2.DB }, { pcMcap: 0, pcTv: 0, minPrice: 0 });
+  check('거래대금 하한 설정(60억)을 기본으로 따름 + 평균 거래대금 미달 종목 제외', r3.meta.minTvEok === 60 && r3.meta.passed_floor < r2.meta.passed_floor, r3.meta.passed_floor + ' < ' + r2.meta.passed_floor);
+  const r4 = await S.computeScreenLists({ DB: e2.DB }, { pcMcap: 0, pcTv: 0, minPrice: 0, minTvEok: 20 });
+  check('설정보다 낮은 값을 직접 지정하면 설정값으로 올리고 안내', r4.meta.minTvEok === 60 && r4.meta.clamped.some((x) => x.indexOf('60억') >= 0));
+  check('Top N = 100으로 변경됨(meta.topN)', r2.meta.topN === 100);
   console.log(fail ? '\n실패 ' + fail + '건' : '\n전체 통과');
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });
