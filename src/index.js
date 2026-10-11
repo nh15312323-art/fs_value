@@ -621,7 +621,7 @@ const HTML_PAGE = `<!doctype html>
     <div class="card" id="pfuGate">
       <div class="card-title">접근 키</div>
       <div style="font-size:12.5px; color:var(--text-muted); margin-bottom:8px;">이 사이트 주소는 공개라서 보유 내역은 키가 있어야 저장·조회됩니다. Cloudflare → 이 Worker → Settings → Variables and Secrets에 <b>PF_KEY</b>(12자 이상 무작위 문자열, Secret 형식)를 등록한 뒤 같은 값을 아래에 입력하세요.</div>
-      <div class="row"><input id="pfuKey" type="password" placeholder="접근 키" autocomplete="off" style="flex:1; min-width:180px;" /><button onclick="pfuUnlock()">열기</button></div>
+      <div class="row"><input id="pfuKey" type="text" name="pf-access-code" placeholder="접근 키" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" style="flex:1; min-width:180px; -webkit-text-security: disc;" /><button onclick="pfuUnlock()">열기</button></div>
       <div id="pfuGateMsg" class="meta-line"></div>
     </div>
     <div id="pfuMain" style="display:none;">
