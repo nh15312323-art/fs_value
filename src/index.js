@@ -447,6 +447,7 @@ const HTML_PAGE = `<!doctype html>
         여기서 "2~N개월"은 <b>최근 1개월(21거래일)을 뺀</b> 구간이고, 원수익률이 아니라 순위를 쓰므로 급등주 몇 개가 점수를 왜곡하지 않습니다.<br />
         <b>6-1 모멘텀</b>: 21거래일 전 종가 ÷ 126거래일 전 종가 − 1 (최근 1개월을 건너뛴 6개월 모멘텀).<br />
         <b>12-1 모멘텀 · 52주 고가 대비</b>(참고 표시 전용, 점수·순위에는 반영하지 않음): 12-1 = 21거래일 전 종가 ÷ 252거래일 전 종가 − 1, 52주 고가 대비 = 기준일 종가 ÷ 최근 252거래일 최고 종가(1.00이면 신고가; George &amp; Hwang, 2004). 저장된 이력이 253거래일 미만이면 계산하지 않고 <b>"자료 부족"</b>으로 표시합니다(이력은 매일 하루씩 자동으로 늘어납니다). 하루 ±30%를 넘는 변동이 있었던 종목은 액면분할·병합 등으로 가격이 끊겼을 수 있어 두 값을 비우고 <b>"가격 불연속"</b>으로 표시합니다.<br />
+        <b>거래대금 Z 10D · 20D (관심도 목록)</b>: Z = (기준일 거래대금 − 직전 N거래일 평균) ÷ 표준편차(모집단, 기준일 제외). 시장의 <b>관심이 평소보다 얼마나 몰렸는지</b>만 보여주는 발견용 신호로, 가격 모멘텀·사업의 질·저평가와는 별개이며 복합점수·"겹친 목록" 수에 넣지 않았습니다. 거래대금 0인 날과 저장되지 않은 날은 관측에서 제외하고(0으로 채우지 않음), 유효 관측이 10D 5개·20D 10개 미만이거나 표준편차가 0이면 N/A입니다. 거래대금 15억 미만인 날은 저장되지 않으므로 평소 거래대금이 그 근처인 종목은 Z가 낮게 나옵니다(보수적).<br />
         <b>20·60·120일 수익률</b>: 단순 기간 수익률(최근 1개월 포함, 참고용). <b>RS</b>: (1+주식 수익률) ÷ (1+코스피 수익률). 1보다 크면 코스피를 이긴 것입니다.<br />
         <b>⚠ 단기 과열 표시</b>: 최근 1개월 수익률이 후보 종목 중 <b>상위 5%</b>이면 붙입니다(필터 아님). 고정 %가 아니라 순위라서 장세(강세·약세)에 따라 기준이 자동으로 달라집니다. 5%는 관행적 값이며 학술적으로 검증된 임계값이 아닙니다.<br />
         <b>왜 최근 1개월을 건너뛰나요?</b> 3~12개월 수익률이 높은 종목이 이후에도 초과수익을 낸다는 중기 모멘텀(Jegadeesh &amp; Titman, 1993)과 달리, 직전 1개월 수익률은 오히려 반대로 되돌려지는 경향(단기 반전, Jegadeesh 1990; Lehmann 1990)이 있어 순위에서 뺍니다.<br />
@@ -3642,7 +3643,7 @@ function renderAnalysis() {
       }
     }
 
-    // ===== 모멘텀 스크리닝 화면 (8가지 Top 50) =====
+    // ===== 모멘텀 스크리닝 화면 (모멘텀 8 + 관심도 2 = 10가지 Top 50) =====
     const SCREEN_LISTS = [
       { key: 'rw', label: '복합 점수(권장)', desc: '「2~3개월」과 「2~6개월」 수익률(최근 1개월 제외)을 후보 안에서의 퍼센타일 순위로 바꿔 가중평균한 점수(0~100)입니다. 극단적인 급등주에 덜 흔들리고 1개월 단기반전을 피합니다.' },
       { key: 'm16', label: '6-1 모멘텀', desc: '21거래일 전 종가 ÷ 126거래일 전 종가 − 1. 최근 1개월을 건너뛴 6개월 모멘텀(Jegadeesh & Titman 1993의 형태).' },
@@ -3651,6 +3652,8 @@ function renderAnalysis() {
       { key: 'rs1', label: 'RS 1개월(반전 주의)', desc: '1개월 수익률은 단기 반전(되돌림) 경향이 있어 단독으로 쓰기엔 위험합니다. 과열 여부를 보는 참고용입니다.' },
       { key: 'r120', label: '120일 수익률', desc: '기준일 종가 ÷ 120거래일 전 종가 − 1. 최근 1개월 포함(참고용).' },
       { key: 'r60', label: '60일 수익률', desc: '기준일 종가 ÷ 60거래일 전 종가 − 1. 최근 1개월 포함(참고용).' },
+      { key: 'z10', attn: true, label: '거래대금 Z 10D (관심도)', desc: '기준일 거래대금이 직전 10거래일(기준일 제외) 평균보다 표준편차의 몇 배 높은가. 관심도·발견용 신호이며 사업의 질이나 저평가를 뜻하지 않습니다(거래대금 급증은 뉴스·테마·작전성 매매일 수도 있음). 거래대금 0인 날과 저장 안 된 날은 관측에서 제외하고 유효 관측이 5개 미만이면 N/A입니다.' },
+      { key: 'z20', attn: true, label: '거래대금 Z 20D (관심도)', desc: '위와 같되 직전 20거래일 기준. 유효 관측이 10개 미만이면 N/A입니다. 이 앱은 유동성 하한(거래대금 15억) 미만인 날을 저장하지 않으므로, 평소 거래대금이 하한 근처인 종목은 평균이 실제보다 높게 잡혀 Z가 낮게(보수적으로) 나옵니다.' },
       { key: 'r20', label: '20일 수익률', desc: '기준일 종가 ÷ 20거래일 전 종가 − 1. 단기 급등 종목이 많이 섞이며 반전 위험이 가장 큽니다(참고용).' }
     ];
     const SCREEN_PRESETS = { std: [20, 20, 1000], large: [50, 50, 1000], small: [0, 0, 1000] };
@@ -3754,12 +3757,12 @@ function renderAnalysis() {
       document.getElementById('screenDesc').textContent = curL ? curL.desc : '';
 
       const overlap = {};
-      SCREEN_LISTS.forEach((L) => { (lists[L.key] || []).forEach((r) => { overlap[r.stock_code] = (overlap[r.stock_code] || 0) + 1; }); });
+      SCREEN_LISTS.forEach((L) => { if (L.attn) return; (lists[L.key] || []).forEach((r) => { overlap[r.stock_code] = (overlap[r.stock_code] || 0) + 1; }); });
       const kc = (col, extra) => ((screenTab === col ? 'sc-key ' : '') + (extra || '')).trim();
       const fh = (n, t) => '<th class="f f' + n + '">' + t + '</th>';
       const head = '<tr>' + fh(1, '순위') + fh(2, '종목') + fh(3, '현재가') + fh(4, '시총(억)') + fh(5, '20일평균<br />거래대금(억)') + fh(6, '영업이익(억)') +
         '<th>1개월</th><th class="' + kc('r20') + '">20일</th><th class="' + kc('r60') + '">60일</th><th class="' + kc('r120') + '">120일</th><th class="' + kc('rw') + '">복합점수</th>' +
-        '<th class="' + kc('m16') + '">6-1</th><th class="' + kc('rs1') + '">RS 1M</th><th class="' + kc('rs3') + '">RS 3M</th><th class="' + kc('rs6') + '">RS 6M</th><th title="21거래일 전 ÷ 252거래일 전 − 1 (참고용)">12-1</th><th title="기준일 종가 ÷ 252거래일 최고 종가 (참고용)">52주 고가 대비</th><th>겹친 목록</th></tr>';
+        '<th class="' + kc('m16') + '">6-1</th><th class="' + kc('rs1') + '">RS 1M</th><th class="' + kc('rs3') + '">RS 3M</th><th class="' + kc('rs6') + '">RS 6M</th><th class="' + kc('z10') + '" title="거래대금 Z-점수 10일(관심도)">Z10</th><th class="' + kc('z20') + '" title="거래대금 Z-점수 20일(관심도)">Z20</th><th title="21거래일 전 ÷ 252거래일 전 − 1 (참고용)">12-1</th><th title="기준일 종가 ÷ 252거래일 최고 종가 (참고용)">52주 고가 대비</th><th>겹친 목록</th></tr>';
       const rows = lists[screenTab] || [];
       const body = rows.map((r, i) => {
         let opCell;
@@ -3781,11 +3784,11 @@ function renderAnalysis() {
         return '<tr><td class="f f1">' + (i + 1) + '</td>' +
           '<td class="f f2"><a href="javascript:void(0)" onclick="goAnalyzeCode(&quot;' + r.stock_code + '&quot;)" title="클릭하면 종목분석으로 이동" style="color:var(--primary-dark); font-weight:700; text-decoration:none;">' + escHtml(r.corp_name) + '</a>' + hot + '<br /><span style="color:var(--text-muted); font-size:11px;">' + r.stock_code + '</span></td>' +
           '<td class="f f3">' + sN(r.c0) + '</td><td class="f f4">' + sN(r.mcapEok) + '</td><td class="f f5">' + sN(r.tvEok) + '</td>' + opCell +
-          ret(r.r21, 'r21') + ret(r.r20, 'r20') + ret(r.r60, 'r60') + ret(r.r120, 'r120') + comp + ret(r.m16, 'm16') + rs(r.rs1, 'rs1') + rs(r.rs3, 'rs3') + rs(r.rs6, 'rs6') + extraCells(r) +
-          sCell(overlap[r.stock_code] + '/' + SCREEN_LISTS.length, overlap[r.stock_code] >= 4 ? 'sc-good' : '') + '</tr>';
+          ret(r.r21, 'r21') + ret(r.r20, 'r20') + ret(r.r60, 'r60') + ret(r.r120, 'r120') + comp + ret(r.m16, 'm16') + rs(r.rs1, 'rs1') + rs(r.rs3, 'rs3') + rs(r.rs6, 'rs6') + sCell(r.z10 == null ? 'N/A' : sX(r.z10, 1), kc('z10')) + sCell(r.z20 == null ? 'N/A' : sX(r.z20, 1), kc('z20')) + extraCells(r) +
+          sCell((overlap[r.stock_code] || 0) + '/' + SCREEN_LISTS.filter((L) => !L.attn).length, overlap[r.stock_code] >= 4 ? 'sc-good' : '') + '</tr>';
       }).join('');
       const wrap = document.getElementById('screenWrap');
-      wrap.innerHTML = '<table class="scr" style="width:max-content; min-width:100%;"><thead>' + head + '</thead><tbody>' + (body || '<tr><td colspan="18">조건에 맞는 종목이 없습니다(가격 이력이 부족하거나 조건이 너무 엄격할 수 있습니다).</td></tr>') + '</tbody></table>';
+      wrap.innerHTML = '<table class="scr" style="width:max-content; min-width:100%;"><thead>' + head + '</thead><tbody>' + (body || '<tr><td colspan="20">조건에 맞는 종목이 없습니다(가격 이력이 부족하거나 조건이 너무 엄격할 수 있습니다).</td></tr>') + '</tbody></table>';
       wrap.style.display = '';
     }
 
@@ -3850,7 +3853,7 @@ function renderAnalysis() {
 
     function downloadScreenCsv() {
       if (!screenData) { alert('먼저 결과를 불러와주세요.'); return; }
-      const cols = ['목록', '순위', '종목명', '종목코드', '현재가', '시가총액(억원)', '20일평균거래대금(억원)', '영업이익(억원)', '영업이익연도', '영업이익출처', '1개월', '20일', '60일', '120일', '복합점수(0~100)', '6-1', 'RS1개월', 'RS3개월', 'RS6개월', '12-1(참고)', '52주고가대비(참고)'];
+      const cols = ['목록', '순위', '종목명', '종목코드', '현재가', '시가총액(억원)', '20일평균거래대금(억원)', '영업이익(억원)', '영업이익연도', '영업이익출처', '1개월', '20일', '60일', '120일', '복합점수(0~100)', '6-1', 'RS1개월', 'RS3개월', 'RS6개월', 'Z10(거래대금)', 'Z20(거래대금)', '12-1(참고)', '52주고가대비(참고)'];
       const n = (v, d) => (v == null ? '' : Number(v).toFixed(d == null ? 4 : d));
       const newFmt = !!((screenData.meta || {}).weights && screenData.meta.weights.w3 != null);
       const lines = [cols.join(',')];
@@ -3859,7 +3862,7 @@ function renderAnalysis() {
         (lists[L.key] || []).forEach((r, i) => {
           const o = r.op || {};
           lines.push(['"' + L.label + '"', i + 1, '"' + String(r.corp_name).split('"').join('""') + '"', r.stock_code, n(r.c0, 0), n(r.mcapEok, 0), n(r.tvEok, 1), n(o.v, 1), o.year || '', o.src || '',
-            n(r.r21), n(r.r20), n(r.r60), n(r.r120), newFmt ? n(r.rw == null ? null : r.rw * 100, 1) : n(r.rw), n(r.m16), n(r.rs1), n(r.rs3), n(r.rs6), n(r.m121), n(r.hi52, 3)].join(','));
+            n(r.r21), n(r.r20), n(r.r60), n(r.r120), newFmt ? n(r.rw == null ? null : r.rw * 100, 1) : n(r.rw), n(r.m16), n(r.rs1), n(r.rs3), n(r.rs6), n(r.z10, 2), n(r.z20, 2), n(r.m121), n(r.hi52, 3)].join(','));
         });
       });
       const bom = String.fromCharCode(0xFEFF);
@@ -6184,7 +6187,12 @@ function screenExtraMetric(x, c0) {
   const hi = Math.max(x.hi, c0);
   return { m121: x.c21 / x.c252 - 1, hi52: c0 / hi, extra: "ok" };
 }
-const SCREEN_LIST_KEYS = ["r20", "r60", "r120", "rw", "m16", "rs1", "rs3", "rs6"];
+// 거래대금 Z-점수(관심도): 기준일 거래대금이 직전 N거래일(기준일 제외) 평균보다 표준편차의 몇 배 높은가. 단, 거래대금 0인 날과 저장 안 된 날은 관측에서 제외.
+// D1 SQLite에서 SQRT 사용 가능 여부가 불확실해, SQL은 순위용 "부호 있는 제곱 z" = 편차×|편차|÷분산 을 내고(z와 순서가 같음) 실제 z는 여기서 복원한다.
+const SCREEN_Z10_MIN_OBS = 5;
+const SCREEN_Z20_MIN_OBS = 10;
+function zFromSqKey(k) { return k == null || !Number.isFinite(k) ? null : (k < 0 ? -1 : 1) * Math.sqrt(Math.abs(k)); }
+const SCREEN_LIST_KEYS = ["r20", "r60", "r120", "rw", "m16", "rs1", "rs3", "rs6", "z10", "z20"];
 let screenTablesReady = false;
 
 async function ensureScreenTables(db) {
@@ -6425,8 +6433,19 @@ async function computeScreenLists(env, opts) {
     "), a AS MATERIALIZED (" +
     " SELECT stock_code AS sc, SUM(trading_value) / " + SCREEN_AVG_DAYS + ".0 AS atv, MAX(CASE WHEN market_date = ?1 THEN trading_value END) AS tv1" +
     " FROM market_raw_daily WHERE market_date BETWEEN ?16 AND ?1 GROUP BY stock_code" +
+    "), z AS MATERIALIZED (" +
+    // 단위 억원. 직전 10/20거래일(기준일 제외) 거래대금의 합·제곱합·관측 수 (모집단 표준편차, ddof=0)
+    " SELECT stock_code AS sc," +
+    "  COUNT(CASE WHEN market_date >= ?19 THEN 1 END) AS n10, SUM(CASE WHEN market_date >= ?19 THEN trading_value / 1e8 END) AS s10," +
+    "  SUM(CASE WHEN market_date >= ?19 THEN (trading_value / 1e8) * (trading_value / 1e8) END) AS q10," +
+    "  COUNT(*) AS n20, SUM(trading_value / 1e8) AS s20, SUM((trading_value / 1e8) * (trading_value / 1e8)) AS q20" +
+    " FROM market_raw_daily WHERE market_date BETWEEN ?20 AND ?21 AND trading_value > 0 GROUP BY stock_code" +
     "), n AS MATERIALIZED (" +
     " SELECT m.*, a.atv AS atv, a.tv1 AS tv1, u.corp_name AS nm," +
+    "  CASE WHEN z.n10 >= " + SCREEN_Z10_MIN_OBS + " AND a.tv1 > 0 AND z.q10 / z.n10 - (z.s10 / z.n10) * (z.s10 / z.n10) > 1e-9" +
+    "   THEN (a.tv1 / 1e8 - z.s10 / z.n10) * ABS(a.tv1 / 1e8 - z.s10 / z.n10) / (z.q10 / z.n10 - (z.s10 / z.n10) * (z.s10 / z.n10)) END AS z10," +
+    "  CASE WHEN z.n20 >= " + SCREEN_Z20_MIN_OBS + " AND a.tv1 > 0 AND z.q20 / z.n20 - (z.s20 / z.n20) * (z.s20 / z.n20) > 1e-9" +
+    "   THEN (a.tv1 / 1e8 - z.s20 / z.n20) * ABS(a.tv1 / 1e8 - z.s20 / z.n20) / (z.q20 / z.n20 - (z.s20 / z.n20) * (z.s20 / z.n20)) END AS z20," +
     "  c0 * 1.0 / NULLIF(c20, 0) - 1 AS r20," +
     "  c0 * 1.0 / NULLIF(c60, 0) - 1 AS r60," +
     "  c0 * 1.0 / NULLIF(c120, 0) - 1 AS r120," +
@@ -6436,7 +6455,7 @@ async function computeScreenLists(env, opts) {
     "  CASE WHEN c21 > 0 THEN (c0 * 1.0 / c21) / ?14 END AS rs1," +
     "  CASE WHEN c63 > 0 THEN (c0 * 1.0 / c63) / ?12 END AS rs3," +
     "  CASE WHEN c126 > 0 THEN (c0 * 1.0 / c126) / ?13 END AS rs6" +
-    " FROM m JOIN a ON a.sc = m.sc LEFT JOIN market_universe_status u ON u.stock_code = m.sc" +
+    " FROM m JOIN a ON a.sc = m.sc LEFT JOIN z ON z.sc = m.sc LEFT JOIN market_universe_status u ON u.stock_code = m.sc" +
     " WHERE a.atv >= ?8 AND substr(m.sc, -1) = '0'" +
     "  AND COALESCE(u.corp_name, '') NOT LIKE '%스팩%' AND COALESCE(u.corp_name, '') NOT LIKE '%기업인수목적%' AND COALESCE(u.corp_name, '') NOT LIKE '%리츠%'" +
     "), n2 AS MATERIALIZED (" +
@@ -6455,7 +6474,7 @@ async function computeScreenLists(env, opts) {
     " SELECT q.*, " + SCREEN_LIST_KEYS.map((key) => "CASE WHEN " + key + " IS NOT NULL THEN ROW_NUMBER() OVER (ORDER BY " + key + " DESC, sc) END AS rk_" + key).join(", ") + " FROM q" +
     ") SELECT * FROM k WHERE " + SCREEN_LIST_KEYS.map((key) => "rk_" + key + " <= " + SCREEN_TOP_N).join(" OR ");
   const { results: agg } = await env.DB.prepare(sql)
-    .bind(pts.d0, pts.d20, pts.d21, pts.d60, pts.d63, pts.d120, pts.d126, minTv * 1e8, minMcap * 1e8, nw.w3, nw.w6, k0 / k63, k0 / k126, k0 / k21, minPrice, cal[i0 + SCREEN_AVG_DAYS - 1], pcMcap / 100, pcTv / 100).all();
+    .bind(pts.d0, pts.d20, pts.d21, pts.d60, pts.d63, pts.d120, pts.d126, minTv * 1e8, minMcap * 1e8, nw.w3, nw.w6, k0 / k63, k0 / k126, k0 / k21, minPrice, cal[i0 + SCREEN_AVG_DAYS - 1], pcMcap / 100, pcTv / 100, cal[i0 + 10], cal[i0 + 20], cal[i0 + 1]).all();
   const passedN = agg.length ? agg[0].pass_n : 0;
   const cutMcEok = agg.length ? agg[0].cut_mc / 1e8 : null; // 통과 종목 중 최소값 = 실제 컷 금액
   const cutTvEok = agg.length ? agg[0].cut_tv / 1e8 : null;
@@ -6481,7 +6500,7 @@ async function computeScreenLists(env, opts) {
       .map((r) => ({
         stock_code: r.sc, corp_name: r.nm || r.sc, c0: r.c0,
         tvEok: r.atv / 1e8, tv1Eok: r.tv1 != null ? r.tv1 / 1e8 : null, mcapEok: r.mc / 1e8,
-        r20: r.r20, r60: r.r60, r120: r.r120, r21: r.r21, hot: r.p21 != null && r.p21 >= SCREEN_HOT_PCT ? 1 : 0, rw: r.rw, m16: r.m16, rs1: r.rs1, rs3: r.rs3, rs6: r.rs6,
+        r20: r.r20, r60: r.r60, r120: r.r120, r21: r.r21, hot: r.p21 != null && r.p21 >= SCREEN_HOT_PCT ? 1 : 0, rw: r.rw, m16: r.m16, rs1: r.rs1, rs3: r.rs3, rs6: r.rs6, z10: zFromSqKey(r.z10), z20: zFromSqKey(r.z20),
         ...extraOf(r),
       }));
   }
@@ -6500,7 +6519,7 @@ async function computeScreenLists(env, opts) {
     backfilled: bfRow ? bfRow.c : null,
     asof: pts.d0, computed_at: new Date().toISOString(), points: pts, kospi,
     minMcapEok: minMcap, minTvEok: minTv, pcMcap, pcTv, hotPct: SCREEN_HOT_PCT, cutMcEok, cutTvEok, minPrice, weights: nw, clamped, avgDays: SCREEN_AVG_DAYS,
-    mom, asof_rows: meta0 ? meta0.total : null, no_mcap: meta0 ? meta0.nomc : null, passed_floor: passedN,
+    mom, zMinObs: { z10: SCREEN_Z10_MIN_OBS, z20: SCREEN_Z20_MIN_OBS }, asof_rows: meta0 ? meta0.total : null, no_mcap: meta0 ? meta0.nomc : null, passed_floor: passedN,
   };
   return { meta, lists };
 }
