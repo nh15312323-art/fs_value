@@ -70,3 +70,9 @@ ALTER TABLE financial_raw ADD COLUMN price_at_period_end REAL;
 -- 5단계 추가분 v7: 공시시점 EPS(TTM), EPS 성장률(YoY) — PER/PEG 계산의 분자/분모 확인용
 ALTER TABLE financial_raw ADD COLUMN eps_at_filing REAL;
 ALTER TABLE financial_raw ADD COLUMN eps_growth_at_filing REAL;
+
+-- 백테스트용: 공시일 "다음 거래일" 종가와 그 날짜 (공시 당일 종가는 공시 전 정보가 섞일 수 있어 매매가로 쓰지 않음)
+-- price_next_day_date: 날짜(YYYYMMDD), 시세가 없어 못 채운 행은 'none'(거래정지·상장폐지 등) 또는 'nodata'(시세 응답 없음)
+-- 코드가 자동으로 추가하지만(ensureFinancialColumns) 직접 적용하려면 아래 두 줄을 실행하세요.
+ALTER TABLE financial_raw ADD COLUMN price_next_day REAL;
+ALTER TABLE financial_raw ADD COLUMN price_next_day_date TEXT;
