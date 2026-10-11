@@ -16,9 +16,11 @@ let client = unescapeTpl(between('function toQuarterlyRows(rows) {', 'function t
 const annualSrc = unescapeTpl(between('function btBuildAnnual(keys, o) {', '// 분기 모멘텀:'));
 const lineOf = (prefix) => { const l = text.split('\n').find((x) => x.startsWith(prefix)); if (!l) throw new Error('소스에서 줄을 찾지 못했습니다: ' + prefix); return l; };
 const fcfSrc = between('function anFcfType(c) {', '// ---------- 전체 컨텍스트');
+const screenExtra = between('const SCREEN_MOM_DAYS', 'const SCREEN_LIST_KEYS');
 const fiscalClient = unescapeTpl(between('function btSplitFiscal(comps) {', 'async function checkFiscalMonths'));
 const code = [
-  keys, server, nextDay, fiscalClient, // server 구간에 결산월 함수(parseAccMt·fiscalSkipDates 등)가 이미 포함됨
+  screenExtra,
+  keys, server, nextDay, fiscalClient, // server 구간에 결산월 함수가 이미 포함됨
   [lineOf('const AN_TH ='), lineOf('const anFin ='), lineOf('const anDiv ='), lineOf('const anPct ='), lineOf('const anMean ='), lineOf('const anWin ='), 'const anFmt = (k, v) => String(v);'].join('\n'),
   fcfSrc,
   'const FLOW_KEYS_ = FLOW_KEYS; const CF_CUM_KEYS = CF_CUMULATIVE_KEYS; const isUsable = (r) => !r.error && r.fs_div != null;',
@@ -27,7 +29,7 @@ const code = [
   'const anBuildSeries = (rows) => { const ys = rows.filter((r) => r.reprt_code === "11011").map((r) => Number(r.bsns_year)); return ys.length ? [{ year: Math.max(...ys) }] : []; };',
   'const BT_FACTORS = { f: { fn: () => 1 } }; const btRankAvg = (a) => a.map((_, i) => i / a.length);',
   annualSrc,
-  'return { getTTMFlow, getIsolatedQ4, toQuarterlyRows, firstCloseAfter, btBuildAnnual, anFcfType, parseAccMt, fiscalSkipDates, btSplitFiscal, fiscalBanner, setStocks: (s) => { BT.stocks = s; }, getBT: () => BT };',
+  'return { SCREEN_EXTRA_SQL, SCREEN_JUMP_LIMIT, screenExtraMetric, getTTMFlow, getIsolatedQ4, toQuarterlyRows, firstCloseAfter, btBuildAnnual, anFcfType, parseAccMt, fiscalSkipDates, btSplitFiscal, fiscalBanner, setStocks: (s) => { BT.stocks = s; }, getBT: () => BT };',
 ].join('\n');
 const T = new Function(code)();
 
@@ -103,6 +105,30 @@ for (const y of [2024, 2025]) {
   check('FCF 연도 부족(2개) → 판정 보류, 유형 없음', thin.types.length === 0 && thin.head.text.includes('판정 보류'), thin.head.text);
   const nocx = T.anFcfType(mkc([pt(2021, 100, null, 1000), pt(2022, 110, null, 1100), pt(2023, 125, null, 1200), pt(2024, 140, null, 1300), pt(2025, 160, null, 1400)]));
   check('CAPEX 미확인(FCF 없음)이면 흑자로 가정하지 않고 판정 보류', nocx.types.length === 0 && nocx.nF === 0, nocx.head.text);
+  // ⑤ 12-1 모멘텀·52주 고가 근접도 (SQL은 node:sqlite로 실제 실행)
+  const { DatabaseSync } = require('node:sqlite');
+  const sdb = new DatabaseSync(':memory:');
+  sdb.exec('CREATE TABLE market_raw_daily (market_date TEXT, stock_code TEXT, close_price REAL, PRIMARY KEY (market_date, stock_code))');
+  const days = []; for (let i = 0; i < 260; i++) days.push(String(20250101 + i)); // 임의의 오름차순 날짜 260개(달력 날짜 형식은 무관)
+  const insP = sdb.prepare('INSERT INTO market_raw_daily VALUES (?,?,?)');
+  days.forEach((d, i) => {
+    insP.run(d, 'A0', 100 + i);                         // 꾸준한 상승: 마지막이 신고가
+    insP.run(d, 'B0', i < 130 ? 200 : 100);              // 하루에 -50% (분할 의심)
+    if (i >= 100) insP.run(d, 'C0', 100);               // 이력 짧음(160일)
+    insP.run(d, 'D0', i === 200 ? 300 : 200);           // 고점 후 되돌림(+50% 후 -33%): 둘 다 30% 초과 → 불연속
+    insP.run(d, 'E0', i <= 150 ? 100 + i : 250 - (i - 150) * 0.2); // 150일째 정점 후 완만한 하락(일변동 <30%)
+  });
+  const dStart = days[0], dEnd = days[days.length - 1], d21 = days[days.length - 1 - 21];
+  const exm = {}; sdb.prepare(T.SCREEN_EXTRA_SQL.replace(/\?(\d)/g, '?$1')).all(dStart, dEnd, d21, T.SCREEN_JUMP_LIMIT).forEach((r) => { exm[r.sc] = r; });
+  const last = (code) => sdb.prepare('SELECT close_price FROM market_raw_daily WHERE stock_code=? AND market_date=?').get(code, dEnd).close_price;
+  const mA = T.screenExtraMetric(exm.A0, last('A0'));
+  check('A: 12-1 = c21/c252-1, 신고가면 근접도 1.00', mA.extra === 'ok' && near(mA.m121, (100 + 259 - 21) / 100 - 1) && near(mA.hi52, 1), JSON.stringify(mA));
+  check('B: 하루 -50% → 가격 불연속, 값 null(분할 가능성)', T.screenExtraMetric(exm.B0, last('B0')).extra === 'jump' && T.screenExtraMetric(exm.B0, last('B0')).m121 === null);
+  check('C: 이력 160일 → 자료 부족, 값 null(채우지 않음)', T.screenExtraMetric(exm.C0, last('C0')).extra === 'short' && T.screenExtraMetric(exm.C0, last('C0')).hi52 === null);
+  check('D: 일시 급등락(±30% 초과) → 불연속', T.screenExtraMetric(exm.D0, last('D0')).extra === 'jump');
+  const mE = T.screenExtraMetric(exm.E0, last('E0'));
+  check('E: 완만한 하락 → 고가 대비 < 1, 불연속 아님', mE.extra === 'ok' && mE.hi52 < 1 && near(mE.hi52, last('E0') / 250), JSON.stringify(mE));
+  check('종목 자체가 없으면 nodata', T.screenExtraMetric(undefined, 100).extra === 'nodata');
   // ⑤ 결산월
   check('결산월 파싱: "12" / "03" / 3', T.parseAccMt({ status: '000', acc_mt: '12' }) === 12 && T.parseAccMt({ status: '000', acc_mt: '03' }) === 3 && T.parseAccMt({ status: '000', acc_mt: 3 }) === 3);
   check('결산월 파싱: 오류 응답·범위 밖·누락은 null', T.parseAccMt({ status: '013' }) === null && T.parseAccMt({ status: '000', acc_mt: '13' }) === null && T.parseAccMt({ status: '000' }) === null && T.parseAccMt(null) === null);

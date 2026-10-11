@@ -446,12 +446,13 @@ const HTML_PAGE = `<!doctype html>
         <b>복합 점수(권장 목록)</b>: 「2~3개월 수익률」과 「2~6개월 수익률」을 각각 전체 후보 안에서의 <b>퍼센타일 순위</b>(0~1)로 바꾼 뒤 가중평균(기본 0.5:0.5, ×100 해서 점수로 표시)합니다.
         여기서 "2~N개월"은 <b>최근 1개월(21거래일)을 뺀</b> 구간이고, 원수익률이 아니라 순위를 쓰므로 급등주 몇 개가 점수를 왜곡하지 않습니다.<br />
         <b>6-1 모멘텀</b>: 21거래일 전 종가 ÷ 126거래일 전 종가 − 1 (최근 1개월을 건너뛴 6개월 모멘텀).<br />
+        <b>12-1 모멘텀 · 52주 고가 대비</b>(참고 표시 전용, 점수·순위에는 반영하지 않음): 12-1 = 21거래일 전 종가 ÷ 252거래일 전 종가 − 1, 52주 고가 대비 = 기준일 종가 ÷ 최근 252거래일 최고 종가(1.00이면 신고가; George &amp; Hwang, 2004). 저장된 이력이 253거래일 미만이면 계산하지 않고 <b>"자료 부족"</b>으로 표시합니다(이력은 매일 하루씩 자동으로 늘어납니다). 하루 ±30%를 넘는 변동이 있었던 종목은 액면분할·병합 등으로 가격이 끊겼을 수 있어 두 값을 비우고 <b>"가격 불연속"</b>으로 표시합니다.<br />
         <b>20·60·120일 수익률</b>: 단순 기간 수익률(최근 1개월 포함, 참고용). <b>RS</b>: (1+주식 수익률) ÷ (1+코스피 수익률). 1보다 크면 코스피를 이긴 것입니다.<br />
         <b>⚠ 단기 과열 표시</b>: 최근 1개월 수익률이 후보 종목 중 <b>상위 5%</b>이면 붙입니다(필터 아님). 고정 %가 아니라 순위라서 장세(강세·약세)에 따라 기준이 자동으로 달라집니다. 5%는 관행적 값이며 학술적으로 검증된 임계값이 아닙니다.<br />
         <b>왜 최근 1개월을 건너뛰나요?</b> 3~12개월 수익률이 높은 종목이 이후에도 초과수익을 낸다는 중기 모멘텀(Jegadeesh &amp; Titman, 1993)과 달리, 직전 1개월 수익률은 오히려 반대로 되돌려지는 경향(단기 반전, Jegadeesh 1990; Lehmann 1990)이 있어 순위에서 뺍니다.<br />
         <b>한계(꼭 읽어주세요)</b><br />
         ① 한국을 포함한 일부 아시아 시장은 중기 모멘텀 효과가 약하거나 불안정하다는 연구가 있습니다(예: Chui·Titman·Wei, 2010). 개인 투자자 비중이 커 단기 과열 후 반전도 흔합니다. 이 목록은 "후보를 좁히는 도구"이지 매수 신호가 아닙니다.<br />
-        ② 저장된 가격 이력은 약 6~7개월(126거래일 이상)이라 학계 표준인 12-1 모멘텀과 52주 신고가 근접도(George &amp; Hwang, 2004)는 계산하지 않습니다.<br />
+        ② 12-1 모멘텀·52주 고가 대비는 저장된 가격 이력이 253거래일 이상 쌓인 뒤부터 표시됩니다. 가격은 수정주가가 아니라 당시 종가라서 액면분할·유상증자 등이 있으면 왜곡될 수 있고(±30% 초과 변동 종목은 비움), 이 두 값이 한국 시장에서 초과수익을 낸다는 검증은 아직 하지 않았습니다(가설 단계).<br />
         ③ <b>시가총액·거래대금은 절대 금액이 아니라 "하위 20% 제외"</b>가 기본입니다. 국내 퀀트 투자 실무(예: 소형주 하위 20~30% 제외)에서 널리 쓰이는 방식이며, 시장 규모가 변해도 기준이 따라가는 장점이 있습니다. 순위는 이 앱이 저장한 종목(시총 500억·거래대금 15억 이상 보통주) 안에서 매기므로 전체 상장 종목 기준의 하위 20%보다 실제로는 더 엄격합니다. 어떤 비율이 "정답"이라는 학술적 증명은 없고(Hou·Xue·Zhang 2020: 이상현상 상당수가 초소형·저유동 종목에서 나와 이를 제외하면 재현성이 크게 떨어짐), 최소주가 1,000원은 호가단위 때문에 수익률이 왜곡되는 동전주를 거르는 실무 관행입니다. 프리셋: 표준 20% / 대형·고유동 50% / 중소형 포함 0%<br />
         ④ 공공데이터포털 시세는 기준일 다음 영업일 13시 이후에 올라오므로 기준일이 어제가 아닐 수 있습니다. 거래비용·증권거래세·배당은 반영하지 않으며, 이 순위의 과거 성과(백테스트)는 아직 검증하지 않았습니다.<br />
         ⑤ 영업이익은 공공데이터포털 기업재무정보(연결 우선)의 최근 사업연도 값이며, 없으면 DART로 저장한 값으로 대체합니다.
@@ -3758,7 +3759,7 @@ function renderAnalysis() {
       const fh = (n, t) => '<th class="f f' + n + '">' + t + '</th>';
       const head = '<tr>' + fh(1, '순위') + fh(2, '종목') + fh(3, '현재가') + fh(4, '시총(억)') + fh(5, '20일평균<br />거래대금(억)') + fh(6, '영업이익(억)') +
         '<th>1개월</th><th class="' + kc('r20') + '">20일</th><th class="' + kc('r60') + '">60일</th><th class="' + kc('r120') + '">120일</th><th class="' + kc('rw') + '">복합점수</th>' +
-        '<th class="' + kc('m16') + '">6-1</th><th class="' + kc('rs1') + '">RS 1M</th><th class="' + kc('rs3') + '">RS 3M</th><th class="' + kc('rs6') + '">RS 6M</th><th>겹친 목록</th></tr>';
+        '<th class="' + kc('m16') + '">6-1</th><th class="' + kc('rs1') + '">RS 1M</th><th class="' + kc('rs3') + '">RS 3M</th><th class="' + kc('rs6') + '">RS 6M</th><th title="21거래일 전 ÷ 252거래일 전 − 1 (참고용)">12-1</th><th title="기준일 종가 ÷ 252거래일 최고 종가 (참고용)">52주 고가 대비</th><th>겹친 목록</th></tr>';
       const rows = lists[screenTab] || [];
       const body = rows.map((r, i) => {
         let opCell;
@@ -3769,16 +3770,22 @@ function renderAnalysis() {
         }
         const ret = (v, col) => sCell(sP(v), kc(col, v != null && v > 0 ? 'sc-good' : (v != null && v < 0 ? 'sc-bad' : '')));
         const rs = (v, col) => sCell(sX(v, 3), kc(col, v != null && v > 1 ? 'sc-good' : (v != null && v < 1 ? 'sc-bad' : '')));
+        const extraCells = (x) => {
+          const why = x.extra === 'jump' ? '가격 불연속' : '자료 부족';
+          const tip = x.extra === 'jump' ? '하루 ±30% 초과 변동(액면분할·병합 등 의심)이 있어 계산하지 않음' : '저장된 가격 이력이 253거래일 미만이라 계산하지 않음';
+          if (x.m121 == null && x.hi52 == null) return '<td title="' + tip + '" style="color:var(--text-muted); font-size:11px;">' + why + '</td><td title="' + tip + '" style="color:var(--text-muted); font-size:11px;">' + why + '</td>';
+          return ret(x.m121, 'm121') + sCell(x.hi52 == null ? 'N/A' : x.hi52.toFixed(2), '');
+        };
         const hot = r.hot ? ' <span class="sc-warn" title="최근 1개월 수익률이 후보 중 상위 5%: 단기 과열·반전 위험">⚠</span>' : '';
         const comp = newFmt ? sCell(r.rw == null ? 'N/A' : (r.rw * 100).toFixed(1), kc('rw')) : ret(r.rw, 'rw');
         return '<tr><td class="f f1">' + (i + 1) + '</td>' +
           '<td class="f f2"><a href="javascript:void(0)" onclick="goAnalyzeCode(&quot;' + r.stock_code + '&quot;)" title="클릭하면 종목분석으로 이동" style="color:var(--primary-dark); font-weight:700; text-decoration:none;">' + escHtml(r.corp_name) + '</a>' + hot + '<br /><span style="color:var(--text-muted); font-size:11px;">' + r.stock_code + '</span></td>' +
           '<td class="f f3">' + sN(r.c0) + '</td><td class="f f4">' + sN(r.mcapEok) + '</td><td class="f f5">' + sN(r.tvEok) + '</td>' + opCell +
-          ret(r.r21, 'r21') + ret(r.r20, 'r20') + ret(r.r60, 'r60') + ret(r.r120, 'r120') + comp + ret(r.m16, 'm16') + rs(r.rs1, 'rs1') + rs(r.rs3, 'rs3') + rs(r.rs6, 'rs6') +
+          ret(r.r21, 'r21') + ret(r.r20, 'r20') + ret(r.r60, 'r60') + ret(r.r120, 'r120') + comp + ret(r.m16, 'm16') + rs(r.rs1, 'rs1') + rs(r.rs3, 'rs3') + rs(r.rs6, 'rs6') + extraCells(r) +
           sCell(overlap[r.stock_code] + '/' + SCREEN_LISTS.length, overlap[r.stock_code] >= 4 ? 'sc-good' : '') + '</tr>';
       }).join('');
       const wrap = document.getElementById('screenWrap');
-      wrap.innerHTML = '<table class="scr" style="width:max-content; min-width:100%;"><thead>' + head + '</thead><tbody>' + (body || '<tr><td colspan="16">조건에 맞는 종목이 없습니다(가격 이력이 부족하거나 조건이 너무 엄격할 수 있습니다).</td></tr>') + '</tbody></table>';
+      wrap.innerHTML = '<table class="scr" style="width:max-content; min-width:100%;"><thead>' + head + '</thead><tbody>' + (body || '<tr><td colspan="18">조건에 맞는 종목이 없습니다(가격 이력이 부족하거나 조건이 너무 엄격할 수 있습니다).</td></tr>') + '</tbody></table>';
       wrap.style.display = '';
     }
 
@@ -3843,7 +3850,7 @@ function renderAnalysis() {
 
     function downloadScreenCsv() {
       if (!screenData) { alert('먼저 결과를 불러와주세요.'); return; }
-      const cols = ['목록', '순위', '종목명', '종목코드', '현재가', '시가총액(억원)', '20일평균거래대금(억원)', '영업이익(억원)', '영업이익연도', '영업이익출처', '1개월', '20일', '60일', '120일', '복합점수(0~100)', '6-1', 'RS1개월', 'RS3개월', 'RS6개월'];
+      const cols = ['목록', '순위', '종목명', '종목코드', '현재가', '시가총액(억원)', '20일평균거래대금(억원)', '영업이익(억원)', '영업이익연도', '영업이익출처', '1개월', '20일', '60일', '120일', '복합점수(0~100)', '6-1', 'RS1개월', 'RS3개월', 'RS6개월', '12-1(참고)', '52주고가대비(참고)'];
       const n = (v, d) => (v == null ? '' : Number(v).toFixed(d == null ? 4 : d));
       const newFmt = !!((screenData.meta || {}).weights && screenData.meta.weights.w3 != null);
       const lines = [cols.join(',')];
@@ -3852,7 +3859,7 @@ function renderAnalysis() {
         (lists[L.key] || []).forEach((r, i) => {
           const o = r.op || {};
           lines.push(['"' + L.label + '"', i + 1, '"' + String(r.corp_name).split('"').join('""') + '"', r.stock_code, n(r.c0, 0), n(r.mcapEok, 0), n(r.tvEok, 1), n(o.v, 1), o.year || '', o.src || '',
-            n(r.r21), n(r.r20), n(r.r60), n(r.r120), newFmt ? n(r.rw == null ? null : r.rw * 100, 1) : n(r.rw), n(r.m16), n(r.rs1), n(r.rs3), n(r.rs6)].join(','));
+            n(r.r21), n(r.r20), n(r.r60), n(r.r120), newFmt ? n(r.rw == null ? null : r.rw * 100, 1) : n(r.rw), n(r.m16), n(r.rs1), n(r.rs3), n(r.rs6), n(r.m121), n(r.hi52, 3)].join(','));
         });
       });
       const bom = String.fromCharCode(0xFEFF);
@@ -6138,7 +6145,8 @@ async function handleRequest(request, env) {
 //  - 중기 모멘텀(3·6개월): Jegadeesh & Titman(1993). 최근 1개월(21거래일)은 건너뜀(단기 반전: Jegadeesh 1990, Lehmann 1990).
 //  - 종합점수: 3M·6M 건너뛴 수익률의 백분위 평균(가중치 기본 50:50). 유동성·시총·최저가 하한으로 소형 잡주를 제외.
 //  - 한국 시장은 모멘텀 효과가 약하거나 불안정하다는 보고가 있어 결과는 참고용(투자 권유 아님).
-//  - 보관 이력이 약 126거래일이라 12-1 모멘텀과 52주 신고가(George & Hwang 2004)는 계산하지 않음.
+//  - 12-1 모멘텀·52주 신고가 근접도(George & Hwang 2004)는 보관 이력이 253거래일 이상 쌓이면 "참고 지표"로만 표시한다(점수·순위에는 미반영).
+//    이력이 모자라면 계산하지 않고 null(화면: 자료 부족). 수정주가가 아니라 하루 ±30% 넘게 움직인 종목(액면분할·병합 등 의심)은 두 값 모두 null 처리.
 //  - 재무(밸류·퀄리티)는 Top50에 "함께 표시"해서 직접 판단(Asness·Moskowitz·Pedersen 2013, Novy-Marx 2013).
 // 무료 한도 설계: 계산은 SQL 한 번(읽기 약 수십만 행)으로 끝내고 결과(51행)만 저장한다. 평소 조회는 저장분만 읽는다.
 // ============================================================
@@ -6158,6 +6166,24 @@ const SCREEN_HOT_PCT = 0.95;         // ⚠ 과열 표시: 최근 1개월 수익
 const SCREEN_DEFAULT_MIN_PRICE = 1000; // 최소 주가(원). 동전주는 호가단위 때문에 수익률이 왜곡된다(호가 1틱이 수 %).
 const SCREEN_DEFAULT_WEIGHTS = { w3: 0.5, w6: 0.5 }; // 복합 점수: (2~3개월 수익률 순위) / (2~6개월 수익률 순위) 가중
 const SCREEN_AVG_DAYS = 20;
+const SCREEN_MOM_DAYS = 252;      // 12개월 ≈ 252거래일 (12-1 모멘텀·52주 고가 구간)
+const SCREEN_JUMP_LIMIT = 0.30;   // 하루 ±30% 초과 변동 = 가격제한폭 한계 → 액면분할·병합·증자 등 가격 불연속 의심
+const SCREEN_EXTRA_SQL =
+  "WITH w AS (SELECT stock_code AS sc, market_date AS d, close_price AS cp," +
+  " LAG(close_price) OVER (PARTITION BY stock_code ORDER BY market_date) AS pc" +
+  " FROM market_raw_daily WHERE market_date BETWEEN ?1 AND ?2 AND close_price > 0)" +
+  " SELECT sc, MAX(cp) AS hi, COUNT(*) AS n," +
+  " MAX(CASE WHEN d = ?1 THEN cp END) AS c252, MAX(CASE WHEN d = ?3 THEN cp END) AS c21," +
+  " MAX(CASE WHEN pc > 0 AND (cp / pc > 1 + ?4 OR cp / pc < 1 - ?4) THEN 1 ELSE 0 END) AS jump" +
+  " FROM w GROUP BY sc";
+// 순수 함수: 후보 한 종목의 12-1 모멘텀·52주 고가 근접도. 자료가 모자라거나 가격 불연속이 의심되면 null + 사유.
+function screenExtraMetric(x, c0) {
+  if (!x) return { m121: null, hi52: null, extra: "nodata" };
+  if (x.jump) return { m121: null, hi52: null, extra: "jump" };
+  if (!(x.c252 > 0) || !(x.c21 > 0) || !(x.hi > 0) || !(c0 > 0) || x.n < 200) return { m121: null, hi52: null, extra: "short" };
+  const hi = Math.max(x.hi, c0);
+  return { m121: x.c21 / x.c252 - 1, hi52: c0 / hi, extra: "ok" };
+}
 const SCREEN_LIST_KEYS = ["r20", "r60", "r120", "rw", "m16", "rs1", "rs3", "rs6"];
 let screenTablesReady = false;
 
@@ -6338,7 +6364,7 @@ async function computeScreenLists(env, opts) {
 
   // 1) 거래일 달력(코스피 일별 지수)
   const { results: calRows } = await env.DB
-    .prepare("SELECT market_date FROM market_index_daily WHERE idx_name = ? ORDER BY market_date DESC LIMIT 145")
+    .prepare("SELECT market_date FROM market_index_daily WHERE idx_name = ? ORDER BY market_date DESC LIMIT 270")
     .bind(KOSPI_NAME).all();
   const cal = calRows.map((r) => r.market_date);
   if (cal.length < 135) {
@@ -6434,6 +6460,18 @@ async function computeScreenLists(env, opts) {
   const cutMcEok = agg.length ? agg[0].cut_mc / 1e8 : null; // 통과 종목 중 최소값 = 실제 컷 금액
   const cutTvEok = agg.length ? agg[0].cut_tv / 1e8 : null;
 
+  // 4-2) 참고 지표(12-1 모멘텀, 52주 고가 근접도): 이력이 253거래일 이상일 때만 계산. 읽기 약 (252일 × 종목 수)행, 후보 목록 확정 후 1회.
+  const mom = { needDays: SCREEN_MOM_DAYS + 1, haveDays: cal.length - i0, ready: i0 + SCREEN_MOM_DAYS < cal.length, jumpExcluded: 0 };
+  const extraMap = new Map();
+  if (mom.ready) {
+    const dStart = cal[i0 + SCREEN_MOM_DAYS];
+    const { results: ex } = await env.DB.prepare(SCREEN_EXTRA_SQL).bind(dStart, pts.d0, pts.d21, SCREEN_JUMP_LIMIT).all();
+    for (const e of ex) extraMap.set(e.sc, e);
+  }
+  const extraOf = (r) => {
+    if (!mom.ready) return { m121: null, hi52: null, extra: "short" };
+    return screenExtraMetric(extraMap.get(r.sc), r.c0);
+  };
   const lists = {};
   for (const k of SCREEN_LIST_KEYS) lists[k] = [];
   for (const key of SCREEN_LIST_KEYS) {
@@ -6444,7 +6482,12 @@ async function computeScreenLists(env, opts) {
         stock_code: r.sc, corp_name: r.nm || r.sc, c0: r.c0,
         tvEok: r.atv / 1e8, tv1Eok: r.tv1 != null ? r.tv1 / 1e8 : null, mcapEok: r.mc / 1e8,
         r20: r.r20, r60: r.r60, r120: r.r120, r21: r.r21, hot: r.p21 != null && r.p21 >= SCREEN_HOT_PCT ? 1 : 0, rw: r.rw, m16: r.m16, rs1: r.rs1, rs3: r.rs3, rs6: r.rs6,
+        ...extraOf(r),
       }));
+  }
+  if (mom.ready) {
+    const seen = new Set();
+    for (const key of SCREEN_LIST_KEYS) for (const r of lists[key]) if (!seen.has(r.stock_code)) { seen.add(r.stock_code); if (r.extra === "jump") mom.jumpExcluded++; }
   }
 
   // 5) 참고 집계: 기준일 행 수, 시가총액 미수집 수, 조건 통과 수(기준일 행만 읽음 ≈ 1,300행)
@@ -6457,7 +6500,7 @@ async function computeScreenLists(env, opts) {
     backfilled: bfRow ? bfRow.c : null,
     asof: pts.d0, computed_at: new Date().toISOString(), points: pts, kospi,
     minMcapEok: minMcap, minTvEok: minTv, pcMcap, pcTv, hotPct: SCREEN_HOT_PCT, cutMcEok, cutTvEok, minPrice, weights: nw, clamped, avgDays: SCREEN_AVG_DAYS,
-    asof_rows: meta0 ? meta0.total : null, no_mcap: meta0 ? meta0.nomc : null, passed_floor: passedN,
+    mom, asof_rows: meta0 ? meta0.total : null, no_mcap: meta0 ? meta0.nomc : null, passed_floor: passedN,
   };
   return { meta, lists };
 }
