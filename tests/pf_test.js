@@ -3,7 +3,7 @@ const fs = require('fs'), path = require('path');
 const text = fs.readFileSync(path.join(__dirname, '..', 'src', 'index.js'), 'utf8');
 const a = text.indexOf('function pfLedger('), b = text.indexOf('export default {');
 if (a < 0 || b < 0) throw new Error('엔진 구간을 찾지 못했습니다');
-const E = new Function(text.slice(a, b) + '\nreturn { pfLedger, pfSummary, pfSizePosition, pfSplitTranches, pfTradeWarnings, pfBehavior };')();
+const E = new Function(text.slice(a, b) + '\nreturn { pfLedger, pfSummary, pfSizePosition, pfSplitTranches, pfTradeWarnings, pfBehavior, pfKelly };')();
 let fail = 0;
 const check = (n, ok, d) => { if (!ok) fail++; console.log((ok ? 'PASS' : 'FAIL') + '  ' + n + (d !== undefined ? '  ' + d : '')); };
 const near = (x, y, e) => x != null && Math.abs(x - y) < (e || 1e-6);
@@ -104,6 +104,23 @@ const bc = E.pfBehavior(E.pfLedger(bt), bt, [], 1000, now).compliance;
 check('계획 준수율: 매수 2건 중 계획 연결 50%, 경고 동반 50%, 물타기 1건', near(bc.planLinkedPct, 0.5) && near(bc.warnedPct, 0.5) && bc.avgdown === 1);
 const jm = E.pfBehavior(L2, [], [{ kind: '사후검토', process_score: 90, outcome_pct: -0.1 }, { kind: '사후검토', process_score: 40, outcome_pct: 0.2 }, { kind: '사후검토', process_score: 80, outcome_pct: 0.1 }], 1000, now).matrix;
 check('과정·결과 2×2: 좋은 과정+나쁜 결과 1, 나쁜 과정+좋은 결과 1, 좋은 과정+좋은 결과 1', jm.goodBad === 1 && jm.badGood === 1 && jm.goodGood === 1);
+
+
+// ⑧ 켈리 참고값(보조)
+const mk = (nW, wPct, nL, lPct) => [].concat(Array.from({ length: nW }, () => ({ pct: wPct })), Array.from({ length: nL }, () => ({ pct: lPct })));
+let K = E.pfKelly(mk(10, 0.1, 10, -0.1));
+check('켈리: 매도 30건 미만이면 계산하지 않고 사유 표시', K.enough === false && /표본 부족/.test(K.reason) && K.f === undefined);
+K = E.pfKelly(mk(28, 0.1, 3, -0.1));
+check('켈리: 손실 5건 미만이어도 계산하지 않음', K.enough === false);
+K = E.pfKelly(mk(26, 0.1, 24, -0.1));
+check('켈리: p=.52,W=L=10% → f=0.4, 1/2=0.2, 1/4=0.1', K.enough && near(K.f, 0.4, 1e-9) && near(K.half, 0.2, 1e-9) && near(K.quarter, 0.1, 1e-9), JSON.stringify([K.f, K.half, K.quarter]));
+check('켈리: 승률 ±1 표준오차에서 부호가 바뀌면 "불안정" 표시', K.fragile === true && K.fLow <= 0, K.fLow + '~' + K.fHigh);
+K = E.pfKelly(mk(15, 0.1, 25, -0.1));
+check('켈리: 기대값이 음수면 비중 0, edge=false', K.enough && K.edge === false && K.half === 0 && K.quarter === 0);
+K = E.pfKelly(mk(20, 0.2, 20, -0.1));
+check('켈리: 계산값이 100%를 넘으면 100%로 자르고 capped 표시(원값 2.5 보존)', K.capped === true && K.f === 1 && near(K.fRaw, 2.5, 1e-9) && near(K.quarter, 0.625, 1e-9));
+K = E.pfKelly(mk(20, 0.1, 18, -0.1).concat(Array.from({ length: 6 }, () => ({ pct: 0 }))));
+check('켈리: 본전(0%) 거래는 이익·손실 어느 쪽에도 넣지 않고 표본 수에는 포함', K.enough && K.n === 44 && K.nWin === 20 && K.nLose === 18);
 
 console.log(fail ? '\n실패 ' + fail + '건' : '\n전체 통과');
 process.exit(fail ? 1 : 0);

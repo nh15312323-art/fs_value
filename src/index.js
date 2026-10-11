@@ -145,7 +145,7 @@ const DB_COLUMNS = [
 ];
 
 // 계산 엔진 함수의 원문을 화면 스크립트에 그대로 넣어 서버와 같은 코드를 쓴다(복붙으로 두 벌이 어긋나는 것을 막음).
-const PF_CLIENT_FUNCS = [pfLedger, pfSummary, pfSizePosition, pfSplitTranches, pfTradeWarnings, pfBehavior].map((f) => f.toString()).join("\n");
+const PF_CLIENT_FUNCS = [pfLedger, pfSummary, pfSizePosition, pfSplitTranches, pfTradeWarnings, pfBehavior, pfKelly].map((f) => f.toString()).join("\n");
 const HTML_PAGE = `<!doctype html>
 <html lang="ko">
 <head>
@@ -814,7 +814,9 @@ const HTML_PAGE = `<!doctype html>
       <div class="row">
         <button class="primary" onclick="refreshMarketUniverse()">오늘자 시세 받기(유니버스 갱신)</button>
         <button onclick="checkMarketStatus()">진행 상황 새로고침</button>
+        <button onclick="showFunnel()">왜 이 종목 수인가? (유니버스 깔때기)</button>
       </div>
+      <div id="funnelBox" class="meta-line" style="white-space:pre-line;"></div>
       <div id="marketStatus" class="meta-line" style="white-space:pre-line;"></div>
     </div>
 
@@ -4294,6 +4296,16 @@ function pfuRenderBeh() {
   const emo = Object.keys(b.emotions).map(function (k) { return escHtml(k) + ' ' + b.emotions[k]; }).join(' · '); h += '<b>기록된 감정</b>: ' + (emo || '없음') + '<br/>';
   h += '<b>과정×결과 (사후검토 ' + b.matrixN + '건)</b>: 좋은 과정+좋은 결과 ' + m.goodGood + ' · 좋은 과정+나쁜 결과(운 나쁨 가능) ' + m.goodBad + ' · 나쁜 과정+좋은 결과(운 좋음 가능) ' + m.badGood + ' · 나쁜 과정+나쁜 결과 ' + m.badBad + '</div>';
   h += '<div class="meta-line">짧은 기간·적은 건수에서의 결과는 운과 실력을 구분하기 어렵습니다. 과정 점수 기준은 과정 점검 항목 70% 이상입니다(임의 기준).</div>';
+  const k = PFU.st.kelly;
+  h += '<div class="card-title" style="margin-top:14px;">켈리 참고값 (보조 — 수량을 정하는 도구가 아님)</div><div style="font-size:13px; line-height:1.7;">';
+  if (!k || !k.enough) h += escHtml(k && k.reason ? k.reason : '계산할 수 없습니다.') + ' 지금은 계산하지 않고, 위험 예산 방식(정책·수량 계산기)만 사용합니다.';
+  else {
+    h += '이익 비율 ' + pfuPct(k.p, 0) + ' · 평균 이익 ' + pfuPct(k.W) + ' · 평균 손실 ' + pfuPct(k.L) + ' (손익비 ' + k.payoff.toFixed(2) + ')<br/>';
+    if (!k.edge) h += '<b class="pf-neg">내 기록상 기대값이 0 이하입니다 → 켈리는 비중 0을 가리킵니다.</b> (기록된 방식이 앞으로도 이긴다는 근거가 없다는 뜻이며, 표본·기간에 따라 달라질 수 있습니다.)';
+    else h += '풀 켈리 <b>' + pfuPct(k.f) + '</b> · 1/2 켈리 ' + pfuPct(k.half) + ' · <b>1/4 켈리 ' + pfuPct(k.quarter) + '</b> (한 종목에 거는 비중의 이론값)<br/>승률이 ±1 표준오차 흔들리면 풀 켈리가 ' + pfuPct(k.fLow) + ' ~ ' + pfuPct(k.fHigh) + (k.fragile ? ' → <span class="pf-neg">추정이 매우 불안정합니다. 크게 믿지 마세요.</span>' : '');
+    h += '<br/>' + (k.capped ? '<span class="pf-neg">계산값이 100%를 넘어 100%로 잘랐습니다(손실을 작게 끊는 기록에서 흔히 나오며, 현물 계좌에선 의미가 없는 값).</span><br/>' : '') + '<span style="color:var(--text-muted); font-size:12px;">정책 최대 비중 ' + (PFU.st.policy ? PFU.st.policy.max_position_pct + '%' : '미설정') + '과 위험 예산 한도가 항상 우선입니다. 켈리는 장기 증가율 최대화 이론값이라 낙폭이 매우 큽니다(그래서 보통 1/2~1/4 배율). 보유기간이 다른 거래를 같은 베팅으로 보고, 거래가 독립적이며 앞으로도 같은 분포라고 가정한 단순화입니다.</span>';
+  }
+  h += '</div>';
   document.getElementById('pfuBeh').innerHTML = h;
 }
 async function pfuSaveJournal() {
@@ -4376,6 +4388,20 @@ async function pfuExport() {
       }
     }
 
+    async function showFunnel() {
+      const el = document.getElementById('funnelBox'); el.textContent = '조회 중...';
+      try {
+        const res = await fetch('/api/market/funnel'); const d = await res.json();
+        if (!res.ok) throw new Error(d.error || '조회 실패');
+        const a = d.all, t = d.tv_pass, st = d.stored;
+        el.textContent = '기준일 ' + d.bas_dt + ' (공공데이터 시세 기준)\\n' +
+          '① 그날 시세가 있는 전체 종목(우선주 등 포함): ' + sN(a) + '개\\n' +
+          '② 그중 그날 거래대금 ≥ ' + sN(d.min_tv_eok) + '억: ' + sN(t) + '개  (제외 ' + sN(a - t) + '개)\\n' +
+          '③ 그중 시가총액 ≥ ' + sN(d.min_mcap_eok) + '억이라 DB에 저장된 종목: ' + sN(st) + '개  (제외 ' + sN(t - st) + '개)\\n' +
+          '→ 스크리닝에서는 여기서 다시 보통주만, 그리고 화면의 시총·거래대금·주가 조건을 적용합니다.\\n' +
+          '※ 거래대금 기준은 「그날 하루」 값입니다. 조용한 날 거래가 적었던 종목은 그날 저장에서 빠져 이력에 구멍이 생길 수 있고(Z-점수가 N/A), 이 기준을 낮추면 종목은 늘지만 저장·수집 부담이 커집니다.';
+      } catch (e) { el.textContent = '오류: ' + e.message; }
+    }
     async function checkMarketStatus() {
       const el = document.getElementById('marketStatus');
       el.textContent = '확인 중...';
@@ -6807,6 +6833,32 @@ function pfBehavior(ledger, trades, journal, totalValue, nowMs) {
   };
 }
 
+
+// 켈리 참고값(보조). 내 매도 기록의 수익률(원가 대비)에서 승률·평균 이익·평균 손실을 추정해 계산한다.
+// f* = (p·W − q·L) / (W·L·(p+q))  (p=이익 비율, q=손실 비율, W=평균 이익률, L=평균 손실률; 본전은 중립). 한 번의 베팅에 거는 비중의 이론값.
+// 한계: 추정치가 불안정하다(승률이 조금만 달라져도 크게 변함). 거래가 서로 독립이고 앞으로도 같은 분포라는 가정, 보유기간이 다른 거래를 같은 베팅으로 보는 단순화가 들어 있다.
+// 그래서 표본이 충분할 때만 계산하고, 승률 ±1 표준오차 범위와 1/2·1/4 배율을 함께 보여 준다. 수량을 정하는 도구가 아니라 비교용 참고값이다.
+function pfKelly(sells) {
+  const s = (sells || []).filter((x) => x && x.pct != null && isFinite(x.pct));
+  const n = s.length, w = s.filter((x) => x.pct > 0), l = s.filter((x) => x.pct < 0);
+  const out = { n: n, nWin: w.length, nLose: l.length, minN: 30, minEach: 5, enough: false };
+  if (n < out.minN || w.length < out.minEach || l.length < out.minEach) { out.reason = "표본 부족: 매도 " + n + "건(이익 " + w.length + ", 손실 " + l.length + "). 매도 " + out.minN + "건 이상, 이익·손실 각 " + out.minEach + "건 이상이 필요합니다."; return out; }
+  const mean = (a) => a.reduce((t, x) => t + x, 0) / a.length;
+  const W = mean(w.map((x) => x.pct)), L = -mean(l.map((x) => x.pct));
+  const f = (p, q) => (p * W - q * L) / (W * L * (p + q));
+  const p = w.length / n, q = l.length / n, se = Math.sqrt(p * (1 - p) / n);
+  const cap = (v) => Math.min(1, v);
+  out.enough = true; out.p = p; out.q = q; out.W = W; out.L = L; out.payoff = W / L;
+  out.fRaw = f(p, q); out.capped = out.fRaw > 1; // 100% 초과는 레버리지(빌린 돈)를 뜻해 현물 계좌에선 의미가 없으므로 100%로 자른다
+  out.f = cap(out.fRaw);
+  const lowRaw = f(Math.max(0, p - se), Math.min(1, q + se)), highRaw = f(Math.min(1, p + se), Math.max(0, q - se));
+  out.fLow = Math.max(0, cap(lowRaw)); out.fHigh = Math.max(0, cap(highRaw));
+  out.edge = out.fRaw > 0;
+  out.half = out.edge ? cap(out.fRaw / 2) : 0; out.quarter = out.edge ? cap(out.fRaw / 4) : 0;
+  out.fragile = lowRaw <= 0 || highRaw > 2 * Math.max(out.fRaw, 0.0001); // 승률이 1 표준오차만 흔들려도 부호가 바뀌거나 값이 두 배가 되는가
+  return out;
+}
+
 // ============================================================
 // 내 계좌·매매 관리 — 서버(D1 + API). 모든 /api/pf/* 는 접근 키(PF_KEY, Cloudflare 비밀 변수)가 있어야 한다.
 // 이 사이트 주소는 공개라서 키 없이 개인 보유 내역을 저장·조회하게 두면 누구나 볼 수 있다 → 키가 설정되지 않았으면 모두 거부(기본 닫힘).
@@ -6864,7 +6916,7 @@ async function pfBuildState(env) {
   const today = todayStr();
   const summary = pfSummary(ledger, prices, policy || {}, sectors, today);
   const behavior = pfBehavior(ledger, tr, journal.map((j) => Object.assign({}, j)), summary.total, Date.now());
-  return { policy: policy || null, trades: tr.slice().reverse(), plans: plans, planVersions: planVersions, journal: journal, ledger: { cash: ledger.cash, realized: ledger.realized, fees: ledger.fees, deposits: ledger.deposits, errors: ledger.errors, positions: ledger.positions }, summary: summary, behavior: behavior, asof: new Date().toISOString(), heldWithoutPrice: held.filter((c) => !prices[c]) };
+  return { policy: policy || null, trades: tr.slice().reverse(), plans: plans, planVersions: planVersions, journal: journal, ledger: { cash: ledger.cash, realized: ledger.realized, fees: ledger.fees, deposits: ledger.deposits, errors: ledger.errors, positions: ledger.positions }, summary: summary, behavior: behavior, kelly: pfKelly(ledger.sells), asof: new Date().toISOString(), heldWithoutPrice: held.filter((c) => !prices[c]) };
 }
 async function handlePf(request, env, pathname, searchParams) {
   const bad = pfAuthError(request, env);
@@ -7334,6 +7386,20 @@ async function handleRequest(request, env) {
       // 이력 백필/상태 upsert)는 전부 Cron(scheduled())에서 몇 개씩 나눠 처리한다.
       const result = await runUniverseRefresh(env, searchParams.get("force") === "1");
       return Response.json(result);
+    }
+
+    // 유니버스 깔때기: 전체 상장 종목 중 어떤 단계에서 몇 종목이 빠지는지 보여 주는 읽기 전용 진단(API 3회 이내, 쓰기 없음)
+    if (pathname === "/api/market/funnel") {
+      if (!env.DATA_GO_KR_KEY) return Response.json({ error: "DATA_GO_KR_KEY 미설정" }, { status: 500 });
+      const lastRow = await env.DB.prepare("SELECT MAX(market_date) AS d FROM market_raw_daily").first();
+      const basDt = lastRow && lastRow.d;
+      if (!basDt) return Response.json({ error: "저장된 시세가 없습니다." }, { status: 404 });
+      const [allP, tvP, stored] = await Promise.all([
+        fetchKrxPage({ basDt: basDt, numOfRows: 1, pageNo: 1 }, env.DATA_GO_KR_KEY),
+        fetchKrxPage({ basDt: basDt, beginTrPrc: MARKET_MIN_TRADING_VALUE, numOfRows: 1, pageNo: 1 }, env.DATA_GO_KR_KEY),
+        env.DB.prepare("SELECT COUNT(*) AS c FROM market_raw_daily WHERE market_date = ?").bind(basDt).first(),
+      ]);
+      return Response.json({ bas_dt: basDt, all: allP.totalCount, tv_pass: tvP.totalCount, stored: stored ? stored.c : null, min_tv_eok: MARKET_MIN_TRADING_VALUE / 1e8, min_mcap_eok: MARKET_MIN_MCAP / 1e8 });
     }
 
     if (pathname === "/api/market/status") {

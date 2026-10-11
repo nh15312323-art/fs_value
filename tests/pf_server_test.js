@@ -65,6 +65,7 @@ async function call(method, p, body, key, env) {
   r = await call('GET', '/api/pf/state');
   const pos = r.data.ledger.positions.filter((x) => x.qty > 0)[0];
   check('상태: 보유 110주, 현재가 반영 비중 계산', pos && pos.qty === 110 && r.data.summary.rows.length === 1 && r.data.summary.rows[0].close === 11000 && r.data.summary.rows[0].sector === '전자' && r.data.summary.total > 0, JSON.stringify(r.data.summary.rows[0]));
+  check('상태에 켈리 참고값 포함(표본 부족이라 계산 안 함)', r.data.kelly && r.data.kelly.enough === false && /표본 부족/.test(r.data.kelly.reason));
   r = await call('POST', '/api/pf/trade/void', { id: row.id, reason: 'x' });
   check('무효 사유 3자 미만이면 400', r.status === 400);
   r = await call('POST', '/api/pf/trade/void', { id: row.id, reason: '잘못 입력한 기록' });

@@ -16,6 +16,7 @@ const srv = http.createServer((q, r) => {
   r.setHeader('content-type','application/json');
   if (q.url.startsWith('/api/stock/list')) return r.end(JSON.stringify({ stocks: [] }));
   if (q.url.startsWith('/api/db/companies')) return r.end(JSON.stringify({ companies: [] }));
+  if (q.url.startsWith('/api/market/funnel')) return r.end(JSON.stringify({ bas_dt: '20251010', all: 2700, tv_pass: 1300, stored: 778, min_tv_eok: 15, min_mcap_eok: 500 }));
   r.statusCode = 404; r.end('{}');
 }).listen(0);
 const port = srv.address().port;
@@ -44,5 +45,8 @@ ok('차트 접기 → 차트 영역 높이 크게 감소', h1 < h0 * 0.3, h0 + '
 await pg.click('#dockFold'); ok('펼치기 → 원래대로', (await pg.$eval('#chartDock', (e) => e.getBoundingClientRect().height)) > h1 * 2);
 await pg.click('#dockFold'); await pg.click('#dockBtn_growth'); ok('다른 차트 탭을 누르면 자동으로 펼쳐짐', !(await pg.$eval('#chartDock', (e) => e.classList.contains('folded'))));
 ok('좁은 화면에서 주가 차트 높이 축소(250px)', await pg.evaluate(() => { document.getElementById('dockBtn_price').click(); return getComputedStyle(document.getElementById('priceCanvas')).height === '250px'; }));
+await pg.evaluate(() => showFunnel()); await pg.waitForTimeout(300);
+const fb = await pg.innerText('#funnelBox');
+ok('유니버스 깔때기: 단계별 종목 수와 제외 수, 하루 거래대금 기준 주의 문구', fb.includes('2,700') && fb.includes('1,300') && fb.includes('778') && fb.includes('제외 1,400개') && fb.includes('제외 522개') && fb.includes('하루'), fb);
 ok('콘솔/페이지 오류 없음', errs.length === 0, JSON.stringify(errs));
 await b.close(); srv.close(); console.log(fail ? '\n실패 ' + fail : '\n전부 통과'); process.exit(fail ? 1 : 0);
