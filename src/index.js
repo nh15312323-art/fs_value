@@ -3384,6 +3384,257 @@ function anRenderMomentum() {
   return anSection('📈 Momentum (일별 주가 · 코스피 대비)', '#0ea5e9',
     'RS = (1+종목 수익률) ÷ (1+코스피 수익률). 1보다 크면 같은 기간 코스피보다 많이 올랐다는 뜻입니다(상대강도 모멘텀: Jegadeesh-Titman 1993, Levy 1967). 스크리닝과 같은 거래일 기준·같은 공식입니다. 모멘텀 등급은 직전 1개월을 뺀 6-1·12-1 수익률로 판정합니다(1개월은 단기 반전 경향: Jegadeesh 1990). 시세는 data.go.kr에서 조회하며, 공표 지연으로 기준일은 보통 직전 거래일입니다.', inner, true);
 }
+// ===== 시그널·수익률 분해 (투자 판단 점검) =====
+// ① 주가수익률 = 배당수익률 + EPS 성장률 + PER 변화율 (항등식, 기간말 주가·연간 EPS 사용)
+// ② 변화 감지: 없다가 생긴 것 / 있다가 사라진 것 (재무 부호 전환·배당 시작/중단·거래량·추세)
+// ③ 판단 체크리스트(자동 참고 + 직접 체크). 점수·매수 신호를 만들지 않는다.
+const SIG_BADGE = { proof: '학술 검증', theory: '이론 근거', practice: '실무 관행', assume: '가정·휴리스틱' };
+const sigPct = (v, d) => anFin(v) ? (v >= 0 ? '+' : '') + (v * 100).toFixed(d == null ? 1 : d) + '%' : 'N/A';
+function sigSign(v) { return !anFin(v) ? null : v > 0 ? 1 : v < 0 ? -1 : 0; }
+function sigSma(a, n, end) {
+  if (!a || end - n + 1 < 0 || end >= a.length) return null;
+  let s = 0; for (let i = end - n + 1; i <= end; i++) { const v = a[i]; if (!(v > 0)) return null; s += v; }
+  return s / n;
+}
+function sigAvg(a, from, to) { // [from,to) 구간 평균. 구간의 80% 이상 값이 있어야 계산
+  const f = Math.max(0, from); if (!a || to <= f) return null;
+  let s = 0, k = 0; for (let i = f; i < to; i++) { const v = a[i]; if (v != null && isFinite(v) && v >= 0) { s += v; k++; } }
+  return (k > 0 && k >= (to - f) * 0.8) ? s / k : null;
+}
+function sigMedian(a) { const x = a.filter(anFin).sort((p, q) => p - q); if (!x.length) return null; const m = x.length >> 1; return x.length % 2 ? x[m] : (x[m - 1] + x[m]) / 2; }
+// 연간 시계열(anBuildSeries 결과)에서 n년 구간의 수익률 분해. 계산할 수 없으면 err 사유를 돌려준다.
+function sigDecomp(list, n) {
+  if (!list || list.length < n + 1) return { n: n, err: '연간 자료가 ' + (n + 1) + '개 해 미만' };
+  const win = list.slice(list.length - n - 1), a = win[0], b = win[n];
+  if (b.year - a.year !== n) return { n: n, err: '중간에 빠진 연도가 있음' };
+  if (win.slice(1).some((d) => anFin(d.shareChg) && Math.abs(d.shareChg) > 0.3)) return { n: n, a: a.year, b: b.year, err: '유통주식수가 한 해 30% 넘게 변함(분할·증자) — 주가와 EPS 기준이 달라 분해하지 않음' };
+  const px = (d) => d.r ? d.r.price_at_period_end : null;
+  const p0 = px(a), p1 = px(b), e0 = a.eps, e1 = b.eps;
+  if (!(p0 > 0 && p1 > 0)) return { n: n, a: a.year, b: b.year, err: '기간말 주가 없음' };
+  if (!(e0 > 0 && e1 > 0)) return { n: n, a: a.year, b: b.year, err: '시작 또는 끝 EPS가 0 이하(적자) — 성장률 계산 불가' };
+  const per0 = p0 / e0, per1 = p1 / e1;
+  const o = { n: n, a: a.year, b: b.year, p0: p0, p1: p1, e0: e0, e1: e1, per0: per0, per1: per1 };
+  o.epsG = Math.pow(e1 / e0, 1 / n) - 1; o.perCh = Math.pow(per1 / per0, 1 / n) - 1; o.priceG = Math.pow(p1 / p0, 1 / n) - 1;
+  let divOk = true, prod = 1, ysum = 0;
+  for (let i = 1; i <= n; i++) {
+    const pp = px(win[i - 1]), pc = px(win[i]), dps = win[i].r ? win[i].r.dividend_per_share : null;
+    if (!(pp > 0 && pc > 0) || dps == null || !isFinite(dps) || dps < 0) { divOk = false; break; }
+    prod *= (pc + dps) / pp; ysum += dps / pp;
+  }
+  o.divY = divOk ? ysum / n : null;                       // 연평균 배당수익률(전년말 주가 대비 해당 연도 주당배당금)
+  o.tr = divOk ? Math.pow(prod, 1 / n) - 1 : null;        // 총수익률 CAGR(배당을 해당 연도 말 주가로 재투자 가정)
+  o.approx = o.divY != null ? o.epsG + o.perCh + o.divY : null; // 덧셈 근사
+  o.exactPrice = (1 + o.epsG) * (1 + o.perCh) - 1;        // 곱셈(항등식): 주가 CAGR과 같아야 한다
+  return o;
+}
+// 기대수익률 시나리오(예측이 아니라 가정의 산술): (1+g)(1+PER 변화)-1 + 배당수익률
+function sigExpected(divY, g, perChgTotal, years) {
+  if (!anFin(g) || !anFin(perChgTotal) || !(years >= 1) || g <= -1 || perChgTotal <= -1) return null;
+  const perAnn = Math.pow(1 + perChgTotal, 1 / years) - 1;
+  return (1 + g) * (1 + perAnn) - 1 + (anFin(divY) ? divY : 0);
+}
+// 변화 감지. c = 분석 컨텍스트(c.list, c.ttm), px = { d, c, v, tv } 일별 주가(없으면 null)
+function sigDetect(c, px) {
+  const items = [];
+  const add = (o) => { items.push(o); };
+  const L = c && c.list ? c.list : [];
+  if (L.length >= 2 && L[L.length - 1].year - L[L.length - 2].year === 1) {
+    const a = L[L.length - 2], b = L[L.length - 1];
+    [['ebit', '영업이익'], ['ni', '순이익'], ['fcf', 'FCF']].forEach((k) => {
+      const s0 = sigSign(a[k[0]]), s1 = sigSign(b[k[0]]);
+      if (s0 == null || s1 == null) return;
+      if (s0 <= 0 && s1 > 0) add({ id: 'chg_' + k[0], grp: 'fund', tone: 'good', label: k[1] + ' 흑자 전환 (없다가 생김)', detail: a.year + '년 ' + (a[k[0]] / 1e8).toFixed(0) + '억 → ' + b.year + '년 ' + (b[k[0]] / 1e8).toFixed(0) + '억', ev: 'proof', note: '이익 서프라이즈·이익 변화에 가격이 늦게 반응하는 현상(Ball-Brown 1968, Bernard-Thomas 1989)' });
+      else if (s0 > 0 && s1 <= 0) add({ id: 'chg_' + k[0], grp: 'fund', tone: 'bad', label: k[1] + ' 적자 전환 (있다가 사라짐)', detail: a.year + '년 ' + (a[k[0]] / 1e8).toFixed(0) + '억 → ' + b.year + '년 ' + (b[k[0]] / 1e8).toFixed(0) + '억', ev: 'proof', note: '이익 악화도 같은 방향으로 늦게 반영되는 경향(Bernard-Thomas 1989)' });
+    });
+    const d0 = a.r ? a.r.dividend_per_share : null, d1 = b.r ? b.r.dividend_per_share : null;
+    if (d0 != null && d1 != null) {
+      if (!(d0 > 0) && d1 > 0) add({ id: 'chg_div', grp: 'fund', tone: 'good', label: '배당 시작 (없다가 생김)', detail: a.year + '년 0원 → ' + b.year + '년 ' + Math.round(d1).toLocaleString() + '원/주', ev: 'proof', note: '배당 개시·중단 이후 장기 초과수익/손실(Michaely-Thaler-Womack 1995, 미국 표본)' });
+      else if (d0 > 0 && !(d1 > 0)) add({ id: 'chg_div', grp: 'fund', tone: 'bad', label: '배당 중단 (있다가 사라짐)', detail: a.year + '년 ' + Math.round(d0).toLocaleString() + '원/주 → ' + b.year + '년 0원', ev: 'proof', note: '배당 개시·중단 이후 장기 초과수익/손실(Michaely-Thaler-Womack 1995, 미국 표본)' });
+    }
+    const t = c.ttm;
+    if (t && anFin(t.ebit) && anFin(b.ebit) && sigSign(t.ebit) !== sigSign(b.ebit) && sigSign(b.ebit) !== 0 && sigSign(t.ebit) !== 0) {
+      add({ id: 'chg_ttm', grp: 'fund', tone: t.ebit > 0 ? 'good' : 'bad', label: '최근 4분기(TTM) 영업이익 부호가 직전 사업연도와 다름', detail: b.year + '년 ' + (b.ebit / 1e8).toFixed(0) + '억 → TTM ' + (t.ebit / 1e8).toFixed(0) + '억', ev: 'proof', note: '가장 최근 실적 변화(연간 공시 이후)를 반영' });
+    }
+  }
+  const have = px && px.c && px.d && px.c.length >= 130;
+  const meta = { priceReady: !!have };
+  if (have) {
+    const cl = px.c, n = cl.length, last = n - 1;
+    const useTv = !!(px.tv && sigAvg(px.tv, n - 65, n) != null);
+    const vs = useTv ? px.tv : px.v, vname = useTv ? '거래대금' : '거래량';
+    const a5 = sigAvg(vs, n - 5, n), b60 = sigAvg(vs, n - 65, n - 5);
+    if (a5 != null && b60 != null && b60 > 0) {
+      const ratio = a5 / b60; meta.volRatio = ratio;
+      let mx = 0; for (let i = n - 5; i < n; i++) { const v = vs[i]; if (v != null && b60 > 0) mx = Math.max(mx, v / b60); }
+      const st = ratio >= 2 ? '급증' : ratio <= 0.5 ? '급감(관심 이탈)' : '보통';
+      add({ id: 'vol', grp: 'px', tone: ratio >= 2 ? 'good' : ratio <= 0.5 ? 'bad' : 'flat', label: vname + ' ' + st, detail: '최근 5일 평균이 직전 60일 평균의 ' + ratio.toFixed(2) + '배 (최근 5일 중 최대 ' + mx.toFixed(1) + '배)', ev: 'proof', note: '높은 거래량 이후 수익 프리미엄(Gervais-Kaniel-Mingelgrin 2001), 투자자 관심 급증(Barber-Odean 2008). 효과는 주로 단기(약 1개월)이고 거래비용 반영 전입니다.' });
+    }
+    const m20 = sigSma(cl, 20, last), m60 = sigSma(cl, 60, last), m120 = sigSma(cl, 120, last), m120p = sigSma(cl, 120, last - 20), px1 = cl[last];
+    if (m20 && m60 && m120 && px1 > 0) {
+      let st, tone = 'flat';
+      if (px1 > m20 && m20 > m60 && m60 > m120) { st = '정배열 (종가>20일>60일>120일선)'; tone = 'good'; }
+      else if (m20 < m60 && m60 < m120 && px1 < m20) { st = '역배열 (종가<20일<60일<120일선)'; tone = 'bad'; }
+      else if (m60 > m120 && (m120p == null || m120 >= m120p) && px1 < m20) { st = '상승추세 속 조정 (60일>120일선, 종가<20일선)'; tone = 'flat'; }
+      else st = '혼조 (뚜렷한 배열 없음)';
+      add({ id: 'trend', grp: 'px', tone: tone, label: '이동평균 상태: ' + st, detail: '종가 ' + Math.round(px1).toLocaleString() + ' · 20일 ' + Math.round(m20).toLocaleString() + ' · 60일 ' + Math.round(m60).toLocaleString() + ' · 120일 ' + Math.round(m120).toLocaleString(), ev: 'practice', note: '이동평균 매매는 연구 결과가 엇갈립니다(Brock-Lakonishok-LeBaron 1992는 유효, Bajgrowicz-Scaillet 2012는 데이터 스누핑·비용 반영 시 약화). 추세 필터로 낙폭을 줄이는 용도는 상대적으로 지지됩니다(Faber 2007).' });
+    }
+    const w = cl.slice(Math.max(0, n - 252)).filter((x) => x > 0), hi = Math.max.apply(null, w), lo = Math.min.apply(null, w);
+    if (w.length >= 120 && px1 > 0) {
+      meta.fromHi = px1 / hi - 1; meta.fromLo = px1 / lo - 1;
+      add({ id: 'hi52', grp: 'px', tone: meta.fromHi >= -0.05 ? 'good' : 'flat', label: '52주 고점 대비 ' + sigPct(meta.fromHi), detail: '52주 고가 ' + Math.round(hi).toLocaleString() + ' · 저가 ' + Math.round(lo).toLocaleString() + ' (저가 대비 ' + sigPct(meta.fromLo) + ')', ev: 'proof', note: '52주 고점에 가까운 종목이 이후에도 상대적으로 강한 경향(George-Hwang 2004). 반대로 고점에서 멀다고 저평가인 것은 아닙니다.' });
+      if (meta.fromLo <= 0.15 && m120 && px1 < m120) add({ id: 'low52', grp: 'px', tone: 'flat', label: '52주 저점권 (저가 +15% 이내, 120일선 아래)', detail: '‘바닥’은 사후에만 확인됩니다. 하락추세가 이어지는 구간일 수 있습니다.', ev: 'assume', note: '바닥을 사전에 식별하는 방법은 학술적으로 검증된 바 없습니다. 위험 확정(실적·공시) 확인 없이 저점 매수만으로 근거로 삼지 않습니다.' });
+    }
+    // 급등·대량거래 이력(최근 252거래일)
+    let up = 0, big = 0, lastDt = null, mx21 = null;
+    for (let i = Math.max(1, n - 252); i < n; i++) {
+      const p0 = cl[i - 1], p1 = cl[i];
+      if (p0 > 0 && p1 > 0) { const r = p1 / p0 - 1; if (r >= 0.29) { up++; lastDt = px.d[i]; } if (i >= n - 21) mx21 = mx21 == null ? r : Math.max(mx21, r); }
+      if (px.v && px.v[i] >= 10000000) { big++; if (!lastDt || px.d[i] > lastDt) lastDt = px.d[i]; }
+    }
+    meta.up = up; meta.big = big; meta.mx21 = mx21;
+    if (up > 0 || big > 0) add({ id: 'spike', grp: 'px', tone: 'warn', label: '최근 1년 상한가권(+29%↑) ' + up + '회 · 거래량 1,000만주↑ ' + big + '일', detail: lastDt ? '가장 최근 ' + lastDt : '', ev: 'assume', note: '“과거에 상한가·대량거래가 있었다”는 조건 자체는 초과수익의 근거가 아닙니다. 복권형 급등주(일간 최대수익률이 컸던 종목)는 이후 수익이 낮은 경향이 보고됐습니다(Bali-Cakici-Whitelaw 2011, 미국). 관심 종목 발굴(관찰) 단계의 필터로만 쓰고, 매수 근거는 다른 항목으로 확인하세요.' });
+    else add({ id: 'spike', grp: 'px', tone: 'flat', label: '최근 1년 상한가권·1,000만주↑ 거래 이력 없음', detail: '', ev: 'assume', note: '이력이 없다는 것이 나쁘다는 뜻은 아닙니다. 관찰 단계의 참고 정보입니다.' });
+    if (mx21 != null && mx21 >= 0.15) add({ id: 'maxe', grp: 'px', tone: 'warn', label: '최근 1개월 내 하루 +' + (mx21 * 100).toFixed(0) + '% 급등 발생', detail: '복권형 급등 직후는 되돌림 위험이 큰 구간일 수 있습니다.', ev: 'proof', note: 'MAX 효과(Bali-Cakici-Whitelaw 2011): 최근 일간 최대수익률이 높은 종목의 이후 수익률이 낮은 경향(미국, 한국 시장은 별도 검증 필요).' });
+    if (last >= 21 && cl[last - 21] > 0) {
+      const r1 = px1 / cl[last - 21] - 1; meta.r1m = r1;
+      if (r1 >= 0.3) add({ id: 'rev1m', grp: 'px', tone: 'warn', label: '최근 1개월 ' + sigPct(r1) + ' 상승 (단기 과열 구간)', detail: '1개월 수익률이 큰 종목은 다음 달 되돌림이 잦은 경향이 있어, 모멘텀 계산도 최근 1개월을 제외합니다(6-1, 12-1).', ev: 'proof', note: '1개월 단기 반전(Jegadeesh 1990, Lehmann 1990). 추격 매수 전에 확인할 항목입니다.' });
+    }
+  }
+  return { items: items, meta: meta };
+}
+function sigById(S, id) { for (let i = 0; i < S.items.length; i++) if (S.items[i].id === id) return S.items[i]; return null; }
+function sigPx() {
+  const nm = (document.getElementById('corpName').value || '').trim();
+  return (typeof PRICE !== 'undefined' && PRICE.data && PRICE.name === nm) ? PRICE.data : null;
+}
+// ----- 체크리스트 -----
+// auto: (c, S) => 참고 문구(체크는 사용자가 직접). ev는 근거 수준.
+const SIG_BUY = [
+  { t: '“없다가 생긴 것 / 있다가 사라진 것”이 무엇인지 답할 수 있다', ev: 'proof', why: '기대 대비 변화(서프라이즈)에 가격이 반응한다는 점은 학술적으로 잘 지지됩니다. 단, 무엇이 ‘변화’인지는 투자자 관점의 판단입니다.', auto: (c, S) => { const f = S.items.filter((x) => x.grp === 'fund'); return f.length ? '자동 감지: ' + f.map((x) => x.label).join(' / ') : '자동 감지된 재무 변화 없음(뉴스·정책 변화는 직접 확인)'; } },
+  { t: '불확실성이 ‘알려진 리스크’로 확정되는 시점인지 확인했다', ev: 'assume', why: '불확실성과 리스크의 구분은 Knight(1921)의 고전적 개념입니다. ‘리스크 확정 = 바닥’이라는 규칙은 사전 검증된 적이 없어 가설로만 사용합니다.', auto: () => '' },
+  { t: '유동성·실적·기대감을 각각 점검했다 (주가 = EPS × PER)', ev: 'theory', why: '주가 = EPS × PER은 항등식입니다. 유동성·기대감은 PER(할인율·성장 기대)에 반영되고 실적은 EPS에 반영됩니다. ‘(유동성+실적)×기대감’은 직관 틀이며 측정 가능한 공식은 아닙니다.', auto: (c, S) => { const e = c.last ? c.last.epsYoy : null, per = c.vs ? c.vs.per : null; return '실적: 최근 연간 EPS YoY ' + (anFin(e) ? sigPct(e) : 'N/A') + ' · 기대감: 현재 PER ' + (anFin(per) ? per.toFixed(1) + '배' : 'N/A') + ' · 유동성(거래): ' + (S.meta.volRatio != null ? '최근 5일 거래 ' + S.meta.volRatio.toFixed(2) + '배' : '주가 로딩 전'); } },
+  { t: '재료·차트·거래량·시황을 함께 봤다', ev: 'practice', why: '단일 신호보다 여러 독립 신호의 일치를 보는 것은 합리적이나, 어떤 결합이 초과수익을 주는지는 백테스트 전에는 알 수 없습니다.', auto: (c, S) => { const t = sigById(S, 'trend'), v = sigById(S, 'vol'); return (t ? t.label : '이동평균: 자료 없음') + ' · ' + (v ? v.label : '거래: 자료 없음'); } },
+  { t: '시장이 좋아할 재료인지(시장 참여자가 사고 싶어 할 이유) 설명할 수 있다', ev: 'assume', why: '뉴스·재료 데이터는 이 앱이 수집하지 않으므로 직접 판단합니다. 뉴스 기반 단기 반응은 빠르게 소멸하는 경향이 있습니다.', auto: () => '' },
+  { t: '거래량이 잘 터지고 조정을 충분히 받은 종목이다', ev: 'practice', why: '거래량 급증은 단기 수익 프리미엄(Gervais 외 2001)이 보고되었으나, ‘조정을 잘 받았다’(눌림목)는 규칙은 검증되지 않았습니다.', auto: (c, S) => { const v = S.meta.volRatio, h = S.meta.fromHi; return '거래 최근 5일/직전 60일 ' + (v != null ? v.toFixed(2) + '배' : 'N/A') + ' · 52주 고점 대비 ' + (h != null ? sigPct(h) : 'N/A'); } },
+  { t: '정부·대기업 정책·투자와 관련이 있는지 확인했다', ev: 'assume', why: '정책 수혜 테마는 선반영과 소멸이 빠릅니다. 공시(공급계약·투자)로 확인되는 사실과 기대를 구분하세요.', auto: () => '' },
+  { t: '키워드 하나에만 의존하지 않고 서로 다른 근거가 2개 이상이다', ev: 'theory', why: '단일 이야기 의존은 확증편향·테마 집착의 위험을 키웁니다(분산된 근거 확인).', auto: () => '' },
+  { t: '시장 전체 흐름(시황)을 고려했다', ev: 'practice', why: '시장 연동 상승은 시장 반전 때 함께 꺾입니다. 종목 고유 초과수익인지 확인합니다.', auto: (c) => { const k = AN_STATE.mom && AN_STATE.mom.kospi ? AN_STATE.mom.kospi.r6m : null, r = c.mom ? c.mom.ret6 : null; return '최근 6개월: 코스피 ' + (anFin(k) ? sigPct(k) : 'N/A') + ' · 종목 ' + (anFin(r) ? sigPct(r) : 'N/A'); } },
+  { t: '매수 이유를 한 문장으로 말할 수 있다 (아래 칸에 적었다)', ev: 'theory', why: '사전에 이유·반증 조건을 적어 두는 것은 사후 합리화·뇌동매매를 줄이는 사전 약속(pre-commitment)입니다.', auto: () => '', needNote: 'why' },
+];
+const SIG_HOLD = [
+  { t: '매수한 종목에 과도한 기대감·욕심이 생기면 물량을 줄인다', ev: 'theory', why: '과신은 과도한 거래·성과 악화와 연관됩니다(Barber-Odean 2000). 감정이 아니라 비중 규칙(최대 비중, 위험예산)으로 줄이는 것이 지지됩니다. 내 계좌의 계획·위험예산 기능과 연결됩니다.' },
+  { t: '오르기 시작해 더 사고 싶어지면 즉시 익절한다', ev: 'assume', why: '주의: 이익 종목을 너무 빨리 파는 것이 처분효과(Shefrin-Statman 1985, Odean 1998)의 전형이고, 모멘텀 효과(승자가 계속 오르는 경향)와 충돌할 수 있습니다. 감정 신호가 아니라 미리 정한 분할 익절 규칙(목표 도달 시 일부)으로 대체하는 편이 안전합니다.' },
+  { t: '수익 중일 때 시장 때문인지 종목 때문인지 재점검한다', ev: 'theory', why: '시장 요인과 종목 고유 요인의 분리는 자산가격 이론의 기본입니다. 위 체크리스트의 6개월 상대수익(코스피 대비)이 단서가 됩니다.' },
+  { t: '목표 수익률 도달 시 원칙대로 익절한다 (연습)', ev: 'practice', why: '사전 목표가 감정 개입을 줄입니다. 다만 목표 도달 후 전량 매도가 기대수익을 높인다는 증거는 없으므로, 일부 매도+나머지는 추세 이탈 기준 등으로 설계하세요.' },
+  { t: '손절 기준을 매수 전에 정해 두고, 틀리면 인정한다', ev: 'practice', why: '손절 규칙은 손실 폭을 제한하지만 평균 수익을 높이는 것은 아닙니다(Kaminski-Lo 2014: 추세가 있는 구간에서만 이득). 늦은 손절·망설인 손절은 처분효과와 손실회피(Kahneman-Tversky 1979)의 결과입니다.' },
+];
+function sigStoreKey() { return 'sigChk:' + (AN_STATE.key || ''); }
+function sigLoad() { try { const o = JSON.parse(localStorage.getItem(sigStoreKey()) || 'null'); return (o && typeof o === 'object') ? { c: o.c || {}, n: o.n || {} } : { c: {}, n: {} }; } catch (e) { return { c: {}, n: {} }; } }
+function sigSave(o) { try { localStorage.setItem(sigStoreKey(), JSON.stringify(o)); } catch (e) { /* 저장 실패는 무시 */ } }
+function sigChk(i, v) { const o = sigLoad(); o.c[i] = !!v; sigSave(o); sigUpdateSummary(); }
+const SIG_NOTE_KEYS = ['why', 'disproof', 'exit'];
+function sigNote(i, v) { const k = SIG_NOTE_KEYS[i]; if (!k) return; const o = sigLoad(); o.n[k] = String(v).slice(0, 500); sigSave(o); sigUpdateSummary(); }
+function sigUpdateSummary() {
+  const el = document.getElementById('sigChkSum'); if (!el) return;
+  const o = sigLoad(); let n = 0; for (let i = 0; i < SIG_BUY.length; i++) if (o.c[i]) n++;
+  const why = (o.n.why || '').trim().length > 0;
+  el.innerHTML = '체크 <b>' + n + '/' + SIG_BUY.length + '</b> · 매수 이유 ' + (why ? '<b style="color:#16a34a;">작성됨</b>' : '<b style="color:#dc2626;">미작성 → 이유를 말할 수 없으면 사지 않는다</b>');
+}
+const SIG_TONE = { good: '#16a34a', bad: '#dc2626', warn: '#d97706', flat: '#64748b' };
+function sigBadgeHtml(k) { return anBadge(k, SIG_BADGE[k] || '가정·휴리스틱'); }
+function sigItemHtml(it) {
+  return '<details style="border-top:1px solid var(--border); padding:6px 0;"><summary style="cursor:pointer; font-size:13px; font-weight:600; color:' + (SIG_TONE[it.tone] || '#64748b') + ';">' + anEsc(it.label) + ' ' + sigBadgeHtml(it.ev) + '</summary>' +
+    '<div style="font-size:12px; margin:4px 0;">' + anEsc(it.detail || '') + '</div><div style="font-size:11.5px; color:var(--text-muted); line-height:1.5;">근거 평가: ' + anEsc(it.note || '') + '</div></details>';
+}
+function sigRenderDetectBody(c) {
+  const px = sigPx(), S = sigDetect(c, px);
+  const fund = S.items.filter((x) => x.grp === 'fund'), pxs = S.items.filter((x) => x.grp === 'px');
+  let h = '<div style="font-weight:700; font-size:13px; margin-top:6px;">재무에서 없다가 생긴 것 · 있다가 사라진 것</div>';
+  h += fund.length ? fund.map(sigItemHtml).join('') : '<div style="font-size:12.5px; color:var(--text-muted); margin:4px 0;">직전 사업연도 대비 흑자/적자 전환·배당 시작/중단 같은 큰 변화는 감지되지 않았습니다.</div>';
+  h += '<div style="font-weight:700; font-size:13px; margin-top:12px;">가격·거래량 상태 (일별 주가 기준)</div>';
+  h += px ? (pxs.length ? pxs.map(sigItemHtml).join('') : '<div style="font-size:12.5px; color:var(--text-muted);">일별 주가가 130거래일 미만이라 판정하지 않습니다.</div>') : '<div style="font-size:12.5px; color:var(--text-muted); margin:4px 0;">일별 주가를 불러오는 중이거나 불러오지 못했습니다(주가 차트와 같은 자료).</div>';
+  return h;
+}
+function sigChecklistHtml(c) {
+  const px = sigPx(), S = sigDetect(c, px), o = sigLoad();
+  const row = (arr, off, withBox) => arr.map((it, i) => {
+    const idx = off + i, auto = it.auto ? it.auto(c, S) : '';
+    return '<div style="border-top:1px solid var(--border); padding:6px 0;"><label style="display:flex; gap:8px; align-items:flex-start; font-size:13px;">' + (withBox ? '<input type="checkbox" ' + (o.c[idx] ? 'checked ' : '') + 'onchange="sigChk(' + idx + ', this.checked)" style="margin-top:3px; flex:0 0 auto;" />' : '<span style="flex:0 0 auto;">•</span>') +
+      '<span>' + anEsc(it.t) + ' ' + sigBadgeHtml(it.ev) + '</span></label>' +
+      (auto ? '<div style="font-size:11.5px; color:#0369a1; margin:2px 0 0 28px;">자동 참고: ' + anEsc(auto) + '</div>' : '') +
+      '<details style="margin:2px 0 0 28px;"><summary style="font-size:11.5px; color:var(--text-muted); cursor:pointer;">이 규칙의 근거 평가</summary><div style="font-size:11.5px; color:var(--text-muted); line-height:1.5;">' + anEsc(it.why) + '</div></details></div>';
+  }).join('');
+  const ta = (k, label, ph) => '<label style="display:block; font-size:12.5px; margin-top:8px; font-weight:600;">' + label + '<textarea rows="2" maxlength="500" placeholder="' + ph + '" oninput="sigNote(' + SIG_NOTE_KEYS.indexOf(k) + ', this.value)" style="width:100%; box-sizing:border-box; font-weight:400; margin-top:3px;">' + anEsc(o.n[k] || '') + '</textarea></label>';
+  return '<div id="sigChkSum" style="font-size:12.5px; margin:6px 0;"></div>' + row(SIG_BUY, 0, true) +
+    ta('why', '매수 이유 (한 문장)', '예: 영업이익이 흑자 전환했고, 거래량이 늘며 20일선을 회복했다') +
+    ta('disproof', '틀렸다고 인정할 조건 (반증·손절 기준)', '예: 종가가 120일선 아래로 2일 이상 / 다음 분기 영업이익이 다시 적자') +
+    ta('exit', '목표·익절 계획 (분할 기준)', '예: +25%에서 1/3, +40%에서 1/3, 나머지는 60일선 이탈 시') +
+    '<div style="font-weight:700; font-size:13px; margin-top:14px;">보유 중 점검 규칙 (점수 아님 · 근거 평가 포함)</div>' + row(SIG_HOLD, 100, false) +
+    '<div style="font-size:11.5px; color:var(--text-muted); margin-top:8px; line-height:1.5;">입력한 내용은 이 기기(브라우저)에만 종목별로 저장됩니다. 실제 매매 계획·일지는 ⑥ 내 계좌의 ‘계획’과 ‘매매일지’에서 관리하세요.</div>';
+}
+// ----- 수익률 분해 · 기대수익률 -----
+const SIG_ST = { g: null, n: 3 };
+function sigDecompHtml(c) {
+  const L = c.list, rows = [];
+  const cell = (v) => '<td>' + (anFin(v) ? sigPct(v) : 'N/A') + '</td>';
+  [3, 5].forEach((n) => {
+    const d = sigDecomp(L, n);
+    if (d.err) rows.push('<tr><td class="an-first">최근 ' + n + '년 (연환산)</td><td colspan="6" style="text-align:left; color:var(--text-muted);">산출 불가: ' + anEsc(d.err) + '</td></tr>');
+    else rows.push('<tr><td class="an-first">' + d.a + '→' + d.b + ' (연환산 ' + n + '년)</td>' + cell(d.priceG) + cell(d.epsG) + cell(d.perCh) + cell(d.divY) + cell(d.tr) + '<td>' + (d.approx != null ? sigPct(d.approx) : 'N/A') + '</td></tr>');
+  });
+  const yr = [];
+  for (let k = L.length - 1; k >= 1 && yr.length < 8; k--) {
+    const d = sigDecomp(L.slice(0, k + 1), 1);
+    if (d.err) yr.push('<tr><td class="an-first">' + (L[k].year - 1) + '→' + L[k].year + '</td><td colspan="6" style="text-align:left; color:var(--text-muted);">산출 불가: ' + anEsc(d.err) + '</td></tr>');
+    else yr.push('<tr><td class="an-first">' + d.a + '→' + d.b + '</td>' + cell(d.priceG) + cell(d.epsG) + cell(d.perCh) + cell(d.divY) + cell(d.tr) + '<td>' + (d.approx != null ? sigPct(d.approx) : 'N/A') + '</td></tr>');
+  }
+  const th = '<thead><tr><th class="an-first">기간</th><th>주가 변화</th><th>EPS 성장</th><th>PER 변화</th><th>배당수익률</th><th>총수익률</th><th>덧셈 근사</th></tr></thead>';
+  return '<div style="font-size:12.5px; line-height:1.55; margin:4px 0;">주가수익률은 <b>배당수익률 + EPS 성장률 + PER 변화율</b>로 나뉩니다. 정확한 관계는 곱셈 (1+주가변화) = (1+EPS성장)×(1+PER변화)이고, 덧셈은 근사입니다(교차항·배당 재투자 때문에 총수익률과 조금 다름). ‘주가가 올랐다’가 <b>실적(EPS) 때문인지, 기대감(PER) 때문인지</b>를 가려내는 표입니다.</div>' +
+    '<div style="overflow-x:auto;"><table class="an-tbl">' + th + '<tbody>' + rows.join('') + '</tbody></table></div>' +
+    '<div style="font-weight:600; font-size:12.5px; margin-top:10px;">연도별</div><div style="overflow-x:auto;"><table class="an-tbl">' + th + '<tbody>' + yr.join('') + '</tbody></table></div>' +
+    '<div style="font-size:11px; color:var(--text-muted); margin-top:6px; line-height:1.5;">기준: 연간 보고서의 기간말 주가(period end)와 연간 EPS(지배주주 순이익÷유통주식수, 적자면 N/A), 해당 연도 주당배당금(전년말 주가 대비). 주식수가 30% 넘게 변한 해는 분해하지 않습니다. 총수익률은 배당을 해당 연도 말 주가로 재투자한다고 가정한 연복리입니다. 세금·수수료 미반영. 과거 분해는 미래 수익을 보장하지 않습니다.</div>';
+}
+function sigCalcVals(c) {
+  const per = c.vs ? c.vs.per : null, price = c.price, dps = c.last && c.last.r ? c.last.r.dividend_per_share : null;
+  const divNow = (price > 0 && dps != null && isFinite(dps)) ? dps / price : null;
+  const g0 = anFin(SIG_ST.g) ? SIG_ST.g : (anFin(c.gRoe) ? c.gRoe : (anFin(c.epsG) ? c.epsG : null));
+  return { per: per, divNow: divNow, g0: g0, n: SIG_ST.n };
+}
+// 입력칸은 다시 그리지 않는다(성장률을 고친 직후 기간 칸을 누르는 중에 칸이 교체되어 입력이 사라지는 것을 막기 위해). 표만 갱신한다.
+function sigCalcHtml(c) {
+  const v = sigCalcVals(c);
+  return '<div class="row" style="gap:8px; align-items:flex-end; margin:6px 0;"><label style="font-size:12.5px;">EPS 성장률 가정(연 %) <input id="sigG" type="number" inputmode="decimal" step="0.5" value="' + (v.g0 != null ? (v.g0 * 100).toFixed(1) : '') + '" onchange="sigCalcSet()" style="width:100px;" /></label>' +
+    '<label style="font-size:12.5px;">기간(년) <input id="sigN" type="number" inputmode="numeric" min="1" max="10" value="' + v.n + '" onchange="sigCalcSet()" style="width:70px;" /></label></div><div id="sigCalcTbl">' + sigCalcTbl(c) + '</div>';
+}
+function sigCalcTbl(c) {
+  const v = sigCalcVals(c), g0 = v.g0, n = v.n;
+  if (g0 == null) return '<div style="font-size:12.5px; color:var(--text-muted);">기본 성장률을 만들 자료(지속가능성장률·EPS CAGR)가 없습니다. 성장률을 직접 입력하세요.</div>';
+  const gs = [g0 - 0.05, g0, g0 + 0.05], ps = [-0.3, 0, 0.3];
+  const tone = (x) => x == null ? 'N/A' : '<span style="color:' + (x >= 0.1 ? '#16a34a' : x < 0 ? '#dc2626' : 'inherit') + ';">' + sigPct(x) + '</span>';
+  const body = gs.map((g) => '<tr><td class="an-first">EPS 성장 ' + sigPct(g) + '</td>' + ps.map((p) => '<td>' + tone(sigExpected(v.divNow, g, p, n)) + '</td>').join('') + '</tr>').join('');
+  return '<div style="overflow-x:auto;"><table class="an-tbl"><thead><tr><th class="an-first">연환산 기대수익률(배당 포함)</th><th>PER ' + n + '년간 −30%</th><th>PER 유지</th><th>PER +30%</th></tr></thead><tbody>' + body + '</tbody></table></div>' +
+    '<div style="font-size:11px; color:var(--text-muted); margin-top:6px; line-height:1.5;">현재 PER ' + (anFin(v.per) ? v.per.toFixed(1) + '배' : 'N/A') + ' · 현재 배당수익률 ' + (v.divNow != null ? anPct(v.divNow) : 'N/A') + ' · 기본 성장률은 ROE×유보율(지속가능성장률)이며 직접 바꿀 수 있습니다. 산식: (1+EPS성장)×(1+PER변화의 연환산)−1+배당수익률. <b>예측이 아니라 가정의 산술</b>이며, PER이 줄어드는 칸(왼쪽)이 하방 위험을 보여줍니다.</div>';
+}
+function sigCalcSet() {
+  const g = Number((document.getElementById('sigG') || {}).value), n = Math.floor(Number((document.getElementById('sigN') || {}).value));
+  if (isFinite(g) && g > -50 && g < 100) SIG_ST.g = g / 100;
+  if (n >= 1 && n <= 10) SIG_ST.n = n;
+  const el = document.getElementById('sigCalcTbl'); if (el && AN_CTX) el.innerHTML = sigCalcTbl(AN_CTX);
+}
+function sigRenderSections(c) {
+  const evTxt = '증거 수준 표시: 학술 검증(동료심사 연구가 있음, 한국 시장은 별도 검증 필요) · 이론 근거 · 실무 관행(수익 보장 없음) · 가정·휴리스틱(검증된 바 없음).';
+  return anSection('📐 수익률 분해: 배당수익률 + EPS 성장 + PER 변화', '#7c3aed', '주가가 오른 이유를 실적과 기대감으로 나눕니다. 항등식이라 이론적으로 맞는 관계이며(Ibbotson-Chen 2003 등 장기 수익률 분해 연구), 값은 이 앱의 연간 공시 자료에서 계산합니다.', sigDecompHtml(c), false) +
+    anSection('🧮 기대수익률 가정 계산 (EPS 성장 × PER 변화 + 배당)', '#7c3aed', '미래 수익률은 예측할 수 없으므로 성장률·PER 변화를 가정으로 바꿔 가며 범위를 봅니다. 하나의 목표가 대신 민감도 표를 사용합니다.', '<div id="sigCalcBody">' + sigCalcHtml(c) + '</div>', false) +
+    anSection('🔔 변화 감지 시그널 (없다가 생김 · 있다가 사라짐)', '#0891b2', '시장은 ‘상태’보다 ‘변화’에 반응한다는 관점입니다. 재무 변화는 공시 자료로, 가격·거래량은 일별 주가로 계산합니다. 모든 시그널에 근거 수준을 붙였고, 매수·매도 신호나 점수를 만들지 않습니다. ' + evTxt, '<div id="sigDetectBody">' + sigRenderDetectBody(c) + '</div>', false) +
+    anSection('✅ 투자 판단 체크리스트 (관찰 → 시그널 → 전략 → 반성)', '#0891b2', '매수 전 10가지 질문과 보유 중 규칙입니다. 자동 참고는 계산 가능한 부분만 보여주고, 체크는 직접 합니다. 충족 개수는 ‘매수 신호’가 아니라 내가 생각을 정리했는지의 기록입니다.', '<div id="sigChecklistBody">' + sigChecklistHtml(c) + '</div>', false);
+}
+function sigRefresh() {
+  if (!AN_CTX) return;
+  const a = document.getElementById('sigDetectBody'); if (a) a.innerHTML = sigRenderDetectBody(AN_CTX);
+  const b = document.getElementById('sigChecklistBody'); if (b) { b.innerHTML = sigChecklistHtml(AN_CTX); sigUpdateSummary(); }
+}
+// ===== /시그널·수익률 분해 =====
+
 // ---------- 미너비니 트렌드 템플릿 · 오닐 CAN SLIM(판정 가능한 항목만) ----------
 async function anLoadTrend() {
   const name = (document.getElementById('corpName').value || '').trim();
@@ -4332,8 +4583,10 @@ function renderAnalysis() {
     anChapter('⑥', '지금 가격은 합당한가?', '좋은 회사라도 비싸게 사면 나쁜 투자입니다. 배수 → 시장이 요구하는 성장 → 시나리오 순으로 확인', '그레이엄의 안전마진, 오너어닝스·잔여이익·PEG 등 여러 방법으로 가치의 범위를 보고, 한 숫자에 의존하지 않습니다.') + anRenderValuation(c) + anRenderMethods(c) + anRenderScenario(c) +
     anChapter('⑦', '시장은 지금 이 주식을 어떻게 보고 있는가?', '가격 추세와 상대강도가 펀더멘털 판단과 어긋나지 않는가', '가치투자자에게는 참고 신호이고, 미너비니·오닐에게는 핵심 조건. 모멘텀 효과는 제가디시·티트먼(1993) 등 학술 근거가 있습니다.') + anRenderMomentum() + anRenderTrend(c) +
     anChapter('⑧', '종합 결론', '위 질문들의 결과를 한곳에 모아 정리', '자동 생성 문장입니다. 점수가 아니라 숫자가 가리키는 방향의 요약입니다.') + anRenderJudge(c) +
+    anChapter('⑨', '시그널과 판단 점검', '실적과 기대감을 나눠 보고, 변화(없다가 생김·있다가 사라짐)와 내 판단 과정을 점검', '주가수익률 분해는 항등식, 시그널은 연구별 근거 수준을 표시합니다. 결론을 대신 내리지 않고 판단 과정을 기록하게 돕습니다.') + sigRenderSections(c) +
     anChapter('참고', '설명서 · 용어 · 설정', '계산식·실제 입력값·근거와 판정 기준 변경', '숫자의 출처를 확인하거나 기준선을 바꾸고 싶을 때 펼쳐 보세요.') + anRenderExplain(c) + anRenderSettings();
   anBuildNav();
+  try { sigUpdateSummary(); } catch (e) { /* 체크리스트 요약 실패는 무시 */ }
   anUpdateScenarioView();
   anUpdateMethods();
   anR4Draw();
@@ -5433,6 +5686,7 @@ async function pfuExport() {
         PRICE.data = data; PRICE.m50 = smaSeries(data.c, 50); PRICE.m200 = smaSeries(data.c, 200);
       } catch (e) { if (PRICE.name !== name) return; PRICE.err = e.message || String(e); }
       renderPriceStats(); drawPrice();
+      try { sigRefresh(); } catch (e) { /* 시그널 갱신 실패가 차트를 막지 않게 */ }
     }
     function renderPriceStats() {
       const el = document.getElementById('priceStats'), note = document.getElementById('pxNote');
