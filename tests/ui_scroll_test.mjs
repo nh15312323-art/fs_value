@@ -1,0 +1,48 @@
+// 사용법: node tests/ui_scroll_test.mjs   (Playwright + Chromium 필요. 없으면 건너뛰어도 됨)
+// 종목분석 화면의 스크롤 최소화 장치(고정 내비·컴팩트 검색창·차트 접기·맨 위 버튼)를 확인한다.
+import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'; import { pathToFileURL, fileURLToPath } from 'node:url';
+const src = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index.js');
+const tmp = path.join(os.tmpdir(), 'fs_value_ui_' + process.pid + '.mjs');
+fs.writeFileSync(tmp, fs.readFileSync(src, 'utf8') + '\nexport { HTML_PAGE };\n');
+const { HTML_PAGE } = await import(pathToFileURL(tmp).href);
+fs.unlinkSync(tmp);
+import http from 'node:http';
+import { createRequire } from 'node:module';
+const require = createRequire('/opt/npm-tools/node_modules/');
+const { chromium } = require('playwright');
+
+const srv = http.createServer((q, r) => {
+  if (q.url === '/') { r.setHeader('content-type','text/html;charset=utf-8'); return r.end(HTML_PAGE); }
+  r.setHeader('content-type','application/json');
+  if (q.url.startsWith('/api/stock/list')) return r.end(JSON.stringify({ stocks: [] }));
+  if (q.url.startsWith('/api/db/companies')) return r.end(JSON.stringify({ companies: [] }));
+  r.statusCode = 404; r.end('{}');
+}).listen(0);
+const port = srv.address().port;
+const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--no-sandbox'] }).catch(async () => chromium.launch({ args: ['--no-sandbox'] }));
+const pg = await b.newPage({ viewport: { width: 390, height: 800 } });
+const errs = []; pg.on('pageerror', (e) => errs.push(String(e))); pg.on('console', (m) => { if (m.type() === 'error' && !/404/.test(m.text())) errs.push(m.text()); });
+await pg.goto('http://localhost:' + port + '/'); await pg.waitForTimeout(400);
+let fail = 0; const ok = (n, v, d) => { if (!v) fail++; console.log((v ? 'PASS' : 'FAIL') + '  ' + n + (d ? '  ' + d : '')); };
+// 분석 결과 영역을 강제로 보이게 하고 긴 내용을 채워 스크롤 동작을 본다
+await pg.evaluate(() => { document.getElementById('stockBody').style.display = ''; const f = document.createElement('div'); f.style.height = '3000px'; f.id = 'fill'; document.getElementById('sub_summary').appendChild(f); setNavVars(); });
+ok('하위 탭(요약/표/ROE/비교)이 sticky', (await pg.$eval('#stockSubnav', (e) => getComputedStyle(e).position)) === 'sticky');
+await pg.evaluate(() => window.scrollTo(0, 1200)); await pg.waitForTimeout(150);
+const nb = await pg.$eval('#mainNav', (e) => e.getBoundingClientRect().bottom), sb = await pg.$eval('#stockSubnav', (e) => e.getBoundingClientRect());
+ok('스크롤해도 메인 탭 바로 아래에 하위 탭이 붙어 있음(겹치지 않음)', Math.abs(sb.top - nb) < 2, 'nav.bottom=' + nb + ' sub.top=' + sb.top);
+ok('맨 위로 버튼이 스크롤 후 나타남', await pg.isVisible('#fabTop'));
+await pg.click('#fabTop'); await pg.waitForTimeout(700);
+ok('맨 위로 버튼 → 맨 위로 이동', (await pg.evaluate(() => window.scrollY)) < 5);
+await pg.evaluate(() => { document.getElementById('searchCard').classList.add('compact'); document.getElementById('btnSearchMore').style.display = ''; });
+ok('컴팩트 검색창: 관심종목·저장 종목·고급 설정 숨김', !(await pg.isVisible('#savedBox')) && !(await pg.isVisible('#watchlistWrap')) && await pg.isVisible('#corpName'));
+await pg.click('#btnSearchMore'); ok('더보기 → 저장 종목 패널 다시 보임', await pg.isVisible('#savedBox'));
+await pg.evaluate(() => { document.getElementById('searchCard').classList.add('compact'); });
+await pg.focus('#corpName'); ok('검색창에 포커스하면 자동으로 펼쳐짐', await pg.isVisible('#savedBox'));
+const h0 = await pg.$eval('#chartDock', (e) => e.getBoundingClientRect().height);
+await pg.click('#dockFold'); const h1 = await pg.$eval('#chartDock', (e) => e.getBoundingClientRect().height);
+ok('차트 접기 → 차트 영역 높이 크게 감소', h1 < h0 * 0.3, h0 + ' → ' + h1);
+await pg.click('#dockFold'); ok('펼치기 → 원래대로', (await pg.$eval('#chartDock', (e) => e.getBoundingClientRect().height)) > h1 * 2);
+await pg.click('#dockFold'); await pg.click('#dockBtn_growth'); ok('다른 차트 탭을 누르면 자동으로 펼쳐짐', !(await pg.$eval('#chartDock', (e) => e.classList.contains('folded'))));
+ok('좁은 화면에서 주가 차트 높이 축소(250px)', await pg.evaluate(() => { document.getElementById('dockBtn_price').click(); return getComputedStyle(document.getElementById('priceCanvas')).height === '250px'; }));
+ok('콘솔/페이지 오류 없음', errs.length === 0, JSON.stringify(errs));
+await b.close(); srv.close(); console.log(fail ? '\n실패 ' + fail : '\n전부 통과'); process.exit(fail ? 1 : 0);
