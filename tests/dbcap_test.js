@@ -121,6 +121,20 @@ const call = async (env, p, body, key) => { const u = new URL('http://x' + p); c
   r = await P({ kind: 'opincome_cache' });
   check('캐시 삭제', r.d.deleted === 1);
 
+  // 읽기 한도 보호: 큰 표는 전체를 세지 않는다
+  S.resetReady(); env = mkEnv({ PF_KEY: KEY });
+  env.db.exec('BEGIN'); const insB = env.db.prepare('INSERT INTO market_raw_daily VALUES (?,?,1,1,1)'); for (let i = 0; i < 30000; i++) insB.run('2020' + String(1 + (i % 12)).padStart(2, '0') + '01', 'S' + i); insB.run('20260101', 'Z'); env.db.exec('COMMIT');
+  let scanned = 0; { const orig = env.DB.prepare; env.DB.prepare = (sql) => { if (/COUNT\(\*\)/.test(sql)) scanned++; return orig(sql); }; }
+  r = await call(env, '/api/db/usage?refresh=1', null, KEY);
+  const big = r.d.tables.find((x) => x.name === 'market_raw_daily');
+  check('큰 표(30,000행)는 20,000까지만 세고 capped 표시', big.rows === 20000 && big.capped === true, big.rows + ' ' + big.capped);
+  check('측정(dbstat) 불가 + 상한 도달 시 행 수 기반 용량 추정을 만들지 않음(거짓 수치 방지)', r.d.measured === true || r.d.tables.every((x) => x.bytes == null), 'measured=' + r.d.measured);
+  r = await call(env, '/api/db/purge', { kind: 'price_old', param: { before: '20210101' }, preview: true }, KEY);
+  check('작은 대상은 미리보기가 정확한 행 수(capped=false)', r.s === 200 && r.d.count === 30000 && r.d.capped === false, JSON.stringify(r.d));
+  S.resetReady(); env = mkEnv({ PF_KEY: KEY });
+  env.db.exec('BEGIN'); const insC = env.db.prepare('INSERT INTO market_raw_daily VALUES (?,?,1,1,1)'); for (let i = 0; i < 100500; i++) insC.run('2020' + String(1 + (i % 12)).padStart(2, '0') + '01', 'S' + i); insC.run('20260101', 'Z'); env.db.exec('COMMIT');
+  r = await call(env, '/api/db/purge', { kind: 'price_old', param: { before: '20210101' }, preview: true }, KEY);
+  check('미리보기: 10만 행 초과는 100,000(capped=true)로 상한 처리', r.d.count === 100000 && r.d.capped === true && r.d.daysNeeded === 5, JSON.stringify(r.d));
   // 청크와 일일 한도
   S.resetReady(); env = mkEnv({ PF_KEY: KEY });
   env.db.exec('BEGIN'); const ins2 = env.db.prepare('INSERT INTO market_raw_daily VALUES (?,?,1,1,1)');

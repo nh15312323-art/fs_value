@@ -1302,9 +1302,9 @@ const HTML_PAGE = `<!doctype html>
         g.innerHTML = '<div class="db-big">' + d.pct.toFixed(1) + '%</div><div class="db-bar"><i class="' + cls + '" style="width:' + Math.min(100, d.pct).toFixed(1) + '%"></i></div>' + fmtBytes(d.sizeBytes) + ' 사용 / 한도 ' + fmtBytes(d.limitBytes) + ' · 알림 기준 ' + d.warnPct + '%' + (d.warn ? '<br /><b style="color:#b91c1c;">⚠ 알림 기준을 넘었습니다. 아래에서 데이터를 정리하세요.</b>' : '');
       }
       document.getElementById('dbLimitMb').value = d.limitMb; document.getElementById('dbWarnPct').value = d.warnPct;
-      document.getElementById('dbMeasured').textContent = d.measured ? '(실측)' : '(행 수 기반 추정치 — 정확한 값이 아님)';
+      document.getElementById('dbMeasured').textContent = d.measured ? '(실측)' : ((d.tables || []).some(function (t) { return t.capped; }) ? '(행 수는 표당 최대 20,000행까지만 세어 "+"로 표시 — 읽기 한도 보호. 표별 용량은 측정 불가)' : '(행 수 기반 추정치 — 정확한 값이 아님)');
       const tot = d.sizeBytes || (d.tables || []).reduce(function (a, t) { return a + (t.bytes || 0); }, 0) || 1;
-      document.getElementById('dbTables').innerHTML = '<table><thead><tr><th>테이블</th><th>행 수</th><th>용량</th><th>비중</th></tr></thead><tbody>' + (d.tables || []).map(function (t) { return '<tr><td>' + escHtml(t.name) + '</td><td>' + (t.rows == null ? 'N/A' : t.rows.toLocaleString('ko-KR')) + '</td><td>' + fmtBytes(t.bytes) + '</td><td>' + (t.bytes == null ? 'N/A' : (t.bytes / tot * 100).toFixed(1) + '%') + '</td></tr>'; }).join('') + '</tbody></table>';
+      document.getElementById('dbTables').innerHTML = '<table><thead><tr><th>테이블</th><th>행 수</th><th>용량</th><th>비중</th></tr></thead><tbody>' + (d.tables || []).map(function (t) { return '<tr><td>' + escHtml(t.name) + '</td><td>' + (t.rows == null ? 'N/A' : t.rows.toLocaleString('ko-KR') + (t.capped ? '+' : '')) + '</td><td>' + fmtBytes(t.bytes) + '</td><td>' + (t.bytes == null ? 'N/A' : (t.bytes / tot * 100).toFixed(1) + '%') + '</td></tr>'; }).join('') + '</tbody></table>';
       document.getElementById('dbCapTxt').textContent = '하루 ' + d.purgeCap.perDay.toLocaleString('ko-KR') + '행 (오늘 남은 한도 ' + d.purgeCap.left.toLocaleString('ko-KR') + '행)';
       document.getElementById('dbMsg').textContent = '표의 행 수는 읽기 한도를 쓰므로 1시간 동안 저장된 값을 보여줍니다' + (d.tablesAt ? ' (계산: ' + new Date(d.tablesAt).toLocaleString('ko-KR') + ')' : '') + '. ' + (d.protected ? '' : '※ 접근 키(PF_KEY)가 없어 삭제 기능은 잠겨 있습니다.');
       dbKindChange();
@@ -1344,15 +1344,15 @@ const HTML_PAGE = `<!doctype html>
       const b = dbBody(); b.preview = true;
       const r = await adminFetch('/api/db/purge', b);
       if (!r.ok) { box.style.color = '#b91c1c'; box.textContent = (r.data && r.data.error) || ('오류 ' + r.status); return; }
-      const d = r.data; dbPrev = { body: dbBody(), count: d.count, label: d.label };
+      const d = r.data; dbPrev = { body: dbBody(), count: d.count, label: d.label, capped: !!d.capped };
       if (!d.count) { box.textContent = '「' + d.label + '」 — 지울 데이터가 없습니다.'; return; }
-      box.innerHTML = '「' + escHtml(d.label) + '」 <b>' + d.count.toLocaleString('ko-KR') + '행</b> 삭제 대상 · 쓰기 약 ' + d.estWrites.toLocaleString('ko-KR') + '건 · 하루 ' + d.perDay.toLocaleString('ko-KR') + '행씩 지우면 약 <b>' + d.daysNeeded + '일</b> (오늘 남은 한도 ' + d.capLeft.toLocaleString('ko-KR') + '행)';
+      box.innerHTML = '「' + escHtml(d.label) + '」 <b>' + d.count.toLocaleString('ko-KR') + (d.capped ? '행 이상' : '행') + '</b> 삭제 대상 · 쓰기 약 ' + d.estWrites.toLocaleString('ko-KR') + '건 · 하루 ' + d.perDay.toLocaleString('ko-KR') + '행씩 지우면 약 <b>' + d.daysNeeded + '일</b> (오늘 남은 한도 ' + d.capLeft.toLocaleString('ko-KR') + '행)';
       document.getElementById('dbRunBtn').style.display = '';
     }
     function dbStop() { dbStopFlag = true; }
     async function dbRun() {
       if (!dbPrev || dbRunning) return;
-      if (!window.confirm('「' + dbPrev.label + '」 약 ' + dbPrev.count.toLocaleString('ko-KR') + '행을 삭제합니다. 되돌릴 수 없습니다. 계속할까요?')) return;
+      if (!window.confirm('「' + dbPrev.label + '」 약 ' + dbPrev.count.toLocaleString('ko-KR') + (dbPrev.capped ? '행 이상' : '행') + '을 삭제합니다. 되돌릴 수 없습니다. 계속할까요?')) return;
       dbRunning = true; dbStopFlag = false; const out = document.getElementById('dbRunBox'); out.style.color = '';
       document.getElementById('dbRunBtn').style.display = 'none'; document.getElementById('dbStopBtn').style.display = '';
       const before = dbUse ? dbUse.sizeBytes : null; let total = 0, last = null, msg = '';
@@ -7185,6 +7185,8 @@ const PURGE_CHUNK = 2000;             // 한 번 호출에서 지우는 최대 �
 const PURGE_DAILY_ROW_CAP = 20000;    // 삭제도 D1 쓰기 한도(무료 10만행/일)를 쓰므로 하루 삭제 상한을 둔다(행 1개 ≈ 쓰기 2건, 수집 작업 몫을 남김)
 const PRICE_KEEP_DAYS = 380;          // 12-1 모멘텀·52주 계산에 약 253거래일(≈365일)이 필요해 최근 이만큼은 지우지 못하게 한다
 const DB_TABLE_CACHE_MS = 60 * 60 * 1000;
+const COUNT_CAP = 20000;              // 표 행 수 계산이 읽는 최대 행(D1은 읽은 행 수로 하루 한도 500만을 센다 → 큰 표 전체를 세지 않는다)
+const PREVIEW_COUNT_CAP = 100000;     // 삭제 미리보기가 읽는 최대 행
 async function dbSizeBytes(env) {
   try { const r = await env.DB.prepare("SELECT 1").run(); const n = r && r.meta && r.meta.size_after; return Number.isFinite(n) ? n : null; } catch (e) { return null; }
 }
@@ -7210,7 +7212,8 @@ async function dbTableStats(env, refresh) {
   const { results: objs } = await env.DB.prepare("SELECT name, type, tbl_name FROM sqlite_master WHERE type IN ('table','index') AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '\\_cf\\_%' ESCAPE '\\'").all();
   const tables = objs.filter((o) => o.type === "table").map((o) => ({ name: o.name, rows: null, bytes: null }));
   for (const t of tables) {
-    try { const r = await env.DB.prepare('SELECT COUNT(*) AS n FROM "' + t.name.replace(/"/g, '""') + '"').first(); t.rows = r ? r.n : null; } catch (e) { t.rows = null; }
+    // 전체 COUNT(*)는 표 전체를 읽는다(수백만 행이면 하루 읽기 한도를 한 번에 소진). 상한까지만 센다.
+    try { const r = await env.DB.prepare('SELECT COUNT(*) AS n FROM (SELECT 1 FROM "' + t.name.replace(/"/g, '""') + '" LIMIT ' + (COUNT_CAP + 1) + ')').first(); const n = r ? r.n : null; t.capped = n != null && n > COUNT_CAP; t.rows = n == null ? null : Math.min(n, COUNT_CAP); } catch (e) { t.rows = null; }
   }
   let measured = false;
   try { // 일부 환경에서만 지원되는 dbstat(실측). 안 되면 추정으로 대체한다.
@@ -7220,7 +7223,7 @@ async function dbTableStats(env, refresh) {
     tables.forEach((t) => { t.bytes = by[t.name] != null ? by[t.name] : null; });
     measured = tables.some((t) => t.bytes != null);
   } catch (e) { measured = false; }
-  if (!measured) {
+  if (!measured && !tables.some((t) => t.capped)) {
     const size = await dbSizeBytes(env);
     let sl = 0; try { const r = await env.DB.prepare("SELECT COALESCE(SUM(LENGTH(payload)),0) AS n FROM screen_lists").first(); sl = r ? r.n : 0; } catch (e) { sl = 0; }
     const w = tables.map((t) => (t.rows || 0) * 60 + (t.name === "screen_lists" ? sl : 0));
@@ -7309,8 +7312,9 @@ async function handleDbCapacity(request, env, pathname, searchParams) {
       const cap = await purgeCapLeft(env);
       const T = spec.table;
       if (b.preview) {
-        let n = 0; try { const r = await env.DB.prepare("SELECT COUNT(*) AS n FROM " + T + " WHERE " + spec.cond).bind(...spec.binds).first(); n = r ? r.n : 0; } catch (e) { n = 0; }
-        return Response.json({ label: spec.label, count: n, estWrites: n * 2, daysNeeded: n ? Math.ceil(n / PURGE_DAILY_ROW_CAP) : 0, capLeft: cap.left, perDay: PURGE_DAILY_ROW_CAP });
+        let n = 0; try { const r = await env.DB.prepare("SELECT COUNT(*) AS n FROM (SELECT 1 FROM " + T + " WHERE " + spec.cond + " LIMIT " + (PREVIEW_COUNT_CAP + 1) + ")").bind(...spec.binds).first(); n = r ? r.n : 0; } catch (e) { n = 0; }
+        const capped = n > PREVIEW_COUNT_CAP; if (capped) n = PREVIEW_COUNT_CAP;
+        return Response.json({ label: spec.label, count: n, capped: capped, estWrites: n * 2, daysNeeded: n ? Math.ceil(n / PURGE_DAILY_ROW_CAP) : 0, capLeft: cap.left, perDay: PURGE_DAILY_ROW_CAP });
       }
       const lim = Math.min(PURGE_CHUNK, cap.left);
       if (lim <= 0) return Response.json({ error: "오늘 삭제 한도(" + PURGE_DAILY_ROW_CAP.toLocaleString("ko-KR") + "행)를 모두 썼습니다. 한국시간 오전 9시 이후(UTC 날짜가 바뀐 뒤) 이어서 지우세요.", capLeft: 0, done: false }, { status: 429 });
