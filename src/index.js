@@ -3788,7 +3788,7 @@ function renderAnalysis() {
           sCell((overlap[r.stock_code] || 0) + '/' + SCREEN_LISTS.filter((L) => !L.attn).length, overlap[r.stock_code] >= 4 ? 'sc-good' : '') + '</tr>';
       }).join('');
       const wrap = document.getElementById('screenWrap');
-      wrap.innerHTML = '<table class="scr" style="width:max-content; min-width:100%;"><thead>' + head + '</thead><tbody>' + (body || '<tr><td colspan="20">조건에 맞는 종목이 없습니다(가격 이력이 부족하거나 조건이 너무 엄격할 수 있습니다).</td></tr>') + '</tbody></table>';
+      wrap.innerHTML = '<table class="scr" style="width:max-content; min-width:100%;"><thead>' + head + '</thead><tbody>' + (body || '<tr><td colspan="20">' + (((screenData.meta || {}).missingLists || []).indexOf(screenTab) >= 0 ? '이 저장된 주간 결과는 이 목록이 추가되기 전에 만들어져 해당 목록이 없습니다. 위의 <b>스크리닝 실행</b>을 눌러 지금 계산하면 나타납니다(다음 토요일 자동 저장분부터는 항상 포함됩니다).' : '조건에 맞는 종목이 없습니다(가격 이력이 부족하거나 조건이 너무 엄격할 수 있습니다).') + '</td></tr>') + '</tbody></table>';
       wrap.style.display = '';
     }
 
@@ -6561,6 +6561,8 @@ async function loadScreenSnapshot(env, date) {
     if (r.list_key === "meta") meta = JSON.parse(r.payload);
     else lists[r.list_key] = JSON.parse(r.payload);
   }
+  // 저장 시점에 없던 목록(나중에 추가된 기능)은 "결과 없음"이 아니라 "이 저장분에는 없음"으로 구분해 알려준다.
+  meta.missingLists = SCREEN_LIST_KEYS.filter((k) => !lists[k]);
   for (const k of SCREEN_LIST_KEYS) if (!lists[k]) lists[k] = [];
   await attachOpIncome(env, lists);
   return { date: useDate, dates, meta, lists };
