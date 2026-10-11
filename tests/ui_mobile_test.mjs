@@ -20,7 +20,8 @@ const srv = http.createServer((q, r) => {
   if (p === '/api/screen/top') seenKeys.push(q.headers['x-pf-key'] || '');
   if (PROTECTED && q.headers['x-pf-key'] !== KEY) { r.statusCode = 401; return r.end(JSON.stringify({ error: '접근 키가 맞지 않습니다.' })); }
   if (p.startsWith('/api/stock/list')) return r.end(JSON.stringify({ stocks: [{ n: '테스트전자', c: '111111' }, { n: '가나다', c: '222222' }] }));
-  if (p.startsWith('/api/db/companies')) return r.end(JSON.stringify({ companies: [] }));
+  if (p.startsWith('/api/db/companies')) return r.end(JSON.stringify({ companies: [{ corp_name: '테스트전자', stock_code: '111111', n: 8, acc_mt: 12 }] }));
+  if (p.startsWith('/api/db/usage')) return r.end(JSON.stringify({ sizeBytes: 100 * 1048576, limitBytes: 500 * 1048576, limitMb: 500, warnPct: 90, pct: 20, warn: false, tables: [{ name: 'market_raw_daily', rows: 1000, bytes: 50000000 }], measured: false, protected: PROTECTED, purgeCap: { perDay: 20000, left: 20000, chunk: 2000 }, priceKeepDays: 380 }));
   if (p === '/api/pf/ping') return r.end('{"ok":true}');
   if (p === '/api/pf/state') return r.end(JSON.stringify(state));
   if (p === '/api/pf/quote') return r.end(JSON.stringify({ corp_name: '테스트전자', stock_code: '111111', close: 10000, date: '20250102', adv20: 5e9, advN: 20 }));
@@ -41,14 +42,14 @@ ok('확대 제한 없음(접근성): user-scalable/maximum-scale 미사용', awa
 ok('아이폰 폭: 하단 메뉴바 표시·상단 메뉴 숨김', await pg.isVisible('#bnav') && !(await pg.isVisible('#mainNav')));
 const bb = await pg.$eval('#bnav', (e) => e.getBoundingClientRect().height);
 ok('하단 메뉴바 높이 ≥ 56px, 버튼 4개 모두 ≥ 44px', bb >= 56 && (await pg.$$eval('#bnav button', (bs) => bs.every((x) => x.getBoundingClientRect().height >= 44 && x.getBoundingClientRect().width >= 44))));
-const tabs = ['momentum', 'financial', 'macro', 'data', 'bt', 'pf'];
-const tabVia = async (pg, t) => { if (['macro', 'data', 'bt'].includes(t)) { await pg.click('#bn_more'); await pg.click('#mn_' + t); } else await pg.click('#bn_' + t); await pg.waitForTimeout(250); };
+const tabs = ['momentum', 'financial', 'macro', 'data', 'bt', 'db', 'pf'];
+const tabVia = async (pg, t) => { if (['macro', 'data', 'bt', 'db'].includes(t)) { await pg.click('#bn_more'); await pg.click('#mn_' + t); } else await pg.click('#bn_' + t); await pg.waitForTimeout(250); };
 if (process.env.DBG) { for (const t of tabs) { await pg.evaluate((t) => switchTab(t), t); await pg.waitForTimeout(300); console.log(t, await pg.evaluate(() => { const o = []; document.querySelectorAll('body *').forEach((e) => { const r = e.getBoundingClientRect(); if (r.width > 0 && r.right > 391 && !e.closest('.tscroll,.combo-list,table,[style*="overflow"]') && getComputedStyle(e).position !== 'fixed') o.push(e.tagName + '#' + e.id + '.' + String(e.className).slice(0, 20) + ' w=' + Math.round(r.width) + ' r=' + Math.round(r.right)); }); return document.documentElement.scrollWidth + ' :: ' + o.slice(0, 8).join(' | '); })); } process.exit(0); }
 for (const t of tabs) {
   await tabVia(pg, t);
   const m = await pg.evaluate((t) => {
     const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'; };
-    const root = document.getElementById({ momentum: 'tabMomentum', financial: 'tabFinancial', macro: 'tabMacro', data: 'tabData', bt: 'tabBt', pf: 'tabPf' }[t]);
+    const root = document.getElementById({ momentum: 'tabMomentum', financial: 'tabFinancial', macro: 'tabMacro', data: 'tabData', bt: 'tabBt', db: 'tabDb', pf: 'tabPf' }[t]);
     const small = [], tiny = [], btn = [];
     root.querySelectorAll('input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=range]), select, textarea').forEach((e) => { if (!vis(e)) return; if (parseFloat(getComputedStyle(e).fontSize) < 16) small.push(e.id || e.className || e.tagName); if (e.getBoundingClientRect().height < 43.5) tiny.push((e.id || e.tagName) + ':' + Math.round(e.getBoundingClientRect().height)); });
     root.querySelectorAll('button').forEach((e) => { if (!vis(e) || e.closest('table')) return; if (e.getBoundingClientRect().height < 39.5) btn.push((e.id || e.textContent.trim().slice(0, 10)) + ':' + Math.round(e.getBoundingClientRect().height)); });
@@ -58,7 +59,7 @@ for (const t of tabs) {
   ok(t + ': 입력칸 높이 44px 이상', m.tiny.length === 0, m.tiny.join(','));
   ok(t + ': 버튼 높이 40px 이상', m.btn.length === 0, m.btn.join(' | '));
   ok(t + ': 가로 넘침 없음', m.over <= 1, String(m.over));
-  ok(t + ': 하단바 강조·주소 #탭 기록', m.hash === '#' + t && m.active === ({ macro: 'bn_more', data: 'bn_more', bt: 'bn_more' }[t] || 'bn_' + t), m.active + ' ' + m.hash);
+  ok(t + ': 하단바 강조·주소 #탭 기록', m.hash === '#' + t && m.active === ({ macro: 'bn_more', data: 'bn_more', bt: 'bn_more', db: 'bn_more' }[t] || 'bn_' + t), m.active + ' ' + m.hash);
 }
 // 뒤로가기 / 링크 / 마지막 탭 기억
 await tabVia(pg, 'financial'); await tabVia(pg, 'momentum');
@@ -91,6 +92,9 @@ ok('올바른 키(엔터): 잠금 화면 닫힘', !(await pg.isVisible('#lockScr
 ok('기억하기 체크 시 localStorage에 만료일과 함께 저장', await pg.evaluate(() => { const r = JSON.parse(localStorage.getItem('pfKeyR')); return r && r.k && r.exp > Date.now() + 29 * 86400000; }));
 ok('화면 소스(HTML)에 키가 들어 있지 않음', !HTML_PAGE.includes(KEY));
 seenKeys.length = 0; await tabVia(pg, 'momentum'); await pg.waitForTimeout(300);
+await tabVia(pg, 'financial'); await pg.click('#savedSummary'); await pg.waitForTimeout(300);
+ok('잠금 해제 직후 종목분석의 DB 저장 종목 목록에 종목이 표시됨', (await pg.innerText('#savedSummary')).includes('1개') && (await pg.$$('#savedChips .saved-chip')).length === 1);
+await tabVia(pg, 'momentum');
 ok('모든 /api 호출에 키가 자동 첨부', seenKeys.length > 0 && seenKeys.every((k) => k === KEY));
 await tabVia(pg, 'pf'); await pg.waitForTimeout(600);
 ok('내 계좌: 별도 입력 없이 자동으로 열림', await pg.isVisible('#pfuMain') && (await pg.innerText('#pfuSummary')).includes('10,100,000'));
