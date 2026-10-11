@@ -281,9 +281,16 @@ const HTML_PAGE = `<!doctype html>
     .scr .f5 { left: 306px; min-width: 96px; max-width: 96px; }
     .scr .f6 { left: 402px; min-width: 104px; max-width: 104px; border-right: 2px solid #94a3b8; box-shadow: 3px 0 4px -2px rgba(15,23,42,.18); }
     /* 좁은 화면(폰)에서는 고정 영역이 화면을 다 차지하지 않도록 순위·종목만 고정한다. */
-    @media (max-width: 720px) {
-      .scr .f3, .scr .f4, .scr .f5, .scr .f6 { position: static; box-shadow: none; }
-      .scr .f2 { border-right: 2px solid #94a3b8; }
+    .scr .mini { display: none; }
+    @media (max-width: 760px) {
+      .scr th.f3, .scr th.f4, .scr th.f5, .scr th.f6, .scr td.f3, .scr td.f4, .scr td.f5, .scr td.f6 { display: none; }
+      .scr .f1 { min-width: 34px; max-width: 34px; padding-left: 4px; padding-right: 4px; text-align: center; }
+      .scr .f2 { left: 34px; min-width: 150px; max-width: 150px; white-space: normal; overflow: visible; border-right: 2px solid #94a3b8; box-shadow: 3px 0 4px -2px rgba(15,23,42,.25); }
+      .scr th.f2 { box-shadow: 3px 0 4px -2px rgba(15,23,42,.25); }
+      .scr .mini { display: block; font-size: 12px; line-height: 1.45; color: var(--text-muted); margin-top: 2px; font-weight: 400; }
+      .scr .mini b { color: var(--text); font-weight: 600; }
+      .tscroll, #wrap { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+      .scr td { vertical-align: top; }
     }
     .sc-bad { color:#b91c1c; }
     .sc-warn { color:#b45309; }
@@ -439,11 +446,13 @@ const HTML_PAGE = `<!doctype html>
     .cmp-slot .cmp-x { min-width: 44px; }
     .cmp-best { font-weight: 800; background: #ecfdf5 !important; color: #047857; }
     #cmpWrap table { width: 100%; }
-    #cmpWrap td, #cmpWrap th { white-space: normal; }
+    #cmpWrap td, #cmpWrap th { white-space: normal; min-width: 68px; }
+    #cmpWrap td:first-child, #cmpWrap th:first-child { min-width: 84px; }
     @media (max-width: 760px) {
       .tblbar { display: flex; }
       table { font-size: var(--tfs, 13px); }
       .an-tbl { font-size: var(--tfs, 13px); }
+      #cmpWrap td:first-child, #cmpWrap th:first-child { max-width: 26vw; }
       th:first-child, td:first-child { max-width: 34vw; white-space: normal; box-shadow: 3px 0 4px -3px rgba(15,23,42,.35); }
       .an-tbl .an-first { min-width: 96px; max-width: 34vw; }
       td, th { padding: 8px 8px; }
@@ -466,7 +475,7 @@ const HTML_PAGE = `<!doctype html>
     <div class="ms-bg" onclick="closeMore()"></div>
     <div class="ms-body">
       <b style="font-size:15px;">메뉴 더보기</b>
-      <button onclick="closeMore(); cmpOpen()">⚖ 종목 비교 (최대 3)</button>
+      <button onclick="closeMore(); cmpOpen()">⚖ 종목 비교 (최대 5)</button>
       <button id="mn_macro" onclick="switchTab('macro')">🌐 ③ 거시·상관</button>
       <button id="mn_data" onclick="switchTab('data')">🗄️ ④ 데이터 관리</button>
       <button id="mn_bt" onclick="switchTab('bt')">🧪 ⑤ 백테스트</button>
@@ -511,7 +520,7 @@ const HTML_PAGE = `<!doctype html>
         <span class="combo"><input id="corpName" placeholder="종목명·종목코드·초성 (예: 삼성전자, 005930, ㅅㅅㅈㅈ)" autocomplete="off" /></span>
         <button class="primary" onclick="analyzeStock()">분석하기</button>
         <button id="btnWatch" onclick="toggleWatchlist()" title="관심종목에 추가/제거">☆ 관심</button>
-        <button id="btnCmpAdd" onclick="cmpToggleCurrent()" title="비교할 종목 바구니에 담기(최대 3종목)">⚖ 비교 담기</button>
+        <button id="btnCmpAdd" onclick="cmpToggleCurrent()" title="비교할 종목 바구니에 담기(최대 5종목)">⚖ 비교 담기</button>
         <button id="btnSearchMore" onclick="toggleSearchCompact()" title="관심종목·저장 종목·고급 설정 펼치기/접기" style="display:none;">▾ 더보기</button>
       </div>
       <div id="comboHint_corpName" class="combo-hint"></div>
@@ -544,13 +553,15 @@ const HTML_PAGE = `<!doctype html>
 
     <div id="cmpPanel" style="display:none;">
       <div class="card">
-        <div class="row" style="justify-content:space-between;"><b style="font-size:16px;">⚖ 종목 비교 (최대 3종목)</b><button onclick="cmpClose()">← 종목분석으로</button></div>
+        <div class="row" style="justify-content:space-between;"><b style="font-size:16px;">⚖ 종목 비교 (최대 5종목)</b><button onclick="cmpClose()">← 종목분석으로</button></div>
         <div class="meta-line" style="margin:6px 0 8px;">DB에 저장된 재무데이터를 같은 기준으로 나란히 봅니다(현재가는 자동). 종목분석·스크리닝에서 「⚖ 비교 담기」로 담아도 됩니다. 값이 좋아 보이는 쪽을 초록으로 표시하지만 투자 판단은 아닙니다.</div>
         <div class="cmp-slot"><span class="combo"><input id="cmpName0" placeholder="종목 1 (예: 삼성전자)" autocomplete="off" /></span><button class="cmp-x" onclick="cmpClearSlot(0)" title="비우기">✕</button></div>
         <div class="cmp-slot"><span class="combo"><input id="cmpName1" placeholder="종목 2 (예: 현대자동차)" autocomplete="off" /></span><button class="cmp-x" onclick="cmpClearSlot(1)" title="비우기">✕</button></div>
         <div class="cmp-slot"><span class="combo"><input id="cmpName2" placeholder="종목 3 (선택)" autocomplete="off" /></span><button class="cmp-x" onclick="cmpClearSlot(2)" title="비우기">✕</button></div>
+        <div class="cmp-slot"><span class="combo"><input id="cmpName3" placeholder="종목 4 (선택)" autocomplete="off" /></span><button class="cmp-x" onclick="cmpClearSlot(3)" title="비우기">✕</button></div>
+        <div class="cmp-slot"><span class="combo"><input id="cmpName4" placeholder="종목 5 (선택)" autocomplete="off" /></span><button class="cmp-x" onclick="cmpClearSlot(4)" title="비우기">✕</button></div>
         <details class="adv"><summary>현재가 직접 입력 (선택, 비우면 자동)</summary>
-          <div class="row" style="margin-top:6px;"><input id="cmpPrice0" type="number" min="0" placeholder="종목1 현재가" style="flex:1;" /><input id="cmpPrice1" type="number" min="0" placeholder="종목2 현재가" style="flex:1;" /><input id="cmpPrice2" type="number" min="0" placeholder="종목3 현재가" style="flex:1;" /></div>
+          <div class="row" style="margin-top:6px;"><input id="cmpPrice0" type="number" min="0" placeholder="종목1 현재가" style="flex:1 1 45%;" /><input id="cmpPrice1" type="number" min="0" placeholder="종목2 현재가" style="flex:1 1 45%;" /><input id="cmpPrice2" type="number" min="0" placeholder="종목3 현재가" style="flex:1 1 45%;" /><input id="cmpPrice3" type="number" min="0" placeholder="종목4 현재가" style="flex:1 1 45%;" /><input id="cmpPrice4" type="number" min="0" placeholder="종목5 현재가" style="flex:1 1 45%;" /></div>
         </details>
         <div class="row" style="margin-top:10px;"><button class="primary" onclick="compareStocks()" style="flex:1;">비교하기</button></div>
         <div id="cmpStatus" class="meta-line"></div>
@@ -564,7 +575,7 @@ const HTML_PAGE = `<!doctype html>
         <button id="subBtn_summary" class="toggle-active" onclick="setSubTab('summary')">요약 · 분류 · 밸류에이션</button>
         <button id="subBtn_table" onclick="setSubTab('table')">재무제표 표</button>
         <button id="subBtn_five" onclick="setSubTab('five')">ROE 5단계 분해</button>
-        <button id="subBtn_compare" onclick="cmpOpen()">⚖ 종목 비교(최대 3)</button>
+        <button id="subBtn_compare" onclick="cmpOpen()">⚖ 종목 비교(최대 5)</button>
       </div>
 
       <div id="chartDock" class="card" style="margin-bottom:12px;">
@@ -1204,8 +1215,8 @@ const HTML_PAGE = `<!doctype html>
     function tblFullClose() { if (tblFullId) { const el = document.getElementById(tblFullId); if (el) el.classList.remove('tfull'); } tblFullId = ''; const c = document.getElementById('tblClose'); if (c) c.style.display = 'none'; document.body.style.overflow = ''; }
     document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') tblFullClose(); });
     tblApply();
-    // ===== 종목 비교 바구니(최대 3) =====
-    const CMP_MAX = 3; let cmpList = [];
+    // ===== 종목 비교 바구니(최대 5) =====
+    const CMP_MAX = 5; let cmpList = [];
     try { const l = JSON.parse(localStorage.getItem('cmpList') || '[]'); if (Array.isArray(l)) cmpList = l.filter(function (x) { return typeof x === 'string' && x; }).slice(0, CMP_MAX); } catch (e) {}
     let cmpMsgT = 0;
     function cmpMsg(t) { const el = document.getElementById('cmpToast'); el.textContent = t; el.style.display = 'block'; clearTimeout(cmpMsgT); cmpMsgT = setTimeout(function () { el.style.display = 'none'; }, 3500); }
@@ -1248,17 +1259,17 @@ const HTML_PAGE = `<!doctype html>
       document.getElementById('stockBody').setAttribute('data-was', document.getElementById('stockBody').style.display === 'none' ? 'hidden' : 'shown');
       document.getElementById('stockBody').style.display = 'none';
       document.getElementById('cmpPanel').style.display = ''; document.getElementById('searchCard').style.display = 'none'; cmpTrayRender();
-      [0, 1, 2].forEach(function (i) { const e = document.getElementById('cmpName' + i); if (cmpList[i] !== undefined) e.value = cmpList[i]; });
+      [0, 1, 2, 3, 4].forEach(function (i) { const e = document.getElementById('cmpName' + i); if (cmpList[i] !== undefined) e.value = cmpList[i]; });
       window.scrollTo(0, 0);
       if (run === true) compareStocks();
-      else { const first = [0, 1, 2].filter(function (i) { return !document.getElementById('cmpName' + i).value.trim(); })[0]; if (first !== undefined) setTimeout(function () { document.getElementById('cmpName' + first).focus(); }, 80); }
+      else { const first = [0, 1, 2, 3, 4].filter(function (i) { return !document.getElementById('cmpName' + i).value.trim(); })[0]; if (first !== undefined) setTimeout(function () { document.getElementById('cmpName' + first).focus(); }, 80); }
     }
     function cmpClose() {
       document.getElementById('cmpPanel').style.display = 'none'; document.getElementById('searchCard').style.display = ''; cmpTrayRender();
       const sb = document.getElementById('stockBody'); if (sb.getAttribute('data-was') === 'shown') sb.style.display = '';
       window.scrollTo(0, 0);
     }
-    function cmpClearSlot(i) { document.getElementById('cmpName' + i).value = ''; document.getElementById('cmpPrice' + i).value = ''; const n = [0, 1, 2].map(function (k) { return document.getElementById('cmpName' + k).value.trim(); }).filter(Boolean); cmpList = n; cmpSave(); }
+    function cmpClearSlot(i) { document.getElementById('cmpName' + i).value = ''; document.getElementById('cmpPrice' + i).value = ''; const n = [0, 1, 2, 3, 4].map(function (k) { return document.getElementById('cmpName' + k).value.trim(); }).filter(Boolean); cmpList = n; cmpSave(); }
     // ===== 입력 효율: 모바일 키보드 종류·엔터키 문구·자동 대문자/교정 끄기 =====
     function tuneInputs() {
       Array.prototype.forEach.call(document.querySelectorAll('input,textarea'), function (el) {
@@ -1456,7 +1467,7 @@ const HTML_PAGE = `<!doctype html>
     (function () {
       attachCombo(document.getElementById('corpName'), { analyze: true });
       document.getElementById('corpName').addEventListener('focus', function () { const c = document.getElementById('searchCard'); if (c.classList.contains('compact')) { c.classList.remove('compact'); document.getElementById('btnSearchMore').textContent = '▴ 접기'; } });
-      [0, 1, 2].forEach(function (i) { attachCombo(document.getElementById('cmpName' + i)); });
+      [0, 1, 2, 3, 4].forEach(function (i) { attachCombo(document.getElementById('cmpName' + i)); });
       document.getElementById('comboHint_corpName').addEventListener('click', (ev) => {
         const a = ev.target.closest('[data-pick]'); if (!a) return;
         document.getElementById('corpName').value = a.getAttribute('data-pick'); updateComboHint(document.getElementById('corpName')); updateWatchButtonState(); analyzeStock();
@@ -4207,9 +4218,9 @@ function renderAnalysis() {
       const statusEl = document.getElementById('cmpStatus');
       const wrapEl = document.getElementById('cmpWrap');
       wrapEl.style.display = 'none';
-      const slots = [0, 1, 2].map(function (i) { return { name: document.getElementById('cmpName' + i).value.trim(), price: Number(document.getElementById('cmpPrice' + i).value) || null }; }).filter(function (x) { return x.name; });
+      const slots = [0, 1, 2, 3, 4].map(function (i) { return { name: document.getElementById('cmpName' + i).value.trim(), price: Number(document.getElementById('cmpPrice' + i).value) || null }; }).filter(function (x) { return x.name; });
       const seen = {}; const items = slots.filter(function (x) { if (seen[x.name]) return false; seen[x.name] = 1; return true; });
-      if (items.length < 2) { statusEl.textContent = '비교하려면 종목을 2개 이상 입력해주세요(최대 3개).'; return; }
+      if (items.length < 2) { statusEl.textContent = '비교하려면 종목을 2개 이상 입력해주세요(최대 5개).'; return; }
       statusEl.textContent = '조회 중... (' + items.length + '종목)';
       const res = await Promise.all(items.map(async function (it) {
         try {
@@ -5011,7 +5022,7 @@ async function pfuExport() {
         const hot = r.hot ? ' <span class="sc-warn" title="최근 1개월 수익률이 후보 중 상위 5%: 단기 과열·반전 위험">⚠</span>' : '';
         const comp = newFmt ? sCell(r.rw == null ? 'N/A' : (r.rw * 100).toFixed(1), kc('rw')) : ret(r.rw, 'rw');
         return '<tr><td class="f f1">' + (i + 1) + '</td>' +
-          '<td class="f f2"><a href="javascript:void(0)" onclick="goAnalyzeCode(&quot;' + r.stock_code + '&quot;)" title="클릭하면 종목분석으로 이동" style="color:var(--primary-dark); font-weight:700; text-decoration:none;">' + escHtml(r.corp_name) + '</a>' + hot + (r.corp_name !== r.stock_code ? '<button class="sc-cmp-s" data-cmp="' + escHtml(r.corp_name) + '" title="비교에 담기">⚖</button>' : '') + '<br /><span style="color:var(--text-muted); font-size:11px;">' + r.stock_code + '</span></td>' +
+          '<td class="f f2"><a href="javascript:void(0)" onclick="goAnalyzeCode(&quot;' + r.stock_code + '&quot;)" title="클릭하면 종목분석으로 이동" style="color:var(--primary-dark); font-weight:700; text-decoration:none;">' + escHtml(r.corp_name) + '</a>' + hot + (r.corp_name !== r.stock_code ? '<button class="sc-cmp-s" data-cmp="' + escHtml(r.corp_name) + '" title="비교에 담기">⚖</button>' : '') + '<br /><span style="color:var(--text-muted); font-size:11px;">' + r.stock_code + '</span><div class="mini"><b>' + sN(r.c0) + '원</b><br />시총 ' + sN(r.mcapEok) + '억 · 대금 ' + sN(r.tvEok) + '억<br />영업이익 ' + (r.op ? sN(r.op.v) + '억' : (opFillRunning ? '조회 중…' : 'N/A')) + '</div></td>' +
           '<td class="f f3">' + sN(r.c0) + '</td><td class="f f4">' + sN(r.mcapEok) + '</td><td class="f f5">' + sN(r.tvEok) + '</td>' + opCell +
           ret(r.r21, 'r21') + ret(r.r20, 'r20') + ret(r.r60, 'r60') + ret(r.r120, 'r120') + comp + ret(r.m16, 'm16') + rs(r.rs1, 'rs1') + rs(r.rs3, 'rs3') + rs(r.rs6, 'rs6') + sCell(r.z10 == null ? 'N/A' : sX(r.z10, 1), kc('z10')) + sCell(r.z20 == null ? 'N/A' : sX(r.z20, 1), kc('z20')) + extraCells(r) +
           sCell((overlap[r.stock_code] || 0) + '/' + SCREEN_LISTS.filter((L) => !L.attn).length, overlap[r.stock_code] >= 4 ? 'sc-good' : '') + '</tr>';
@@ -5598,7 +5609,7 @@ async function pfuExport() {
       const empty = data.series.filter((s) => s.vals.every((v) => v == null));
       document.getElementById('chartNote').textContent = empty.length
         ? '데이터가 모두 N/A인 항목: ' + empty.map((s) => s.label).join(', ') + ' (거시지표는 "거시경제 데이터 갱신" 후 표시됩니다)'
-        : (chartOverlay ? '겹쳐보기: 각 항목의 최소=0 ~ 최대=100으로 환산한 모양 비교용입니다. 마우스를 올리면 실제 값이 나옵니다.' : '열 제목을 더블클릭하면 항목이 추가(최대 3개)되고, 다시 더블클릭하면 제거됩니다. 마우스/터치로 같은 시점의 값을 한번에 볼 수 있습니다.');
+        : (chartOverlay ? '겹쳐보기: 각 항목의 최소=0 ~ 최대=100으로 환산한 모양 비교용입니다. 마우스를 올리면 실제 값이 나옵니다.' : '열 제목을 더블클릭하면 항목이 추가(최대 5개)되고, 다시 더블클릭하면 제거됩니다. 마우스/터치로 같은 시점의 값을 한번에 볼 수 있습니다.');
       const canvas = document.getElementById('chartCanvas');
       const n = chartOverlay ? 1 : data.series.length;
       canvas.style.height = (chartOverlay ? 300 : n * 140 + 44) + 'px';
