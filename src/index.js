@@ -140,6 +140,7 @@ const DB_COLUMNS = [
   "goodwill", "preferred_shares",
   "filing_date", "price_at_filing", "price_at_period_end", "per_at_filing", "pbr_at_filing", "fcf_yield_at_filing",
   "roa_at_filing", "peg_at_filing", "eps_at_filing", "eps_growth_at_filing", "shares_source",
+  "price_next_day", "price_next_day_date",
   "updated_at",
 ];
 
@@ -489,9 +490,9 @@ const HTML_PAGE = `<!doctype html>
 
     <div class="card">
       <div class="card-title">A. 재무분석 방법 백테스트 (DART 저장 데이터)</div>
-      <div class="row"><button onclick="btLoadStocks()">① 저장된 종목 불러오기</button><span id="btFinInfo" style="font-size:12px; color:var(--text-muted);"></span></div>
+      <div class="row"><button onclick="btLoadStocks()">① 저장된 종목 불러오기</button><button onclick="btBackfillNextDay()" title="연간 백테스트가 매매가로 쓰는 '공시 다음 거래일 종가'를 기존 저장 행에 채웁니다(처음 한 번, 이후 새로 받는 행은 자동 저장)">공시 다음 거래일 가격 채우기</button><span id="btFinInfo" style="font-size:12px; color:var(--text-muted);"></span></div>
       <div style="margin:8px 0; font-size:12.5px;">
-        <label>방식 <select id="btFinMode" onchange="btFinModeChange()"><option value="annual">연간 재무 방법 (공시일 매수 → 다음 해 공시일 매도)</option><option value="momq">분기 모멘텀 (분기말 주가)</option></select></label>
+        <label>방식 <select id="btFinMode" onchange="btFinModeChange()"><option value="annual">연간 재무 방법 (공시 다음 거래일 종가 매수 → 다음 해 공시 다음 거래일 종가 매도)</option><option value="momq">분기 모멘텀 (분기말 주가)</option></select></label>
       </div>
       <div id="btFinFactors" style="margin:6px 0;"></div>
       <div id="btMomBox" style="display:none; margin:6px 0; font-size:12.5px;">
@@ -541,7 +542,7 @@ const HTML_PAGE = `<!doctype html>
         <tr><td class="an-first">정보계수(IC)</td><td style="text-align:left;">점수와 이후 수익의 Spearman 순위상관</td><td style="text-align:left;">Spearman(1904), 퀀트 운용의 표준 평가 지표(Grinold-Kahn)</td><td>학술·실무</td></tr>
         <tr><td class="an-first">Newey-West t</td><td style="text-align:left;">수익률이 시간적으로 상관돼 있어도 맞는 표준오차</td><td style="text-align:left;">Newey-West(1987), 지연 선택 Newey-West(1994)</td><td>학술 표준</td></tr>
         <tr><td class="an-first">다중검정 보정</td><td style="text-align:left;">여러 조합을 시험할수록 우연히 좋은 결과가 나오는 것을 보정(시도 횟수 기록)</td><td style="text-align:left;">Harvey-Liu-Zhu(2016: 새 요인은 t≥3), Bailey-López de Prado(2014: Deflated Sharpe, 여기선 근사), White(2000: Reality Check, 미구현)</td><td>학술 (근사 구현)</td></tr>
-        <tr><td class="an-first">미래정보 편향 방지</td><td style="text-align:left;">공시일 이후 종가로만 매수. 공시일 이전 가격·재무로 판단하지 않음</td><td style="text-align:left;">백테스트의 기본 원칙(look-ahead bias)</td><td>원칙</td></tr>
+        <tr><td class="an-first">미래정보 편향 방지</td><td style="text-align:left;">공시 다음 거래일 종가로만 매수·매도(공시 당일 종가는 공시 전 정보가 섞일 수 있어 쓰지 않음). 공시일은 법정 기한으로 상한을 둔 근사값이라 늦은 공시·정정공시는 완전히 통제하지 못함</td><td style="text-align:left;">백테스트의 기본 원칙(look-ahead bias)</td><td>원칙</td></tr>
         <tr><td class="an-first">표본 분할</td><td style="text-align:left;">전반·후반으로 나눠 부호가 같은지 점검</td><td style="text-align:left;">표본 내/외 검증, Walk-forward(Pardo 2008)의 간이판. 정식 표본 외 검증은 아님</td><td>실무 (간이)</td></tr>
         <tr><td class="an-first">거래비용</td><td style="text-align:left;">상위 그룹 교체율 × 왕복 비용을 차감</td><td style="text-align:left;">Novy-Marx &amp; Velikov(2016): 거래비용 후 많은 이상현상이 약해짐. 한국은 매도 시 증권거래세가 있어 비용 입력값은 직접 조정하세요</td><td>학술 + 가정</td></tr>
         <tr><td class="an-first">알려진 한계</td><td style="text-align:left;">생존편향·선택편향·배당 미반영·소형주 체결 불가·분기 자료의 한계</td><td style="text-align:left;">Hou-Xue-Zhang(2020): 소형주 제외와 엄격한 유의수준을 적용하면 많은 이상현상이 재현되지 않음</td><td>한계 고지</td></tr>
@@ -2953,6 +2954,23 @@ function btTrials(sig) {
 function btResetTrials() { try { localStorage.removeItem(BT.trialsKey); } catch (e) { /* 무시 */ } btMsg('시도 기록을 지웠습니다.'); }
 function btMsg(t) { const el = document.getElementById('btStatus'); if (el) el.textContent = t; }
 
+async function btBackfillNextDay() {
+  if (BT.backfilling) return;
+  BT.backfilling = true;
+  try {
+    let total = 0, guard = 0, rem = null;
+    while (guard++ < 400) {
+      const r = await fetch('/api/backtest/backfill-next-day?limit=10');
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || '채우기 실패');
+      total += d.updated || 0; rem = d.remaining;
+      btMsg('공시 다음 거래일 가격 채우는 중... 저장 ' + total + '건, 남음 ' + rem + '건' + (d.errors ? ' (오류 ' + d.errors + '건)' : ''));
+      if (!d.processed || (!d.updated && !d.none && !d.nodata)) break; // 더 진행할 행이 없거나 최근 공시뿐
+    }
+    btMsg('완료: 이번에 ' + total + '건 저장. 남은 행 ' + rem + '건(최근 공시이거나 시세가 없는 행은 남을 수 있음). 다시 「저장된 종목 불러오기」를 눌러 반영하세요.');
+  } catch (e) { btMsg('오류: ' + (e.message || e)); } finally { BT.backfilling = false; }
+}
+
 async function btLoadStocks() {
   if (BT.loading) return;
   BT.loading = true;
@@ -2976,17 +2994,20 @@ async function btLoadStocks() {
   } catch (e) { btMsg('오류: ' + (e.message || e)); } finally { BT.loading = false; }
 }
 
-// 연간(재무) 백테스트: FY Y 사업보고서 공시일 종가에 매수 → 다음 해 사업보고서 공시일 종가에 매도(약 12개월). 공시일 이후 가격만 쓰므로 미래정보 편향이 없다.
+// 연간(재무) 백테스트: FY Y 사업보고서 공시 "다음 거래일" 종가에 매수 → 다음 해 사업보고서 공시 다음 거래일 종가에 매도(약 12개월).
+// 공시 당일 종가에는 공시 전 정보가 섞일 수 있어 쓰지 않는다. 다음 거래일 가격이 없는 행은 대체값 없이 제외하고 개수를 BT.skipNoNext에 센다.
+// 한계: 공시일은 법정 기한으로 상한을 둔 근사값(정정공시·지연공시는 완전히 통제하지 못함)이고, 12월 결산 법인을 전제로 한다.
 function btBuildAnnual(keys, o) {
   const perYear = {};
+  BT.skipNoNext = 0;
   BT.stocks.forEach((s) => {
     const ann = {};
     s.rows.forEach((r) => { if (r.reprt_code === '11011' && isUsable(r)) ann[Number(r.bsns_year)] = r; });
     Object.keys(ann).forEach((ys) => {
       const Y = Number(ys), a = ann[Y], nx = ann[Y + 1];
       if (!nx) return;
-      const P0 = a.price_at_filing, P1 = nx.price_at_filing;
-      if (!(P0 > 0 && P1 > 0)) return;
+      const P0 = a.price_next_day, P1 = nx.price_next_day;
+      if (!(P0 > 0 && P1 > 0)) { BT.skipNoNext++; return; }
       if (a.filing_date && nx.filing_date && !(nx.filing_date > a.filing_date)) return;
       let L;
       try { L = anBuildSeries(s.rows.filter((r) => Number(r.bsns_year) <= Y)); } catch (e) { return; }
@@ -3041,6 +3062,8 @@ async function btRunFin() {
     periods = btBuildAnnual(keys, {}); ppy = 1; title = '연간 재무: ' + keys.map((k) => BT_FACTORS[k].name.split(' (')[0]).join(' + ') + (keys.length > 1 ? ' (순위 평균 복합)' : '');
     sig = 'fin|' + keys.slice().sort().join('+') + '|' + G;
   }
+  const skipNote = (mode !== 'momq' && BT.skipNoNext) ? '공시 다음 거래일 가격이 없어 제외된 종목·연도: ' + BT.skipNoNext + '건 (「공시 다음 거래일 가격 채우기」를 먼저 실행하세요)' : '';
+  btMsg(skipNote);
   const res = btRun(periods, { G, cost, ppy, trimLo: trim ? -0.9 : null, trimHi: trim ? 5 : null, minN: Math.max(3 * G, 10) });
   const nTr = btTrials(sig);
   BT.last = { kind: 'fin', mode, keys, G };
@@ -4705,6 +4728,11 @@ function closeOnOrAfter(prices, targetDate) {
   const c = prices.filter((p) => p.date >= targetDate).sort((a, b) => a.date.localeCompare(b.date));
   return c.length ? c[0].close : null;
 }
+// 공시일(targetDate) "다음" 첫 거래일의 {date, close}. 당일은 포함하지 않는다(당일 종가에는 공시 전 정보가 섞일 수 있음).
+function firstCloseAfter(prices, targetDate) {
+  const c = prices.filter((p) => p.date > targetDate).sort((a, b) => a.date.localeCompare(b.date));
+  return c.length ? { date: c[0].date, close: c[0].close } : null;
+}
 function closeAsOf(prices, targetDate) {
   const candidates = prices.filter((p) => p.date <= targetDate).sort((a, b) => b.date.localeCompare(a.date));
   return candidates.length ? candidates[0].close : null;
@@ -5254,6 +5282,7 @@ async function fetchPeriodRow(corpCode, stockCode, period, proxyUrl, db) {
       filing_date: null, price_at_filing: null, price_at_period_end: null, per_at_filing: null, pbr_at_filing: null, fcf_yield_at_filing: null,
       roa_at_filing: null, peg_at_filing: null, eps_at_filing: null, eps_growth_at_filing: null,
       shares_source: null,
+      price_next_day: null, price_next_day_date: null,
     };
     for (const item of ACCOUNT_ITEMS) row[item.key] = null;
     row.capex = null;
@@ -5354,9 +5383,12 @@ async function fetchPeriodRow(corpCode, stockCode, period, proxyUrl, db) {
       const filingCapped = filingDate !== rceptDate; // 상한 적용(정정공시 등)이면 월말이 휴장일일 수 있어 다음 영업일 종가를 쓴다
       row.filing_date = filingDate;
       try {
-        const prices = await fetchNaverPrices(stockCode, addDaysStr(filingDate, -15), filingCapped ? addDaysStr(filingDate, 10) : filingDate, proxyUrl);
+        const prices = await fetchNaverPrices(stockCode, addDaysStr(filingDate, -15), addDaysStr(filingDate, 10), proxyUrl);
         const price = filingCapped ? closeOnOrAfter(prices, filingDate) : closeAsOf(prices, filingDate);
         row.price_at_filing = price;
+        const nextDay = firstCloseAfter(prices, filingDate); // 백테스트 매매가: 공시 다음 거래일 종가
+        row.price_next_day = nextDay ? nextDay.close : null;
+        row.price_next_day_date = nextDay ? nextDay.date : null;
 
         // 화면(재무분석)의 shareOut과 같은 기준: 발행주식수 − 자기주식 + 우선주 (순이익·자본이 모든 주식 종류의 몫이므로 같은 기준으로 나눔)
         const outstandingRaw = (stockCounts.total_shares != null && stockCounts.treasury_shares != null)
@@ -5426,6 +5458,13 @@ async function ensureFinancialColumns(db) {
     if (!have.has(c)) {
       try { await db.prepare(`ALTER TABLE financial_raw ADD COLUMN ${c} REAL`).run(); } catch (e) { /* 동시 실행으로 이미 추가됨 */ }
     }
+  }
+  // 백테스트용 "공시 다음 거래일 종가"(공시일 당일 종가는 공시 이전 정보까지 섞일 수 있어 매매가로 쓰지 않는다)
+  if (!have.has("price_next_day")) {
+    try { await db.prepare("ALTER TABLE financial_raw ADD COLUMN price_next_day REAL").run(); } catch (e) { /* 이미 추가됨 */ }
+  }
+  if (!have.has("price_next_day_date")) {
+    try { await db.prepare("ALTER TABLE financial_raw ADD COLUMN price_next_day_date TEXT").run(); } catch (e) { /* 이미 추가됨 */ }
   }
   finColsReady = true;
 }
@@ -5671,6 +5710,43 @@ async function handleRequest(request, env) {
       if (!codes.length) return Response.json({ error: "codes 필요" }, { status: 400 });
       const { results } = await env.DB.prepare("SELECT * FROM financial_raw WHERE corp_code IN (" + codes.map(() => "?").join(",") + ") ORDER BY corp_code, period_order").bind(...codes).all();
       return new Response(JSON.stringify({ rows: results }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "private, max-age=60" } });
+    }
+    if (pathname === "/api/backtest/backfill-next-day") {
+      // 이미 저장된 행에 "공시 다음 거래일 종가"를 채운다. 무료 플랜 하위요청 한도를 위해 한 번에 최대 15행만 처리하고,
+      // 화면 버튼이 remaining이 0이 될 때까지 반복 호출한다. 같은 호출을 다시 해도 같은 결과(멱등)다.
+      await ensureFinancialColumns(env.DB);
+      if (searchParams.get("retry_nodata") === "1") {
+        await env.DB.prepare("UPDATE financial_raw SET price_next_day_date = NULL WHERE price_next_day_date IN ('none','nodata')").run();
+      }
+      const limit = Math.min(Math.max(Number(searchParams.get("limit")) || 10, 1), 15);
+      const { results: todo } = await env.DB.prepare(
+        "SELECT f.corp_code AS corp_code, f.bsns_year AS bsns_year, f.reprt_code AS reprt_code, f.filing_date AS filing_date, m.stock_code AS stock_code " +
+        "FROM financial_raw f JOIN corp_master m ON m.corp_code = f.corp_code " +
+        "WHERE f.filing_date IS NOT NULL AND f.price_next_day_date IS NULL AND m.stock_code IS NOT NULL ORDER BY f.filing_date LIMIT ?"
+      ).bind(limit).all();
+      const staleBefore = addDaysStr(todayStr(), -14); // 이 날짜보다 오래된 공시인데도 다음 거래일 가격이 없으면 '없음'으로 표시해 반복 조회를 막는다
+      let updated = 0, none = 0, nodata = 0, tooRecent = 0, errors = 0;
+      for (const t of todo) {
+        try {
+          const prices = await fetchNaverPrices(t.stock_code, addDaysStr(t.filing_date, -15), addDaysStr(t.filing_date, 10), env.DART_PROXY_URL);
+          const nd = firstCloseAfter(prices, t.filing_date);
+          if (nd) {
+            await env.DB.prepare("UPDATE financial_raw SET price_next_day = ?, price_next_day_date = ? WHERE corp_code = ? AND bsns_year = ? AND reprt_code = ?")
+              .bind(nd.close, nd.date, t.corp_code, t.bsns_year, t.reprt_code).run();
+            updated++;
+          } else if (t.filing_date < staleBefore) {
+            // 시세 응답 자체가 비었으면 'nodata'(프록시 오류일 수 있어 retry_nodata=1로 다시 시도 가능), 시세는 있는데 이후 거래일이 없으면 'none'(거래정지·상장폐지 등)
+            const mark = prices.length ? "none" : "nodata";
+            await env.DB.prepare("UPDATE financial_raw SET price_next_day = NULL, price_next_day_date = ? WHERE corp_code = ? AND bsns_year = ? AND reprt_code = ?")
+              .bind(mark, t.corp_code, t.bsns_year, t.reprt_code).run();
+            if (mark === "none") none++; else nodata++;
+          } else {
+            tooRecent++; // 공시가 최근이라 아직 다음 거래일 시세가 없을 수 있음 — 다음에 다시 시도
+          }
+        } catch (e) { errors++; }
+      }
+      const rem = await env.DB.prepare("SELECT COUNT(*) AS n FROM financial_raw WHERE filing_date IS NOT NULL AND price_next_day_date IS NULL").first();
+      return Response.json({ processed: todo.length, updated, none, nodata, tooRecent, errors, remaining: rem ? rem.n : null });
     }
     if (pathname === "/api/backtest/screen-plan") {
       const { results } = await env.DB.prepare("SELECT market_date FROM market_index_daily WHERE idx_name = ? ORDER BY market_date DESC LIMIT 400").bind(KOSPI_NAME).all();
