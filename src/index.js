@@ -271,6 +271,23 @@ const HTML_PAGE = `<!doctype html>
       color: var(--primary-dark); border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer;
     }
     .watchlist-chip:hover { background: #dbeafe; }
+    .combo { position: relative; flex: 1; min-width: 170px; display: block; }
+    .combo input { width: 100%; box-sizing: border-box; }
+    .combo-list { position: absolute; left: 0; right: 0; top: 100%; z-index: 30; margin-top: 2px; background: var(--card-bg, #fff); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(15,23,42,.14); max-height: 340px; overflow-y: auto; display: none; }
+    .combo-item { display: flex; align-items: center; gap: 8px; padding: 9px 12px; cursor: pointer; font-size: 14px; border-bottom: 1px solid #f1f5f9; }
+    .combo-item:last-child { border-bottom: 0; }
+    .combo-item.act, .combo-item:hover { background: #eff6ff; }
+    .combo-item .cc { color: var(--text-muted); font-size: 12px; }
+    .combo-item .bd { margin-left: auto; font-size: 11px; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
+    .combo-item .bd.ok { background: #dcfce7; color: #166534; }
+    .combo-item .bd.no { background: #f1f5f9; color: #64748b; }
+    .combo-hint { font-size: 12.5px; margin-top: 6px; min-height: 18px; color: var(--text-muted); line-height: 1.5; }
+    .combo-hint .good { color: #166534; font-weight: 600; }
+    .combo-hint .bad { color: #b45309; font-weight: 600; }
+    .saved-chip { border: 1px solid var(--border); background: #fff; border-radius: 999px; padding: 4px 10px; font-size: 12.5px; cursor: pointer; margin: 0 4px 6px 0; }
+    .saved-chip:hover { background: #eff6ff; }
+    .saved-chip small { color: var(--text-muted); margin-left: 4px; }
+    .saved-chip.recent { border-style: dashed; }
     .watchlist-chip .x { color: var(--text-muted); font-weight: 700; }
   </style>
 </head>
@@ -293,12 +310,18 @@ const HTML_PAGE = `<!doctype html>
   <div id="tabFinancial">
     <div class="card">
       <div class="row">
-        <input id="corpName" list="dbCompanyList" onfocus="loadDbCompanies().catch(function(){})" onkeydown="if(event.key==='Enter'){analyzeStock();}" placeholder="종목명을 입력하고 Enter (예: 삼성전자)" style="flex:1; min-width:170px;" autocomplete="off" />
-        <datalist id="dbCompanyList"></datalist>
+        <span class="combo"><input id="corpName" placeholder="종목명·종목코드·초성 (예: 삼성전자, 005930, ㅅㅅㅈㅈ)" autocomplete="off" /></span>
         <button class="primary" onclick="analyzeStock()">분석하기</button>
         <button id="btnWatch" onclick="toggleWatchlist()" title="관심종목에 추가/제거">☆ 관심</button>
       </div>
+      <div id="comboHint_corpName" class="combo-hint"></div>
       <div id="watchlistWrap" class="row" style="margin-top:8px; gap:6px;"></div>
+      <details id="savedBox" class="adv" style="margin-top:6px;">
+        <summary id="savedSummary">📁 DB에 저장된 종목 (불러오는 중…)</summary>
+        <div id="savedRecent" style="margin-top:8px;"></div>
+        <input id="savedFilter" placeholder="저장된 종목 안에서 찾기" autocomplete="off" style="width:100%; box-sizing:border-box; margin:6px 0;" />
+        <div id="savedChips"></div>
+      </details>
       <div id="stockMeta" class="meta-line"></div>
       <details class="adv">
         <summary>고급 설정 — 조회 기간 · DART 데이터 직접 받기</summary>
@@ -372,11 +395,11 @@ const HTML_PAGE = `<!doctype html>
         <div class="card">
           <div class="meta-line" style="margin:0 0 8px;">DB에 저장된 두 종목을 같은 기준으로 나란히 봅니다(현재가는 자동으로 불러옵니다).</div>
           <div class="row">
-            <input id="cmpNameA" list="dbCompanyList" placeholder="종목 A (예: 삼성전자)" style="flex:1; min-width:120px;" />
+            <span class="combo"><input id="cmpNameA" placeholder="종목 A (예: 삼성전자)" autocomplete="off" /></span>
             <input id="cmpPriceA" type="number" placeholder="A 현재가(비우면 자동)" style="width:150px" />
           </div>
           <div class="row" style="margin-top:6px;">
-            <input id="cmpNameB" list="dbCompanyList" placeholder="종목 B (예: 현대자동차)" style="flex:1; min-width:120px;" />
+            <span class="combo"><input id="cmpNameB" placeholder="종목 B (예: 현대자동차)" autocomplete="off" /></span>
             <input id="cmpPriceB" type="number" placeholder="B 현재가(비우면 자동)" style="width:150px" />
           </div>
           <div class="row" style="margin-top:8px;">
@@ -691,6 +714,160 @@ const HTML_PAGE = `<!doctype html>
       updateWatchButtonState();
       analyzeStock();
     }
+
+    // ===== 종목 검색 콤보박스: 입력하는 즉시 후보·저장 여부를 보여주고, 없는 이름은 서버에 묻기 전에 알려준다 =====
+    let dbCompanies = null; // DB에 저장된 종목 목록 캐시(아래 검색·저장 종목 패널과 loadDbCompanies가 함께 씀)
+    let STOCK_LIST = null, STOCK_LIST_P = null;
+    const CHO = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+    function choseongOf(str) {
+      let o = '';
+      for (const ch of String(str)) { const c = ch.charCodeAt(0); o += (c >= 0xAC00 && c <= 0xD7A3) ? CHO[Math.floor((c - 0xAC00) / 588)] : ch; }
+      return o;
+    }
+    function loadStockList() {
+      if (STOCK_LIST) return Promise.resolve(STOCK_LIST);
+      if (STOCK_LIST_P) return STOCK_LIST_P;
+      STOCK_LIST_P = fetch('/api/stock/list').then((r) => r.json()).then((d) => {
+        STOCK_LIST = (d.stocks || []).map((x) => ({ n: x.n, c: x.c, nl: x.n.toLowerCase(), cho: choseongOf(x.n) }));
+        return STOCK_LIST;
+      }).catch(() => { STOCK_LIST_P = null; return null; });
+      return STOCK_LIST_P;
+    }
+    function savedMap() {
+      const m = {};
+      (dbCompanies || []).forEach((c) => { m[c.corp_name] = c; });
+      return m;
+    }
+    function searchStocks(q, limit) {
+      q = String(q || '').trim().toLowerCase();
+      if (!q || !STOCK_LIST) return [];
+      const isCho = /^[ㄱ-ㅎ]+$/.test(q), isNum = /^[0-9]+$/.test(q), sm = savedMap();
+      const out = [];
+      for (const s of STOCK_LIST) {
+        let sc = -1;
+        if (s.nl === q) sc = 0;
+        else if (s.nl.indexOf(q) === 0) sc = 1;
+        else if (isNum && s.c.indexOf(q) === 0) sc = 2;
+        else if (s.nl.indexOf(q) > 0) sc = 3;
+        else if (isCho && s.cho.indexOf(q) === 0) sc = 4;
+        else if (isCho && s.cho.indexOf(q) > 0) sc = 5;
+        if (sc >= 0) out.push({ s: s, sc: sc, saved: sm[s.n] ? 0 : 1 });
+      }
+      out.sort((a, b) => a.sc - b.sc || a.saved - b.saved || a.s.n.length - b.s.n.length || a.s.n.localeCompare(b.s.n));
+      return out.slice(0, limit || 8).map((x) => x.s);
+    }
+    function savedBadge(name) {
+      const c = savedMap()[name];
+      return c ? { ok: true, text: '저장 ' + c.n + '기간' } : { ok: false, text: '미저장' };
+    }
+    function updateComboHint(input) {
+      const hint = document.getElementById('comboHint_' + input.id);
+      if (!hint) return;
+      const v = input.value.trim();
+      if (!v) { hint.innerHTML = ''; return; }
+      if (!STOCK_LIST) { hint.innerHTML = '<span style="color:var(--text-muted);">종목 목록을 불러오는 중…</span>'; return; }
+      const exact = STOCK_LIST.filter((s) => s.n === v)[0];
+      if (exact) {
+        const c = savedMap()[exact.n];
+        hint.innerHTML = '<span class="good">✔ ' + escHtml(exact.n) + '</span> (' + exact.c + ') · ' + (c
+          ? '재무 ' + c.n + '개 기간 저장됨 (' + c.first_year + '~' + c.last_year + ') — Enter로 바로 분석'
+          : '<span class="bad">재무 미저장</span> — 분석하면 DART에서 새로 받아옵니다(약 1~2분)');
+        return;
+      }
+      const cand = searchStocks(v, 5);
+      if (!cand.length) { hint.innerHTML = '<span class="bad">✖ 일치하는 종목이 없습니다.</span> 상장사 이름·6자리 코드·초성(예: ㅅㅅㅈㅈ)으로 찾아보세요.'; return; }
+      hint.innerHTML = '<span class="bad">정확히 일치하는 종목명이 아닙니다.</span> 혹시 ' + cand.map((s) => '<a href="javascript:void(0)" data-pick="' + escHtml(s.n) + '" style="color:var(--primary-dark); font-weight:600;">' + escHtml(s.n) + '</a>').join(' · ') + ' 인가요?';
+    }
+    // opts.analyze=true면 선택 즉시 분석(종목분석 입력창). 비교 입력창은 값만 채운다.
+    function attachCombo(input, opts) {
+      opts = opts || {};
+      const box = document.createElement('div');
+      box.className = 'combo-list';
+      input.parentNode.appendChild(box);
+      let items = [], act = -1;
+      const close = () => { box.style.display = 'none'; act = -1; };
+      const paint = () => {
+        box.innerHTML = items.map((s, i) => {
+          const b = savedBadge(s.n);
+          return '<div class="combo-item' + (i === act ? ' act' : '') + '" data-i="' + i + '"><b>' + escHtml(s.n) + '</b><span class="cc">' + s.c + '</span><span class="bd ' + (b.ok ? 'ok' : 'no') + '">' + b.text + '</span></div>';
+        }).join('');
+        box.style.display = items.length ? 'block' : 'none';
+      };
+      const pick = (s) => {
+        input.value = s.n; close(); updateComboHint(input);
+        if (input.id === 'corpName') updateWatchButtonState();
+        if (opts.analyze) analyzeStock();
+      };
+      const refresh = () => {
+        const v = input.value.trim();
+        items = v ? searchStocks(v, 8) : [];
+        act = items.length ? 0 : -1;
+        paint(); updateComboHint(input);
+      };
+      input.addEventListener('focus', () => { loadStockList().then(() => { loadDbCompanies().catch(() => {}).then(() => { if (document.activeElement === input) refresh(); }); }); });
+      input.addEventListener('input', () => { loadStockList().then(refresh); refresh(); });
+      input.addEventListener('keydown', (ev) => {
+        if (ev.key === 'ArrowDown' && items.length) { ev.preventDefault(); act = (act + 1) % items.length; paint(); }
+        else if (ev.key === 'ArrowUp' && items.length) { ev.preventDefault(); act = (act - 1 + items.length) % items.length; paint(); }
+        else if (ev.key === 'Escape') close();
+        else if (ev.key === 'Enter') {
+          ev.preventDefault();
+          const v = input.value.trim();
+          const exact = STOCK_LIST ? STOCK_LIST.filter((s) => s.n === v)[0] : null;
+          if (exact) { close(); updateComboHint(input); if (opts.analyze) analyzeStock(); return; }
+          if (items.length) { pick(items[act >= 0 ? act : 0]); return; }
+          if (!STOCK_LIST) { close(); if (opts.analyze) analyzeStock(); return; } // 목록을 못 받았을 땐 예전처럼 서버에 맡긴다
+          updateComboHint(input);
+        }
+      });
+      box.addEventListener('mousedown', (ev) => {
+        const el = ev.target.closest('.combo-item'); if (!el) return;
+        ev.preventDefault(); pick(items[Number(el.getAttribute('data-i'))]);
+      });
+      input.addEventListener('blur', () => setTimeout(close, 120));
+    }
+    function renderSavedBox() {
+      const list = dbCompanies || [];
+      const sum = document.getElementById('savedSummary');
+      if (!sum) return;
+      sum.textContent = '📁 DB에 저장된 종목 ' + list.length + '개 — 눌러서 펼치고 바로 분석';
+      const f = (document.getElementById('savedFilter').value || '').trim().toLowerCase();
+      const fc = /^[ㄱ-ㅎ]+$/.test(f);
+      const shown = list.filter((c) => !f || c.corp_name.toLowerCase().indexOf(f) >= 0 || (fc && choseongOf(c.corp_name).indexOf(f) >= 0) || String(c.stock_code || '').indexOf(f) === 0);
+      document.getElementById('savedChips').innerHTML = shown.length
+        ? shown.map((c) => '<button type="button" class="saved-chip" data-name="' + escHtml(c.corp_name) + '">' + escHtml(c.corp_name) + '<small>' + c.n + '기간' + (c.acc_mt && Number(c.acc_mt) !== 12 ? ' · ' + c.acc_mt + '월결산' : '') + '</small></button>').join('')
+        : '<span style="font-size:12.5px; color:var(--text-muted);">' + (list.length ? '일치하는 저장 종목이 없습니다.' : '아직 저장된 종목이 없습니다. 종목을 분석하면 자동으로 저장됩니다.') + '</span>';
+      const rec = loadRecent().filter((n) => list.some((c) => c.corp_name === n));
+      document.getElementById('savedRecent').innerHTML = rec.length ? '<span style="font-size:12px; color:var(--text-muted);">최근 본 종목 </span>' + rec.map((n) => '<button type="button" class="saved-chip recent" data-name="' + escHtml(n) + '">' + escHtml(n) + '</button>').join('') : '';
+    }
+    const RECENT_KEY = 'fs_recent';
+    function loadRecent() { try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch (e) { return []; } }
+    function pushRecent(name) {
+      if (!name) return;
+      const l = [name].concat(loadRecent().filter((n) => n !== name)).slice(0, 8);
+      try { localStorage.setItem(RECENT_KEY, JSON.stringify(l)); } catch (e) { /* 저장 불가여도 무시 */ }
+    }
+    (function () {
+      attachCombo(document.getElementById('corpName'), { analyze: true });
+      attachCombo(document.getElementById('cmpNameA'));
+      attachCombo(document.getElementById('cmpNameB'));
+      document.getElementById('comboHint_corpName').addEventListener('click', (ev) => {
+        const a = ev.target.closest('[data-pick]'); if (!a) return;
+        document.getElementById('corpName').value = a.getAttribute('data-pick'); updateComboHint(document.getElementById('corpName')); updateWatchButtonState(); analyzeStock();
+      });
+      const sb = document.getElementById('savedBox');
+      const goSaved = (ev) => {
+        const b = ev.target.closest('.saved-chip'); if (!b) return;
+        document.getElementById('corpName').value = b.getAttribute('data-name');
+        updateComboHint(document.getElementById('corpName')); updateWatchButtonState(); analyzeStock();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      };
+      document.getElementById('savedChips').addEventListener('click', goSaved);
+      document.getElementById('savedRecent').addEventListener('click', goSaved);
+      document.getElementById('savedFilter').addEventListener('input', renderSavedBox);
+      loadStockList();
+      loadDbCompanies().then(renderSavedBox).catch(() => { document.getElementById('savedSummary').textContent = '📁 DB 저장 종목 목록을 불러오지 못했습니다'; });
+    })();
 
     // 조회기간 입력 기본값: 최근 10년
     (function () {
@@ -3944,6 +4121,8 @@ function renderAnalysis() {
       if (stTxt.indexOf('조회 중') >= 0 || stTxt.indexOf('받는 중') >= 0 || stTxt.indexOf('받아옵니다') >= 0) stEl.textContent = '';
       await fetchLatestPrice();
       if (seq != null && seq !== analyzeSeq) return;
+      pushRecent(document.getElementById('corpName').value.trim());
+      loadDbCompanies(true).catch(() => {}); // 새로 저장된 종목이 있을 수 있어 목록 갱신(저장 종목 패널·배지)
       renderSummary();
       renderFiveStep();
       macroCorrDirty = true;
@@ -4032,7 +4211,6 @@ function renderAnalysis() {
 
     // ===== DB에 저장된 종목 목록 =====
     // 무료 한도 절약: 서버는 PK 인덱스만 훑는 집계 1회(+ corp_master 조인), 결과는 브라우저에 캐시하고 새 저장이 있을 때만 다시 받는다.
-    let dbCompanies = null;
     let dbListShown = [];
     function escHtml(t) { return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
     async function loadDbCompanies(force) {
@@ -4041,7 +4219,7 @@ function renderAnalysis() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'DB 종목 목록 조회 실패');
       dbCompanies = data.companies;
-      document.getElementById('dbCompanyList').innerHTML = dbCompanies.map((c) => '<option value="' + escHtml(c.corp_name) + '"></option>').join('');
+      renderSavedBox();
       return dbCompanies;
     }
     async function toggleDbList(force) {
@@ -5901,6 +6079,13 @@ async function handleRequest(request, env) {
         .all();
 
       return Response.json({ corp_name: corpRow.corp_name, remaining: results.length, next: results.slice(0, 5) });
+    }
+
+    // 종목 검색(자동완성)용 상장사 목록. 브라우저가 하루 동안 캐시하고 검색은 브라우저에서 한다(타이핑마다 서버·DB를 읽지 않음).
+    if (pathname === "/api/stock/list") {
+      const { results } = await env.DB.prepare("SELECT corp_name, stock_code FROM corp_master WHERE stock_code IS NOT NULL AND stock_code != '' ORDER BY corp_name").all();
+      const stocks = results.map((r) => ({ n: r.corp_name, c: r.stock_code }));
+      return new Response(JSON.stringify({ stocks }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "private, max-age=86400" } });
     }
 
     if (pathname === "/api/db/companies") {
