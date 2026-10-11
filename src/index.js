@@ -6231,14 +6231,22 @@ async function fetchIndexHistory(idxName, beginBasDt, endBasDt, apiKey) {
     url.searchParams.set("idxNm", idxName);
     url.searchParams.set("beginBasDt", beginBasDt);
     url.searchParams.set("endBasDt", endBasDt);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 15000);
+    // 공공데이터포털이 가끔 느려 15초 안에 못 받는 일이 있어, 시간 초과(abort)만 1회 더 시도한다(두 번째는 25초).
     let text;
-    try {
-      const resp = await fetch(url.toString(), { signal: controller.signal });
-      text = await resp.text();
-    } finally {
-      clearTimeout(timer);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), attempt === 0 ? 15000 : 25000);
+      try {
+        const resp = await fetch(url.toString(), { signal: controller.signal });
+        text = await resp.text();
+        break;
+      } catch (e) {
+        if (attempt === 1 || !(e && e.name === "AbortError")) {
+          throw new Error((e && e.name === "AbortError" ? "공공데이터포털 지수시세 응답 지연(시간 초과)" : ((e && e.message) || String(e))) + " — 저장돼 있던 코스피 지수로 계산했습니다. 최신 코스피 값이 하루 정도 늦을 수 있으니 잠시 뒤 다시 실행해보세요.");
+        }
+      } finally {
+        clearTimeout(timer);
+      }
     }
     const { items, totalCount, resultCode, resultMsg } = parseIndexXml(text);
     if (resultCode !== "00") {
