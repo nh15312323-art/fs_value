@@ -27,6 +27,10 @@ const srv = http.createServer((q, r) => {
   if (p.startsWith('/api/price/series')) return r.end(JSON.stringify({ corp_name: '모의전자', stock_code: '000001', n: dates.length, from: dates[0], to: dates[dates.length - 1], d: dates, c: close, v: vol, tv }));
   if (p.startsWith('/api/latest-price')) return r.end(JSON.stringify({ corp_name: '모의전자', close: close[close.length - 1], date: dates[dates.length - 1] }));
   if (p.startsWith('/api/financial-history-db')) return r.end(JSON.stringify({ corp_name: '모의전자', corp_code: 'X', acc_mt: 12, rows }));
+  if (p.startsWith('/api/disclosures')) { const L = dates[dates.length - 1], dd = (n) => { const t = new Date(Date.UTC(+L.slice(0, 4), +L.slice(4, 6) - 1, +L.slice(6, 8)) - n * 86400000); return t.toISOString().slice(0, 10).replace(/-/g, ''); };
+    return r.end(JSON.stringify({ corp_name: '모의전자', stock_code: '000001', from: dd(365), to: L, days: 365, total_count: 5, got: 5, partial: false,
+      items: [{ d: dd(12), nm: '단일판매ㆍ공급계약체결', no: '20250101000001' }, { d: dd(40), nm: '영업(잠정)실적(공정공시)', no: '20250101000002' }, { d: dd(200), nm: '유상증자결정', no: '20250101000003' }, { d: dd(25), nm: '분기보고서 (2025.06)', no: '20250101000004' }, { d: dd(150), nm: '현금ㆍ현물배당결정', no: '20250101000005' }],
+      idx: { d: dates, c: dates.map((_, i) => 2500 + i) } })); }
   r.statusCode = 404; r.end(JSON.stringify({ error: 'none' }));
 }).listen(0);
 const base = 'http://localhost:' + srv.address().port + '/';
@@ -54,22 +58,33 @@ const det = await pg.innerText('#sigDetectBody');
 ok('변화 감지: 일별 주가 로딩 후 이동평균·거래·52주 시그널 표시', det.includes('이동평균 상태') && det.includes('52주 고점 대비') && /거래(대금|량)/.test(det), det.replace(/\n/g, ' ').slice(0, 220));
 ok('시그널마다 근거 수준 배지(학술 검증/실무 관행 등)', (await pg.$$eval('#sigDetectBody span', (s) => s.map((x) => x.textContent).filter((t) => /학술 검증|실무 관행|가정·휴리스틱/.test(t)).length)) >= 3);
 await openSec(pg, '체크리스트');
-ok('체크리스트 10문항 + 보유 점검 5규칙', (await pg.$$('#sigChecklistBody input[type=checkbox]')).length === 10 && (await pg.innerText('#sigChecklistBody')).includes('즉시 익절한다'));
-ok('초기 요약: 0/10, 매수 이유 미작성 경고', (await pg.innerText('#sigChkSum')).includes('0/10') && (await pg.innerText('#sigChkSum')).includes('미작성'));
+ok('체크리스트 12문항 + 보유 점검 5규칙', (await pg.$$('#sigChecklistBody input[type=checkbox]')).length === 12 && (await pg.innerText('#sigChecklistBody')).includes('즉시 익절한다'));
+ok('초기 요약: 0/10, 매수 이유 미작성 경고', (await pg.innerText('#sigChkSum')).includes('0/12') && (await pg.innerText('#sigChkSum')).includes('미작성'));
 await pg.click('#sigChecklistBody label:has-text("키워드 하나에만") input'); await pg.click('#sigChecklistBody label:has-text("재료·차트") input');
 const ta = (await pg.$$('#sigChecklistBody textarea'));
 ok('메모 입력칸 3개 (이유·반증·익절 계획)', ta.length === 3);
 await ta[0].fill('영업이익 흑자 전환 + 거래량 증가'); await ta[1].fill('120일선 이탈 시'); await pg.waitForTimeout(150);
 const sm = await pg.innerText('#sigChkSum');
-ok('체크 2/10, 매수 이유 작성됨 표시', sm.includes('2/10') && sm.includes('작성됨'), sm);
+ok('체크 2/12, 매수 이유 작성됨 표시', sm.includes('2/12') && sm.includes('작성됨'), sm);
 ok('입력칸 글자 16px 이상, 가로 넘침 없음', await pg.evaluate(() => [].slice.call(document.querySelectorAll('#sigChecklistBody textarea, #sigG, #sigN')).every((e) => parseFloat(getComputedStyle(e).fontSize) >= 16) && document.documentElement.scrollWidth <= innerWidth + 1));
+await openSec(pg, '재료 점검');
+await pg.waitForTimeout(900);
+const mt = await pg.innerText('#matBody');
+ok('재료 점검: 공시 목록이 열면 로딩되어 표시(공급계약·실적·증자)', mt.includes('단일판매') && mt.includes('유상증자결정') && mt.includes('영업(잠정)실적'), mt.replace(/\n/g, ' ').slice(0, 160));
+ok('재료 점검: 새로 나타남(수주)·사라짐(자금조달·주주환원) 표시', mt.includes('새로 나타남') && mt.includes('사라짐'));
+ok('재료 점검: 정기보고서는 재료 목록에서 제외', !mt.includes('분기보고서'));
+ok('재료 점검: 공시 없는 큰 움직임 표와 뉴스 링크 영역', mt.includes('큰 움직임') && mt.includes('뉴스 (이 앱은 뉴스를 수집·분석하지 않습니다)'));
+ok('재료 점검: 학술 근거와 한계 문구(미국 중심, 1년 최적 아님)', (await pg.innerText('#analysis')).includes('Chan 2003') && (await pg.innerText('#analysis')).includes('최적 관찰 기간'));
+ok('재료 점검: 모바일 가로 넘침 없음', await pg.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+await openSec(pg, '체크리스트');
+ok('체크리스트 재료 항목이 공시 요약을 자동 참고로 표시', (await pg.innerText('#sigChecklistBody')).includes('최근 1년 재료성 공시'));
 const sh = path.join(SHOT, 'sig_390.png');
 const el = await pg.$('#sigChecklistBody'); await el.scrollIntoViewIfNeeded(); await pg.screenshot({ path: sh });
 await pg.close();
 // 다시 열어도 같은 종목의 체크·메모가 남아 있음
 pg = await analyze(); await openSec(pg, '체크리스트');
 const sm2 = await pg.innerText('#sigChkSum');
-ok('재접속 후에도 체크·메모 유지(이 기기 저장)', sm2.includes('2/10') && sm2.includes('작성됨') && (await pg.$$eval('#sigChecklistBody textarea', (t) => t[0].value)).includes('흑자 전환'), sm2);
+ok('재접속 후에도 체크·메모 유지(이 기기 저장)', sm2.includes('2/12') && sm2.includes('작성됨') && (await pg.$$eval('#sigChecklistBody textarea', (t) => t[0].value)).includes('흑자 전환'), sm2);
 ok('페이지 오류 없음', errs.length === 0, errs.join(' | '));
 await b.close(); srv.close();
 console.log(fail ? '\n실패 ' + fail + '건' : '\n전부 통과'); process.exit(fail ? 1 : 0);
