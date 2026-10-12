@@ -27,6 +27,10 @@ const srv = http.createServer((q, r) => {
   if (p.startsWith('/api/price/series')) return r.end(JSON.stringify({ corp_name: '모의전자', stock_code: '000001', n: dates.length, from: dates[0], to: dates[dates.length - 1], d: dates, c: close, v: vol, tv }));
   if (p.startsWith('/api/latest-price')) return r.end(JSON.stringify({ corp_name: '모의전자', close: close[close.length - 1], date: dates[dates.length - 1] }));
   if (p.startsWith('/api/financial-history-db')) return r.end(JSON.stringify({ corp_name: '모의전자', corp_code: 'X', acc_mt: 12, rows }));
+  if (p.startsWith('/api/news')) { const L = dates[dates.length - 1], dd = (n) => { const t = new Date(Date.UTC(+L.slice(0, 4), +L.slice(4, 6) - 1, +L.slice(6, 8)) - n * 86400000); return t.toISOString().slice(0, 10).replace(/-/g, ''); };
+    const items = []; for (let k = 0; k < 4; k++) items.push({ d: dd(8 + k), t: '모의전자 로봇 사업 진출 ' + k + '호', l: 'https://news.example/r' + k }); for (let k = 0; k < 6; k++) items.push({ d: dd(200 + k), t: '모의전자 중국 공장 증설 소식 ' + k, l: 'https://news.example/c' + k });
+    items.sort((a, b) => (a.d < b.d ? 1 : -1));
+    return r.end(JSON.stringify({ corp_name: '모의전자', from: dd(365), to: L, days: 365, got: items.length, partial: false, total: items.length, items })); }
   if (p.startsWith('/api/disclosures')) { const L = dates[dates.length - 1], dd = (n) => { const t = new Date(Date.UTC(+L.slice(0, 4), +L.slice(4, 6) - 1, +L.slice(6, 8)) - n * 86400000); return t.toISOString().slice(0, 10).replace(/-/g, ''); };
     return r.end(JSON.stringify({ corp_name: '모의전자', stock_code: '000001', from: dd(365), to: L, days: 365, total_count: 5, got: 5, partial: false,
       items: [{ d: dd(12), nm: '단일판매ㆍ공급계약체결', no: '20250101000001' }, { d: dd(40), nm: '영업(잠정)실적(공정공시)', no: '20250101000002' }, { d: dd(200), nm: '유상증자결정', no: '20250101000003' }, { d: dd(25), nm: '분기보고서 (2025.06)', no: '20250101000004' }, { d: dd(150), nm: '현금ㆍ현물배당결정', no: '20250101000005' }],
@@ -73,8 +77,9 @@ const mt = await pg.innerText('#matBody');
 ok('재료 점검: 공시 목록이 열면 로딩되어 표시(공급계약·실적·증자)', mt.includes('단일판매') && mt.includes('유상증자결정') && mt.includes('영업(잠정)실적'), mt.replace(/\n/g, ' ').slice(0, 160));
 ok('재료 점검: 새로 나타남(수주)·사라짐(자금조달·주주환원) 표시', mt.includes('새로 나타남') && mt.includes('사라짐'));
 ok('재료 점검: 정기보고서는 재료 목록에서 제외', !mt.includes('분기보고서'));
-ok('재료 점검: 공시 없는 큰 움직임 표와 뉴스 링크 영역', mt.includes('큰 움직임') && mt.includes('뉴스 (이 앱은 뉴스를 수집·분석하지 않습니다)'));
+ok('재료 점검: 공시·뉴스 유무 큰 움직임 표와 뉴스 영역', mt.includes('큰 움직임') && mt.includes('뉴스 (네이버 검색 API · 제목 기준)'));
 ok('재료 점검: 학술 근거와 한계 문구(미국 중심, 1년 최적 아님)', (await pg.innerText('#analysis')).includes('Chan 2003') && (await pg.innerText('#analysis')).includes('최적 관찰 기간'));
+ok('재료 점검: 뉴스 월별 수·새로 등장(로봇)·사라짐(중국) 단어·반복도·최근 기사 링크', mt.includes('로봇') && mt.includes('중국') && mt.includes('같은 이야기의 반복도') && mt.includes('최근 기사') && (await pg.$$('#matBody a[href^="https://news.example/"]')).length >= 4, mt.slice(mt.indexOf('⑤'), mt.indexOf('⑤') + 200).replace(/\n/g, ' '));
 ok('재료 점검: 모바일 가로 넘침 없음', await pg.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
 await openSec(pg, '체크리스트');
 ok('체크리스트 재료 항목이 공시 요약을 자동 참고로 표시', (await pg.innerText('#sigChecklistBody')).includes('최근 1년 재료성 공시'));

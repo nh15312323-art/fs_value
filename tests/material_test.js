@@ -5,8 +5,9 @@ const cut = (a, b) => { const i = text.indexOf(a), j = text.indexOf(b); if (i < 
 const server = cut('// ===== 공시목록(재료 점검) 수집 =====', '// ===== /공시목록(재료 점검) 수집 =====');
 const client = cut('// ===== 재료(공시) 점검', '// ===== /재료(공시) 점검 =====');
 const pre = "const anEsc = (s) => String(s); function sigPx() { return null; } function sigRefresh() {} const document = { getElementById: () => null };";
-const M = new Function(pre + client + '\nreturn { matClass, matPrep, matNewGone, matMonthly, matReact, matBigMoves, matIdxMap, matAge, matSummary, MAT_ST };')();
-const SV = new Function(server + '\nreturn { collectDisclosures };')();
+const M = new Function(pre + client + '\nreturn { matClass, matPrep, matNewGone, matMonthly, matReact, matBigMoves, matIdxMap, matAge, matSummary, MAT_ST, matTokens, matTerms, matStaleShare, matNewsMonthly, matSafeUrl };')();
+const newsSrc = cut('// ===== 뉴스(재료 점검) 수집 =====', '// ===== /뉴스(재료 점검) 수집 =====');
+const SV = new Function(server + newsSrc + '\nreturn { collectDisclosures, collectNews, newsPubToYmd, newsClean };')();
 let fail = 0; const check = (n, ok, d) => { if (!ok) fail++; console.log((ok ? 'PASS' : 'FAIL') + '  ' + n + (d !== undefined ? '  ' + d : '')); };
 const near = (a, b, t) => Math.abs(a - b) <= (t || 1e-9);
 
@@ -100,6 +101,53 @@ const near = (a, b, t) => Math.abs(a - b) <= (t || 1e-9);
   check('2쪽부터 실패하면 받은 것만 쓰고 partial', g.items.length === 2 && g.partial === true && g.error === null);
   g = await SV.collectDisclosures(async () => { throw new Error('net'); });
   check('첫 쪽 예외 → 오류', g.error && g.items.length === 0);
+
+  // 7) 뉴스 수집(네이버 API 응답 모의)
+  check('pubDate(+0900) → 한국 날짜', SV.newsPubToYmd('Mon, 13 Oct 2025 07:08:00 +0900') === '20251013' && SV.newsPubToYmd('Sun, 12 Oct 2025 23:30:00 +0000') === '20251013' && SV.newsPubToYmd('garbage') === null);
+  check('HTML 태그·엔티티 제거', SV.newsClean('<b>모의전자</b> &quot;수주&quot; &amp; 증설') === '모의전자 "수주" & 증설');
+  const mkItem = (i, pub, title, desc) => ({ title: title || '<b>모의전자</b> 뉴스 ' + i, description: desc || '', originallink: 'https://n.example/' + i, link: 'https://l.example/' + i, pubDate: pub });
+  const pubOf = (n) => new Date(Date.UTC(2025, 9, 13, 0, 0, 0) - n * 86400000).toUTCString().replace('GMT', '+0000');
+  let ncalls = 0;
+  let nr = await SV.collectNews(async (st) => { ncalls++; const items = []; for (let k = 0; k < 100; k++) items.push(mkItem(st + k, pubOf((st - 1 + k) * 2))); return { total: 5000, start: st, display: 100, items }; }, '모의전자', '20250101');
+  check('기간(cutoff) 이전 기사에 닿으면 중단하고 partial=false', nr.partial === false && ncalls < 10 && nr.items.length > 100 && nr.items.every((i) => i.d >= '20250101'), 'calls ' + ncalls + ' n ' + nr.items.length);
+  ncalls = 0;
+  nr = await SV.collectNews(async (st) => { ncalls++; const items = []; for (let k = 0; k < 100; k++) items.push(mkItem(st + k, pubOf(Math.floor((st - 1 + k) / 50)))); return { total: 5000, items }; }, '모의전자', '20240101');
+  check('10쪽(1,000건)을 다 써도 기간 끝에 못 닿으면 partial=true', ncalls === 10 && nr.partial === true);
+  nr = await SV.collectNews(async () => ({ total: 2, items: [mkItem(1, pubOf(1)), mkItem(2, pubOf(2), '무관한 기사', '내용 없음')] }), '모의전자', '20250101');
+  check('종목명이 제목·요약에 없는 기사는 버림, 끝까지 가면 partial=false', nr.items.length === 1 && nr.partial === false);
+  nr = await SV.collectNews(async () => ({ total: 2, items: [mkItem(1, pubOf(1)), mkItem(1, pubOf(1))] }), '모의전자', '20250101');
+  check('같은 링크 중복 제거', nr.items.length === 1);
+  nr = await SV.collectNews(async () => ({ errorCode: 'SE01', errorMessage: 'Incorrect query request' }), '모의전자', '20250101');
+  check('API 오류 → 오류 반환(키는 노출 안 함)', nr.error && nr.items.length === 0 && nr.error.indexOf('SE01') >= 0);
+  nr = await SV.collectNews(async (st) => { if (st > 1) throw new Error('net'); const items = []; for (let k = 0; k < 100; k++) items.push(mkItem(k, pubOf(k))); return { total: 900, items }; }, '모의전자', '20240101');
+  check('2쪽부터 실패하면 받은 기사만 쓰고 partial', nr.items.length === 100 && nr.partial === true);
+
+  // 8) 뉴스 분석
+  const toks = M.matTokens('모의전자, 美 반도체 장비 공급계약 체결… 주가 급등', '모의전자');
+  check('토큰: 종목명·불용어·숫자 제거, 핵심어 유지', toks.indexOf('모의전자') < 0 && toks.indexOf('반도체') >= 0 && toks.indexOf('공급계약') >= 0 && toks.indexOf('급등') < 0);
+  const nw = [];
+  const addN = (age, t) => nw.push({ d: dAgo(age), t: t, l: 'https://x/' + nw.length });
+  for (let k = 0; k < 4; k++) addN(10 + k, '모의전자 로봇 사업 진출 ' + k + '호');            // 최근: 로봇 4회 → 새로 등장
+  for (let k = 0; k < 6; k++) addN(200 + k, '모의전자 중국 공장 증설 소식 ' + k);            // 이전: 공장 6회 → 사라짐
+  addN(15, '모의전자 공장 가동'); // 최근에도 나오는 단어는 '사라짐'이 아님
+  const tm = M.matTerms(nw, '모의전자', asof);
+  check('최근 3회 이상 + 이전 0회 단어 = 새로 등장(로봇)', tm.fresh.some((x) => x[0] === '로봇' && x[1] === 4));
+  check('이전 5회 이상 + 최근 0회 단어 = 사라짐(중국), 최근에도 있는 단어(공장)는 제외', tm.gone.some((x) => x[0] === '중국') && !tm.gone.some((x) => x[0] === '공장'));
+  const dup = [{ d: dAgo(30), t: '모의전자 로봇 사업 진출' }, { d: dAgo(29), t: '모의전자 로봇 사업 진출 확정' }, { d: dAgo(28), t: '모의전자 배당 확대 결정' }];
+  const sh = M.matStaleShare(dup, '모의전자', asof);
+  check('반복도: 직전 기사와 제목이 겹치면 stale (3건 중 1건)', sh.n === 3 && sh.stale === 1, JSON.stringify(sh));
+  const nm2 = M.matNewsMonthly(nw, asof);
+  check('월별 기사 수 합 = 12개월 안 기사 수', nm2.cnt.reduce((a, b) => a + b, 0) === nw.length && nm2.months.length === 12);
+  check('링크: http(s)만 허용, 따옴표·꺾쇠 이스케이프', M.matSafeUrl('javascript:alert(1)') === '#' && M.matSafeUrl('https://a.com/x"onmouseover="y') .indexOf('"') < 0);
+
+  // 9) 큰 움직임 × 뉴스
+  const newsB = [{ d: days[19], t: '모의전자 수주 기대', l: 'https://x/1' }, { d: days[5], t: '오래전 기사', l: 'https://x/2' }];
+  const bmN = M.matBigMoves(pxb, M.matIdxMap({ d: days, c: days.map(() => 2500) }), evb, days[59], null, newsB);
+  const m20 = bmN.list.find((o) => o.d === days[20]), m40 = bmN.list.find((o) => o.d === days[40]);
+  check('큰 움직임 날 직전 거래일~당일에 뉴스가 있으면 건수·제목 표시', m20.nn === 1 && m20.nt.indexOf('수주') >= 0);
+  check('공시도 뉴스도 없는 날은 별도 집계(noDnoN)', m40.nn === 0 && bmN.noDnoN === 1 && bmN.noDwithN === 0, JSON.stringify([bmN.noDnoN, bmN.noDwithN]));
+  const bmO = M.matBigMoves(pxb, M.matIdxMap({ d: days, c: days.map(() => 2500) }), evb, days[59], null, [{ d: days[30], t: '모의전자', l: 'https://x' }]);
+  check('뉴스 수집 구간(가장 오래된 기사) 이전 날짜는 ‘없음’이 아니라 확인 불가(null)', bmO.list.find((o) => o.d === days[20]).nn === null && bmO.outOfRange === 1, String(bmO.outOfRange));
   console.log(fail ? '\n실패 ' + fail + '건' : '\n전체 통과');
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });
