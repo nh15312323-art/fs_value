@@ -3514,12 +3514,13 @@ const SIG_BUY = [
   { t: '불확실성이 ‘알려진 리스크’로 확정되는 시점인지 확인했다', ev: 'assume', why: '불확실성과 리스크의 구분은 Knight(1921)의 고전적 개념입니다. ‘리스크 확정 = 바닥’이라는 규칙은 사전 검증된 적이 없어 가설로만 사용합니다.', auto: () => '' },
   { t: '유동성·실적·기대감을 각각 점검했다 (주가 = EPS × PER)', ev: 'theory', why: '주가 = EPS × PER은 항등식입니다. 유동성·기대감은 PER(할인율·성장 기대)에 반영되고 실적은 EPS에 반영됩니다. ‘(유동성+실적)×기대감’은 직관 틀이며 측정 가능한 공식은 아닙니다.', auto: (c, S) => { const e = c.last ? c.last.epsYoy : null, per = c.vs ? c.vs.per : null; return '실적: 최근 연간 EPS YoY ' + (anFin(e) ? sigPct(e) : 'N/A') + ' · 기대감: 현재 PER ' + (anFin(per) ? per.toFixed(1) + '배' : 'N/A') + ' · 유동성(거래): ' + (S.meta.volRatio != null ? '최근 5일 거래 ' + S.meta.volRatio.toFixed(2) + '배' : '주가 로딩 전'); } },
   { t: '재료·차트·거래량·시황을 함께 봤다', ev: 'practice', why: '단일 신호보다 여러 독립 신호의 일치를 보는 것은 합리적이나, 어떤 결합이 초과수익을 주는지는 백테스트 전에는 알 수 없습니다.', auto: (c, S) => { const t = sigById(S, 'trend'), v = sigById(S, 'vol'); return (t ? t.label : '이동평균: 자료 없음') + ' · ' + (v ? v.label : '거래: 자료 없음'); } },
-  { t: '시장이 좋아할 재료인지(시장 참여자가 사고 싶어 할 이유) 설명할 수 있다', ev: 'assume', why: '뉴스·재료 데이터는 이 앱이 수집하지 않으므로 직접 판단합니다. 뉴스 기반 단기 반응은 빠르게 소멸하는 경향이 있습니다.', auto: () => '' },
+  { t: '시장이 좋아할 재료인지(시장 참여자가 사고 싶어 할 이유) 설명할 수 있다', ev: 'assume', why: '뉴스는 제목만 네이버 검색 API로 모아 신규/소멸 단어·반복도를 보여주고(참고용), 공시(1차 자료)로 확인되는 부분은 ‘📰 재료 점검’이 요약합니다. 호재·악재 판단은 직접 하세요. 뉴스·재료에 대한 반응은 소형·비유동 종목에서 크고 빠르게 되돌려지기도 합니다(Chan 2003, 미국).', auto: () => matAutoText() },
   { t: '거래량이 잘 터지고 조정을 충분히 받은 종목이다', ev: 'practice', why: '거래량 급증은 단기 수익 프리미엄(Gervais 외 2001)이 보고되었으나, ‘조정을 잘 받았다’(눌림목)는 규칙은 검증되지 않았습니다.', auto: (c, S) => { const v = S.meta.volRatio, h = S.meta.fromHi; return '거래 최근 5일/직전 60일 ' + (v != null ? v.toFixed(2) + '배' : 'N/A') + ' · 52주 고점 대비 ' + (h != null ? sigPct(h) : 'N/A'); } },
   { t: '정부·대기업 정책·투자와 관련이 있는지 확인했다', ev: 'assume', why: '정책 수혜 테마는 선반영과 소멸이 빠릅니다. 공시(공급계약·투자)로 확인되는 사실과 기대를 구분하세요.', auto: () => '' },
   { t: '키워드 하나에만 의존하지 않고 서로 다른 근거가 2개 이상이다', ev: 'theory', why: '단일 이야기 의존은 확증편향·테마 집착의 위험을 키웁니다(분산된 근거 확인).', auto: () => '' },
   { t: '시장 전체 흐름(시황)을 고려했다', ev: 'practice', why: '시장 연동 상승은 시장 반전 때 함께 꺾입니다. 종목 고유 초과수익인지 확인합니다.', auto: (c) => { const k = AN_STATE.mom && AN_STATE.mom.kospi ? AN_STATE.mom.kospi.r6m : null, r = c.mom ? c.mom.ret6 : null; return '최근 6개월: 코스피 ' + (anFin(k) ? sigPct(k) : 'N/A') + ' · 종목 ' + (anFin(r) ? sigPct(r) : 'N/A'); } },
-  { t: '매수 이유를 한 문장으로 말할 수 있다 (아래 칸에 적었다)', ev: 'theory', why: '사전에 이유·반증 조건을 적어 두는 것은 사후 합리화·뇌동매매를 줄이는 사전 약속(pre-commitment)입니다.', auto: () => '', needNote: 'why' },
+  { t: '매수 이유를 한 문장으로 말할 수 있다 (아래 칸에 적었다)', ev: 'theory', why: '사전에 이유·반증 조건을 적어 두는 것은 사후 합리화·뇌동매매를 줄이는 사전 약속(pre-commitment)입니다.', auto: () => '', needNote: 'why' },  { t: '최근 1년 공시에서 “새로 생긴 재료”와 “사라진 재료”를 구분해 확인했다', ev: 'proof', why: '기대 대비 변화에 가격이 반응·지연 반응한다는 연구(Ball-Brown 1968, Chan 2003 등)가 있으나 미국 중심이며, ‘1년’ 창은 사용자가 정한 관찰 기간으로 최적이라는 증거는 없습니다.', auto: () => matAutoText() },
+  { t: '큰 가격 움직임에 공시·뉴스 이유가 있는지 확인했다 (이유 없는 급등락은 되돌림 가능성)', ev: 'proof', why: '뉴스 없이 크게 움직인 종목은 이후 되돌려지는 경향, 뉴스가 있는 경우는 같은 방향으로 이어지는 경향(Chan 2003, 소형·비유동 종목에서 강함, 미국). 오래된 뉴스에 대한 과잉 반응도 보고됨(Tetlock 2011).', auto: () => '‘📰 재료 점검’ ④표에서 공시 없는 큰 움직임과 그날 뉴스 링크를 확인하세요.' },
 ];
 const SIG_HOLD = [
   { t: '매수한 종목에 과도한 기대감·욕심이 생기면 물량을 줄인다', ev: 'theory', why: '과신은 과도한 거래·성과 악화와 연관됩니다(Barber-Odean 2000). 감정이 아니라 비중 규칙(최대 비중, 위험예산)으로 줄이는 것이 지지됩니다. 내 계좌의 계획·위험예산 기능과 연결됩니다.' },
@@ -3626,14 +3627,290 @@ function sigRenderSections(c) {
   return anSection('📐 수익률 분해: 배당수익률 + EPS 성장 + PER 변화', '#7c3aed', '주가가 오른 이유를 실적과 기대감으로 나눕니다. 항등식이라 이론적으로 맞는 관계이며(Ibbotson-Chen 2003 등 장기 수익률 분해 연구), 값은 이 앱의 연간 공시 자료에서 계산합니다.', sigDecompHtml(c), false) +
     anSection('🧮 기대수익률 가정 계산 (EPS 성장 × PER 변화 + 배당)', '#7c3aed', '미래 수익률은 예측할 수 없으므로 성장률·PER 변화를 가정으로 바꿔 가며 범위를 봅니다. 하나의 목표가 대신 민감도 표를 사용합니다.', '<div id="sigCalcBody">' + sigCalcHtml(c) + '</div>', false) +
     anSection('🔔 변화 감지 시그널 (없다가 생김 · 있다가 사라짐)', '#0891b2', '시장은 ‘상태’보다 ‘변화’에 반응한다는 관점입니다. 재무 변화는 공시 자료로, 가격·거래량은 일별 주가로 계산합니다. 모든 시그널에 근거 수준을 붙였고, 매수·매도 신호나 점수를 만들지 않습니다. ' + evTxt, '<div id="sigDetectBody">' + sigRenderDetectBody(c) + '</div>', false) +
+    matSectionHtml() +
     anSection('✅ 투자 판단 체크리스트 (관찰 → 시그널 → 전략 → 반성)', '#0891b2', '매수 전 10가지 질문과 보유 중 규칙입니다. 자동 참고는 계산 가능한 부분만 보여주고, 체크는 직접 합니다. 충족 개수는 ‘매수 신호’가 아니라 내가 생각을 정리했는지의 기록입니다.', '<div id="sigChecklistBody">' + sigChecklistHtml(c) + '</div>', false);
 }
 function sigRefresh() {
   if (!AN_CTX) return;
   const a = document.getElementById('sigDetectBody'); if (a) a.innerHTML = sigRenderDetectBody(AN_CTX);
   const b = document.getElementById('sigChecklistBody'); if (b) { b.innerHTML = sigChecklistHtml(AN_CTX); sigUpdateSummary(); }
+  try { matRefresh(); } catch (e) { /* 재료 점검 갱신 실패는 무시 */ }
 }
 // ===== /시그널·수익률 분해 =====
+
+// ===== 재료(공시) 점검 · 최근 1년 (없다가 생긴 것 / 있다가 사라진 것) =====
+// 데이터: DART 공시목록(1차 자료) + 네이버 뉴스 검색 API(제목·날짜·링크만, 본문 없음). 뉴스는 키가 없거나 실패하면 검색 링크만 제공한다.
+// 점수·매수신호를 만들지 않는다. 분류는 공시 제목 문자열 규칙(규칙 기반)이라 오분류가 있을 수 있다.
+const MAT_CATS = [
+  { k: 'earn', n: '실적·손익' }, { k: 'order', n: '수주·공급계약' }, { k: 'fund', n: '자금조달·희석' },
+  { k: 'ret', n: '주주환원' }, { k: 'mna', n: '지분·M&A·지배구조' }, { k: 'invest', n: '시설투자' },
+  { k: 'risk', n: '리스크·제재' }, { k: 'insider', n: '내부자·대량보유' }, { k: 'other', n: '기타 수시공시' },
+];
+const MAT_BIG_MOVE = 0.07; // 시장조정 1일 수익률 ±7% 이상 = "큰 움직임". 사전에 고정한 값(결과를 보고 바꾸지 않음)
+function matNorm(s) { return String(s || '').split(' ').join('').split('ㆍ').join('').split('·').join(''); }
+function matClass(nm) {
+  let s = matNorm(nm), corr = false;
+  if (s.indexOf('[') === 0 && s.indexOf(']') > 0) {
+    const pre = s.slice(1, s.indexOf(']'));
+    if (pre === '기재정정' || pre === '첨부정정' || pre === '첨부추가') corr = true;
+    s = s.slice(s.indexOf(']') + 1);
+  }
+  const has = (a) => a.some((w) => s.indexOf(w) >= 0);
+  let cat = 'other';
+  if (s.indexOf('사업보고서') === 0 || s.indexOf('반기보고서') === 0 || s.indexOf('분기보고서') === 0 || s.indexOf('감사보고서') === 0 || s.indexOf('연결감사보고서') === 0) cat = 'periodic';
+  else if (has(['조회공시', '불성실공시', '횡령', '배임', '소송', '상장폐지', '관리종목', '투자주의환기', '감사의견', '회생', '부도', '거래정지', '영업정지', '채무불이행', '자본잠식', '상장적격성', '과징금', '벌금'])) cat = 'risk';
+  else if (has(['특정증권등소유상황', '대량보유'])) cat = 'insider';
+  else if (has(['단일판매공급계약'])) cat = 'order';
+  else if (has(['잠정)실적', '영업잠정실적', '손익구조', '결산실적공시예고'])) cat = 'earn';
+  else if (has(['유상증자', '전환사채', '신주인수권부사채', '교환사채', '제3자배정', '감자결정', '무상감자', '일반공모'])) cat = 'fund';
+  else if (has(['배당결정', '자기주식', '주식소각', '자사주'])) cat = 'ret';
+  else if (has(['합병', '분할', '영업양수', '영업양도', '타법인주식', '출자증권', '최대주주변경', '주식교환', '주식이전'])) cat = 'mna';
+  else if (has(['시설투자', '유형자산취득', '유형자산처분'])) cat = 'invest';
+  return { cat: cat, corr: corr };
+}
+function matDay(ymd) { const s = String(ymd); return Date.UTC(Number(s.slice(0, 4)), Number(s.slice(4, 6)) - 1, Number(s.slice(6, 8))); }
+function matAge(d, asof) { return Math.round((matDay(asof) - matDay(d)) / 86400000); }
+function matValid(d) { return /^[0-9]{8}$/.test(String(d)); }
+// 공시 목록 → 사건 목록(최신순). 정정 공시(corr)는 건수·반응 계산에서 제외한다(원공시와 이중 집계 방지).
+function matPrep(items) {
+  const out = [];
+  (items || []).forEach((it) => {
+    if (!it || !matValid(it.d)) return;
+    const c = matClass(it.nm);
+    out.push({ d: String(it.d), nm: String(it.nm || ''), no: String(it.no || ''), cat: c.cat, corr: c.corr });
+  });
+  out.sort((a, b) => (a.d < b.d ? 1 : a.d > b.d ? -1 : 0));
+  return out;
+}
+const matCounted = (e) => !e.corr && e.cat !== 'periodic';
+// 최근 90일 vs 그 이전(91~365일)의 유형별 건수. 최근에만 있으면 new, 이전에만 있으면 gone.
+function matNewGone(events, asof) {
+  const rec = {}, pri = {};
+  events.forEach((e) => {
+    if (!matCounted(e)) return;
+    const a = matAge(e.d, asof); if (a < 0 || a > 365) return;
+    if (a <= 90) rec[e.cat] = (rec[e.cat] || 0) + 1; else pri[e.cat] = (pri[e.cat] || 0) + 1;
+  });
+  return MAT_CATS.map((c) => {
+    const r = rec[c.k] || 0, p = pri[c.k] || 0;
+    return { k: c.k, n: c.n, rec: r, pri: p, st: r > 0 && p === 0 ? 'new' : (r === 0 && p > 0 ? 'gone' : (r > 0 ? 'both' : 'none')) };
+  });
+}
+// 최근 12개월(asof가 속한 달 포함) 월별·유형별 건수
+function matMonthly(events, asof) {
+  const y0 = Number(String(asof).slice(0, 4)), m0 = Number(String(asof).slice(4, 6));
+  const months = [];
+  for (let i = 11; i >= 0; i--) { let m = m0 - i, y = y0; while (m <= 0) { m += 12; y -= 1; } months.push(y + String(m < 10 ? '0' + m : m)); }
+  const cnt = {}; MAT_CATS.forEach((c) => { cnt[c.k] = months.map(() => 0); });
+  events.forEach((e) => { if (!matCounted(e)) return; const i = months.indexOf(e.d.slice(0, 6)); if (i >= 0) cnt[e.cat][i]++; });
+  return { months: months, cnt: cnt };
+}
+function matLower(arr, v) { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m] < v) lo = m + 1; else hi = m; } return lo; }
+function matIdxMap(ix) { const m = {}; if (ix && ix.d) ix.d.forEach((d, i) => { if (ix.c[i] > 0) m[String(d)] = ix.c[i]; }); return m; }
+function matHasJump(c, a, b) { for (let k = Math.max(1, a); k <= b && k < c.length; k++) if (c[k - 1] > 0 && Math.abs(c[k] / c[k - 1] - 1) > 0.3) return true; return false; }
+// 공시일 반응: 공시일 직전 거래일 종가 → 공시일 이후 h번째 거래일 종가 수익률 − 같은 기간 코스피 수익률(시장조정, 베타 조정 아님).
+// 공시 시각(장중/장 마감 후)을 모르므로 1일 값은 반응의 일부만 담을 수 있다. 액면분할 등이 의심되는 ±30% 변동이 구간에 있으면 계산하지 않는다.
+function matReact(date, px, ixm) {
+  if (!px || !px.d || !px.d.length) return null;
+  const i = matLower(px.d, String(date));
+  if (i <= 0 || i >= px.d.length) return null;
+  const out = {};
+  [1, 5, 20].forEach((h) => {
+    const j = i + h - 1;
+    if (j >= px.d.length || matHasJump(px.c, i, j) || !(px.c[i - 1] > 0)) { out['r' + h] = null; out['a' + h] = null; return; }
+    const r = px.c[j] / px.c[i - 1] - 1;
+    const m0 = ixm[String(px.d[i - 1])], m1 = ixm[String(px.d[j])];
+    out['r' + h] = r; out['a' + h] = (m0 > 0 && m1 > 0) ? r - (m1 / m0 - 1) : null;
+  });
+  return out;
+}
+// 공시 없는 큰 움직임 찾기(최근 365일): 시장조정 1일 수익률 ±MAT_BIG_MOVE 이상인 날을 모으고, 그날(또는 전 거래일 이후~당일) 재료성 공시가 있었는지 표시.
+function matBigMoves(px, ixm, events, asof, thr, news) {
+  const T = thr || MAT_BIG_MOVE, res = { list: [], total: 0, withD: 0, noD: 0, skipped: 0, newsOk: !!news, noDnoN: 0, noDwithN: 0, outOfRange: 0 };
+  const nFrom = news && news.length ? news.reduce((m, n) => (n.d < m ? n.d : m), '99999999') : null;
+  if (!px || !px.d) return res;
+  const ev = events.filter((e) => matCounted(e) && e.cat !== 'insider');
+  for (let k = 1; k < px.d.length; k++) {
+    if (matAge(px.d[k], asof) > 365) continue;
+    if (!(px.c[k - 1] > 0) || !(px.c[k] > 0)) continue;
+    const r = px.c[k] / px.c[k - 1] - 1;
+    if (Math.abs(r) > 0.3) { res.skipped++; continue; }
+    const m0 = ixm[String(px.d[k - 1])], m1 = ixm[String(px.d[k])];
+    if (!(m0 > 0 && m1 > 0)) { res.skipped++; continue; }
+    const ar = r - (m1 / m0 - 1);
+    if (Math.abs(ar) < T) continue;
+    const near = ev.filter((e) => e.d >= String(px.d[k - 1]) && e.d <= String(px.d[k]));
+    const o = { d: String(px.d[k]), ar: ar, disc: near.map((e) => e.nm).slice(0, 2), has: near.length > 0, news: null, nn: null, nt: null };
+    if (news) {
+      if (nFrom && String(px.d[k - 1]) >= nFrom) { const nw = news.filter((n) => n.d >= String(px.d[k - 1]) && n.d <= String(px.d[k])); o.nn = nw.length; o.nt = nw.length ? nw[0].t : null; o.nl = nw.length ? nw[0].l : null; }
+      else res.outOfRange++;
+    }
+    [5, 20].forEach((h) => {
+      const j = k + h;
+      if (j >= px.d.length || matHasJump(px.c, k + 1, j)) { o['f' + h] = null; return; }
+      const f = px.c[j] / px.c[k] - 1, n0 = ixm[String(px.d[k])], n1 = ixm[String(px.d[j])];
+      o['f' + h] = (n0 > 0 && n1 > 0) ? f - (n1 / n0 - 1) : null;
+    });
+    res.total++; if (o.has) res.withD++; else res.noD++;
+    if (!o.has && o.nn != null) { if (o.nn === 0) res.noDnoN++; else res.noDwithN++; }
+    res.list.push(o);
+  }
+  res.list.sort((a, b) => Math.abs(b.ar) - Math.abs(a.ar));
+  res.list = res.list.slice(0, 15);
+  return res;
+}
+// ----- 뉴스 분석(제목 기반, 규칙 기반이라 참고용) -----
+const MAT_STOP = ['관련', '대해', '통해', '위해', '이번', '올해', '지난', '오는', '기자', '뉴스', '주가', '종목', '주식', '투자', '증권', '시장', '전망', '분석', '발표', '공시', '대비', '기록', '이상', '이하', '진행', '예정', '확대', '추진', '가운데', '나선', '한다', '했다', '된다', '있다', '없다', '따르면', '밝혔다', '전했다', '특징주', '마감', '장중', '코스피', '코스닥', '거래', '상승', '하락', '급등', '급락', '오늘', '내일', '속보'];
+function matTokens(title, name) {
+  const nm0 = String(name || ''), t0 = String(title || '');
+  const clean = (nm0 ? t0.split(nm0).join(' ') : t0).replace(/[^0-9A-Za-z가-힣]+/g, ' ');
+  const out = {};
+  clean.split(' ').forEach((w0) => {
+    let w = w0;
+    ['으로', '에서', '에게', '까지', '부터'].forEach((x) => { if (w.length >= 4 && w.slice(-x.length) === x) w = w.slice(0, -x.length); });
+    ['은', '는', '이', '가', '을', '를', '의', '에', '도', '로', '와', '과'].forEach((x) => { if (w.length >= 4 && w.slice(-1) === x) w = w.slice(0, -1); });
+    if (w.length < 2 || /^[0-9]+$/.test(w) || MAT_STOP.indexOf(w) >= 0) return;
+    out[w] = 1;
+  });
+  return Object.keys(out);
+}
+// 최근 90일에 처음 등장한 단어(이전 구간 0회, 최근 3회 이상) / 이전엔 자주 나왔으나 최근 사라진 단어(이전 5회 이상, 최근 0회). 이전 구간이 더 길어 ‘사라짐’ 기준을 더 엄격히 둠.
+function matTerms(news, name, asof) {
+  const rec = {}, pri = {};
+  (news || []).forEach((n) => {
+    const a = matAge(n.d, asof); if (a < 0 || a > 365) return;
+    matTokens(n.t, name).forEach((w) => { if (a <= 90) rec[w] = (rec[w] || 0) + 1; else pri[w] = (pri[w] || 0) + 1; });
+  });
+  const top = (arr) => arr.sort((x, y) => y[1] - x[1] || (x[0] < y[0] ? -1 : 1)).slice(0, 8);
+  return {
+    fresh: top(Object.keys(rec).filter((w) => rec[w] >= 3 && !pri[w]).map((w) => [w, rec[w]])),
+    gone: top(Object.keys(pri).filter((w) => pri[w] >= 5 && !rec[w]).map((w) => [w, pri[w]])),
+  };
+}
+// 최근 90일 기사 중, 직전 10개 기사 가운데 제목 단어가 50% 이상 겹치는 것이 있는 기사의 비율(같은 이야기 반복의 대용치). Tetlock(2011)의 ‘오래된 뉴스’ 정의(텍스트 유사도)를 단순화한 것.
+function matStaleShare(news, name, asof) {
+  const arr = (news || []).slice().sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0)).map((n) => ({ d: n.d, w: matTokens(n.t, name) }));
+  let tot = 0, st = 0;
+  for (let i = 0; i < arr.length; i++) {
+    const a = matAge(arr[i].d, asof); if (a < 0 || a > 90) continue;
+    tot++;
+    for (let j = Math.max(0, i - 10); j < i; j++) {
+      const A = arr[i].w, B = arr[j].w; if (!A.length || !B.length) continue;
+      let inter = 0; A.forEach((w) => { if (B.indexOf(w) >= 0) inter++; });
+      if (inter / (A.length + B.length - inter) >= 0.5) { st++; break; }
+    }
+  }
+  return { n: tot, stale: st, share: tot ? st / tot : null };
+}
+function matNewsMonthly(news, asof) {
+  const mo = matMonthly([], asof).months, cnt = mo.map(() => 0);
+  (news || []).forEach((n) => { const i = mo.indexOf(String(n.d).slice(0, 6)); if (i >= 0) cnt[i]++; });
+  return { months: mo, cnt: cnt };
+}
+function matSafeUrl(u) { const x = String(u || ''); return /^https?:[/][/]/.test(x) ? x.split('"').join('%22').split("'").join('%27').split('<').join('%3C').split(' ').join('%20') : '#'; }
+// ----- 화면 -----
+const MAT_ST = { name: null, data: null, err: null, loading: false, news: null, newsErr: null, newsNoKey: false };
+function matYmdDash(d) { const s = String(d); return s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8); }
+function matSigned(v) { return v == null || !isFinite(v) ? '<span style="color:#94a3b8;">N/A</span>' : '<span style="color:' + (v >= 0 ? '#dc2626' : '#2563eb') + ';">' + (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%</span>'; }
+function matNewsUrl(name, from, to) { return 'https://search.naver.com/search.naver?where=news&query=' + encodeURIComponent(name) + '&nso=so%3Ar%2Cp%3Afrom' + from + 'to' + to; }
+function matCatName(k) { const c = MAT_CATS.filter((x) => x.k === k)[0]; return c ? c.n : k; }
+function matSummary() {
+  const D = MAT_ST.data; if (!D) return '';
+  const ev = matPrep(D.items), ng = matNewGone(ev, D.to);
+  const nw = ng.filter((x) => x.st === 'new').map((x) => x.n), gn = ng.filter((x) => x.st === 'gone').map((x) => x.n);
+  return '최근 1년 재료성 공시 ' + ev.filter(matCounted).length + '건 · 최근 3개월에 새로 나타난 유형: ' + (nw.length ? nw.join(', ') : '없음') + ' · 이전에는 있었으나 최근 3개월 없는 유형: ' + (gn.length ? gn.join(', ') : '없음') + (D.partial ? ' (공시 일부만 수신)' : '') + (MAT_ST.news ? ' · 뉴스 ' + MAT_ST.news.got + '건 수집' + (MAT_ST.news.partial ? '(일부 기간만)' : '') : '');
+}
+function matBodyHtml() {
+  if (MAT_ST.loading) return '<div style="font-size:12.5px;">공시 목록을 불러오는 중…</div>';
+  if (MAT_ST.err) return '<div style="font-size:12.5px; color:var(--danger);">공시 목록을 불러오지 못했습니다: ' + anEsc(MAT_ST.err) + '</div>';
+  const D = MAT_ST.data; if (!D) return '<div style="font-size:12.5px; color:var(--text-muted);">이 항목을 열면 최근 1년 DART 공시 목록을 불러옵니다.</div>';
+  const px = sigPx(), ixm = matIdxMap(D.idx), ev = matPrep(D.items), ng = matNewGone(ev, D.to), mo = matMonthly(ev, D.to);
+  const name = D.corp_name, th = 'style="white-space:nowrap;"';
+  let h = '';
+  if (D.partial) h += '<div style="font-size:12px; color:#b45309; margin:6px 0;">⚠ 공시 ' + D.total_count + '건 중 ' + D.got + '건만 받았습니다(오래된 쪽이 빠졌을 수 있음). ‘새로 생김/사라짐’ 판단이 부정확할 수 있습니다.</div>';
+  if (!D.items.length) h += '<div style="font-size:12.5px; margin:6px 0;">최근 1년 공시가 조회되지 않았습니다.</div>';
+  // 1) 새로 생김 / 사라짐
+  const stTxt = { new: '<b style="color:#16a34a;">새로 나타남</b>', gone: '<b style="color:#d97706;">사라짐</b>', both: '계속 있음', none: '<span style="color:#94a3b8;">없음</span>' };
+  h += '<div style="font-weight:700; font-size:13px; margin-top:8px;">① 최근 3개월 vs 그 이전 9개월 (재료성 공시 유형별)</div><div style="overflow-x:auto;"><table class="an-tbl"><thead><tr><th class="an-first">유형</th><th>이전 9개월</th><th>최근 3개월</th><th>변화</th></tr></thead><tbody>' +
+    ng.map((x) => '<tr><td class="an-first">' + anEsc(x.n) + '</td><td>' + x.pri + '건</td><td>' + x.rec + '건</td><td>' + stTxt[x.st] + '</td></tr>').join('') + '</tbody></table></div>';
+  // 2) 월별 매트릭스
+  h += '<div style="font-weight:700; font-size:13px; margin-top:12px;">② 최근 12개월 월별 건수</div><div style="overflow-x:auto;"><table class="an-tbl"><thead><tr><th class="an-first">유형</th>' + mo.months.map((m) => '<th ' + th + '>' + m.slice(2, 4) + '.' + m.slice(4) + '</th>').join('') + '</tr></thead><tbody>' +
+    MAT_CATS.map((c) => '<tr><td class="an-first">' + anEsc(c.n) + '</td>' + mo.cnt[c.k].map((n) => '<td' + (n ? ' style="background:rgba(8,145,178,' + Math.min(0.5, 0.12 + n * 0.1) + ');font-weight:700;"' : ' style="color:#cbd5e1;"') + '>' + (n || '·') + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>';
+  // 3) 공시 목록 + 반응
+  const shown = ev.filter(matCounted).slice(0, 40);
+  h += '<div style="font-weight:700; font-size:13px; margin-top:12px;">③ 재료성 공시와 주가 반응 (최신 ' + shown.length + '건, 정기보고서·정정공시 제외)</div>';
+  if (!px) h += '<div style="font-size:12px; color:var(--text-muted);">일별 주가를 아직 못 불러와 반응(수익률)은 표시하지 않습니다.</div>';
+  h += '<div style="overflow-x:auto;"><table class="an-tbl"><thead><tr><th class="an-first">공시일</th><th>유형</th><th style="text-align:left;">제목</th><th>1일</th><th>5일</th><th>20일</th></tr></thead><tbody>' +
+    shown.map((e) => {
+      const r = px ? matReact(e.d, px, ixm) : null, c = (k) => r ? (r['a' + k] != null ? matSigned(r['a' + k]) : (r['r' + k] != null ? '<span title="코스피 자료가 없어 시장조정 못함" style="opacity:.6;">' + matSigned(r['r' + k]) + '*</span>' : matSigned(null))) : matSigned(null);
+      return '<tr><td class="an-first">' + matYmdDash(e.d) + '</td><td>' + anEsc(matCatName(e.cat)) + '</td><td style="text-align:left;"><a href="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=' + encodeURIComponent(e.no) + '" target="_blank" rel="noopener">' + anEsc(e.nm) + '</a></td><td>' + c(1) + '</td><td>' + c(5) + '</td><td>' + c(20) + '</td></tr>';
+    }).join('') + '</tbody></table></div>' +
+    '<div style="font-size:11px; color:var(--text-muted); line-height:1.5; margin-top:4px;">반응 = 공시일 직전 거래일 종가 대비 N거래일째 종가 수익률 − 같은 기간 코스피 수익률(시장조정, 위험조정 아님). 공시 시각을 몰라 장 마감 후 공시는 1일 값에 일부만 반영되고, 같은 날 여러 공시나 가까운 공시는 서로 겹칩니다. 종목당 표본이 작아 평균·순위를 만들지 않았고, 개별 값은 우연일 수 있습니다. * = 시장조정 불가(원수익률).</div>';
+  // 4) 공시 없는 큰 움직임
+  if (px) {
+    const NW = MAT_ST.news ? MAT_ST.news.items : null, bm = matBigMoves(px, ixm, ev, D.to, null, NW);
+    h += '<div style="font-weight:700; font-size:13px; margin-top:12px;">④ 최근 1년 큰 움직임(시장조정 ±' + (MAT_BIG_MOVE * 100) + '% 이상)과 공시·뉴스 유무</div><div style="font-size:12px; margin:4px 0; line-height:1.55;">큰 움직임 ' + bm.total + '일 중 재료성 공시가 겹친 날 <b>' + bm.withD + '</b>일 · 공시가 안 보이는 날 <b>' + bm.noD + '</b>일' + (bm.skipped ? ' · 계산 제외 ' + bm.skipped + '일(분할 의심·지수 자료 없음)' : '') + '.' +
+      (bm.newsOk ? ' 공시 없는 날 중 뉴스도 없던 날 <b>' + bm.noDnoN + '</b>일 · 뉴스는 있던 날 <b>' + bm.noDwithN + '</b>일' + (bm.outOfRange ? ' · 뉴스 수집 구간 밖이라 확인 못 한 날 ' + bm.outOfRange + '일' : '') + '. 공시도 뉴스도 없이 크게 움직인 종목은 이후 되돌려지는 경향이 보고되었습니다(Chan 2003, 미국) — 이 종목에서도 그런지는 아래 ‘이후 5·20일’ 열로 직접 보세요(표본이 작아 우연일 수 있음).' : ' 공시가 없어도 뉴스·루머·수급이 원인일 수 있으니 ‘뉴스’ 링크로 직접 확인하세요.') + '</div>';
+    if (bm.list.length) h += '<div style="overflow-x:auto;"><table class="an-tbl"><thead><tr><th class="an-first">날짜</th><th>시장조정 1일</th><th>이후 5일</th><th>이후 20일</th><th style="text-align:left;">같은 시기 공시</th><th style="text-align:left;">뉴스</th></tr></thead><tbody>' +
+      bm.list.map((o) => '<tr><td class="an-first">' + matYmdDash(o.d) + '</td><td>' + matSigned(o.ar) + '</td><td>' + matSigned(o.f5) + '</td><td>' + matSigned(o.f20) + '</td><td style="text-align:left;">' + (o.has ? anEsc(o.disc.join(' / ')) : '<b style="color:#d97706;">공시 없음</b>') + '</td><td style="text-align:left;">' +
+        (o.nn == null ? '' : (o.nn === 0 ? '<b style="color:#d97706;">뉴스 없음</b> ' : o.nn + '건: <a href="' + matSafeUrl(o.nl) + '" target="_blank" rel="noopener">' + anEsc(o.nt.length > 40 ? o.nt.slice(0, 40) + '…' : o.nt) + '</a> ')) +
+        '<a href="' + matNewsUrl(name, o.d, o.d) + '" target="_blank" rel="noopener">검색</a></td></tr>').join('') + '</tbody></table></div>';
+  }
+  // 5) 뉴스
+  h += '<div style="font-weight:700; font-size:13px; margin-top:12px;">⑤ 뉴스 (네이버 검색 API · 제목 기준)</div>';
+  const links = '<a href="' + matNewsUrl(name, addDays365(D.to), D.to) + '" target="_blank" rel="noopener">최근 1년 뉴스 검색(네이버)</a> · <a href="' + matNewsUrl(name, addDays90(D.to), D.to) + '" target="_blank" rel="noopener">최근 3개월만</a>';
+  const N = MAT_ST.news;
+  if (!N) {
+    h += '<div style="font-size:12.5px; line-height:1.6; margin:4px 0;">' + (MAT_ST.newsNoKey ? '뉴스 API 키(NAVER_CLIENT_ID / NAVER_CLIENT_SECRET)가 서버에 설정되지 않아 뉴스를 분석하지 못했습니다. ' : '뉴스를 불러오지 못했습니다' + (MAT_ST.newsErr ? ': ' + anEsc(MAT_ST.newsErr) : '') + '. ') + links + '</div>';
+  } else {
+    const nv = N.items, tm = matTerms(nv, name, D.to), sh = matStaleShare(nv, name, D.to), nm = matNewsMonthly(nv, D.to);
+    const oldest = nv.length ? nv[nv.length - 1].d : null;
+    h += '<div style="font-size:12px; line-height:1.55; margin:4px 0;">수집 ' + N.got + '건(종목명 포함 기사만, 중복 링크 제거) · 가장 오래된 기사 ' + (oldest ? matYmdDash(oldest) : 'N/A') + (N.partial ? ' <b style="color:#b45309;">⚠ 네이버는 최신순 1,000건까지만 볼 수 있어 1년 전까지 못 닿았습니다. 아래 비교는 수집된 기간 안에서만 의미가 있습니다.</b>' : '') + (N.warn ? ' ⚠ ' + anEsc(N.warn) : '') + '</div>';
+    h += '<div style="overflow-x:auto;"><table class="an-tbl"><thead><tr><th class="an-first">월별 기사 수</th>' + nm.months.map((m) => '<th ' + th + '>' + m.slice(2, 4) + '.' + m.slice(4) + '</th>').join('') + '</tr></thead><tbody><tr><td class="an-first">기사</td>' + nm.cnt.map((n) => '<td' + (n ? ' style="background:rgba(219,39,119,' + Math.min(0.5, 0.1 + n * 0.02) + ');font-weight:700;"' : ' style="color:#cbd5e1;"') + '>' + (n || '·') + '</td>').join('') + '</tr></tbody></table></div>';
+    const chips = (arr, col) => arr.length ? arr.map((x) => '<span style="display:inline-block; margin:2px 4px 2px 0; padding:1px 8px; border-radius:10px; border:1px solid ' + col + '; color:' + col + ';">' + anEsc(x[0]) + ' ' + x[1] + '</span>').join('') : '<span style="color:var(--text-muted);">해당 없음</span>';
+    h += '<div style="font-size:12.5px; line-height:1.7; margin-top:8px;"><b>최근 3개월에 새로 등장한 단어</b>(이전 9개월엔 0회, 최근 3회 이상): ' + chips(tm.fresh, '#16a34a') + '<br /><b>이전엔 자주 나왔으나 최근 사라진 단어</b>(이전 5회 이상, 최근 0회): ' + chips(tm.gone, '#d97706') + '<br /><b>같은 이야기의 반복도</b>: 최근 3개월 기사 ' + sh.n + '건 중 직전 10개 기사와 제목이 비슷한 기사 ' + (sh.share == null ? 'N/A' : sh.stale + '건(' + (sh.share * 100).toFixed(0) + '%)') + '</div>';
+    h += '<div style="font-size:11px; color:var(--text-muted); line-height:1.5; margin-top:4px;">단어는 제목을 공백·조사 단위로 단순 분리한 것이라 조사·복합어가 섞이고, 같은 사건을 여러 언론이 쓰면 중복 집계됩니다(주제·감성 분석이 아님). 반복도는 Tetlock(2011)의 ‘오래된 뉴스’(이전 기사와 텍스트 유사)를 단순화한 대용치입니다. 단어의 신규/소멸은 ‘새 재료의 단서’일 뿐 호재·악재 판단이 아닙니다.</div>';
+    h += '<div style="font-weight:600; font-size:12.5px; margin-top:8px;">최근 기사 (최신 12건)</div><ul style="margin:4px 0 0 18px; padding:0; font-size:12.5px; line-height:1.6;">' + nv.slice(0, 12).map((n) => '<li>' + matYmdDash(n.d) + ' <a href="' + matSafeUrl(n.l) + '" target="_blank" rel="noopener">' + anEsc(n.t) + '</a></li>').join('') + '</ul><div style="font-size:12.5px; margin-top:6px;">' + links + '</div>';
+  }
+  h += '<div style="font-size:12.5px; line-height:1.6; margin:6px 0;">직접 비교해 보세요: ① 최근 3개월에 처음 등장한 이야기(수주·정책·신사업)는 공시로 뒷받침되는가? ② 1년 전엔 자주 나왔지만 지금은 사라진 이야기는 무엇인가? ③ 같은 내용이 되풀이되는 기사인가?</div>';
+  h += '<div style="font-size:11px; color:var(--text-muted); line-height:1.5; margin-top:6px;">공시 분류는 제목 글자 규칙이라 오분류가 있을 수 있고, 같은 사건의 정정·후속 공시는 정정만 제외됩니다. ‘1년’은 사용자가 정한 관찰 창이며 학술적으로 증명된 최적 기간이 아닙니다(아래 근거 참고).</div>';
+  return h;
+}
+function addDays365(ymd) { const t = new Date(matDay(ymd) - 365 * 86400000); return t.getUTCFullYear() + String(t.getUTCMonth() + 1 < 10 ? '0' : '') + (t.getUTCMonth() + 1) + String(t.getUTCDate() < 10 ? '0' : '') + t.getUTCDate(); }
+function addDays90(ymd) { const t = new Date(matDay(ymd) - 90 * 86400000); return t.getUTCFullYear() + String(t.getUTCMonth() + 1 < 10 ? '0' : '') + (t.getUTCMonth() + 1) + String(t.getUTCDate() < 10 ? '0' : '') + t.getUTCDate(); }
+function matSectionHtml() {
+  const ev = '<b>근거 요약</b> — ' +
+    '(1) 식별된 기업 뉴스가 있는 날의 변동성은 뉴스 없는 날의 2배 넘게 큼(Boudoukh·Feldman·Kogan·Richardson, NBER 2013 및 JF 2019, S&P500 2000–09, 미국). ' +
+    '(2) 뉴스 있는 종목의 나쁜 소식은 이후에도 한 방향으로 흘러가는 경향(drift), 뉴스 없이 크게 움직인 종목은 되돌림(reversal) 경향, 특히 소형·비유동 종목에서 강함(Chan 2003, JFE, 미국). ' +
+    '(3) 오래된(반복) 뉴스에는 개인투자자가 과잉 반응해 다음 주 되돌림(Tetlock 2011, RFS, 미국). ' +
+    '(4) 언론 노출이 없는 종목의 기대수익이 더 높은 ‘무보도 프리미엄’(Fang-Peress 2009, JF, 미국). ' +
+    '(5) 언론의 비관적 어조는 단기 가격 하락 압력 후 되돌림(Tetlock 2007, JF, 미국). ' +
+    '<b>한계</b>: 모두 미국 시장·뉴스 텍스트 연구이며 한국 개별종목에 그대로 성립하는지는 이 앱에서 검증되지 않았습니다. ‘최근 1년’이 최적 관찰 기간이라는 연구는 확인하지 못했습니다(효과 자체는 대체로 수일~수개월). 공시 유형별 평균 초과수익을 한국에서 확인하려면 별도 이벤트 스터디가 필요합니다.';
+  return '<details class="card" style="border-left:4px solid #db2777;" ontoggle="matOnToggle(this)"><summary style="cursor:pointer; font-weight:700; color:#db2777; font-size:14px;">📰 재료 점검 · 최근 1년 공시 (없다가 생김 · 있다가 사라짐)</summary>' +
+    '<div style="font-size:11.5px; color:var(--text-muted); margin:6px 0; line-height:1.5;">재료(뉴스·공시)가 새로 생겼는지, 사라졌는지, 주가가 이유 없이 움직였는지 확인하는 도구입니다. 점수·매수 신호는 만들지 않습니다. ' + ev + '</div><div id="matBody">' + matBodyHtml() + '</div></details>';
+}
+async function matLoad() {
+  const name = (document.getElementById('corpName').value || '').trim(); if (!name) return;
+  if (MAT_ST.name === name && (MAT_ST.data || MAT_ST.loading)) { matRefresh(); return; }
+  MAT_ST.name = name; MAT_ST.data = null; MAT_ST.err = null; MAT_ST.loading = true; MAT_ST.news = null; MAT_ST.newsErr = null; MAT_ST.newsNoKey = false; matRefresh();
+  const getJ = async (url) => { const res = await fetch(url); let j = null; try { j = await res.json(); } catch (e) { j = null; } return { ok: res.ok, status: res.status, j: j }; };
+  const enc = encodeURIComponent(name);
+  const [rd, rn] = await Promise.all([getJ('/api/disclosures?corp_name=' + enc).catch((e) => ({ ok: false, j: { error: (e && e.message) || String(e) } })), getJ('/api/news?corp_name=' + enc).catch((e) => ({ ok: false, j: { error: (e && e.message) || String(e) } }))]);
+  if (MAT_ST.name !== name) return;
+  if (rd.ok) MAT_ST.data = rd.j; else MAT_ST.err = (rd.j && rd.j.error) || '조회 실패';
+  if (rn.ok) MAT_ST.news = rn.j; else { MAT_ST.newsErr = (rn.j && rn.j.error) || '조회 실패'; MAT_ST.newsNoKey = !!(rn.j && rn.j.nokey); }
+  MAT_ST.loading = false; matRefresh();
+  try { sigRefresh(); } catch (e) { /* 체크리스트 갱신 실패는 무시 */ }
+}
+function matOnToggle(el) { if (el && el.open) { try { matLoad(); if (typeof loadPriceSeries === 'function' && !sigPx()) loadPriceSeries(); } catch (e) { /* 무시 */ } } }
+function matRefresh() { const el = document.getElementById('matBody'); if (el) el.innerHTML = matBodyHtml(); }
+function matAutoText() {
+  const nm = (document.getElementById('corpName').value || '').trim();
+  if (!MAT_ST.data || MAT_ST.name !== nm) return '‘📰 재료 점검’ 항목을 열면 최근 1년 공시로 자동 요약됩니다.';
+  return matSummary();
+}
+// ===== /재료(공시) 점검 =====
+
 
 // ---------- 미너비니 트렌드 템플릿 · 오닐 CAN SLIM(판정 가능한 항목만) ----------
 async function anLoadTrend() {
@@ -6575,6 +6852,98 @@ async function fetchDartByDateRange(endpoint, corpCode, bgnDe, endDe, proxyUrl, 
   }
 }
 
+// ===== 뉴스(재료 점검) 수집 =====
+// 네이버 검색 API(뉴스). 최신순으로 한 번에 100건, 시작 위치는 최대 1000이라 한 종목당 최대 1,000건까지만 볼 수 있다(기사가 많은 종목은 1년 전까지 못 닿는다 → partial).
+const NEWS_MAX_PAGES = 10;
+function newsClean(t) {
+  return String(t || "").replace(/<[^>]*>/g, "").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+}
+function newsPubToYmd(pub) { // "Mon, 13 Oct 2025 07:08:00 +0900" → 한국 날짜 YYYYMMDD
+  const t = new Date(pub); if (isNaN(t.getTime())) return null;
+  return new Date(t.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10).replace(/-/g, "");
+}
+// fetchPage(start) → 네이버 응답 JSON. name: 종목명(제목·요약에 없으면 무관 기사로 보고 버림). cutoffYmd: 이보다 오래된 기사는 수집 중단.
+async function collectNews(fetchPage, name, cutoffYmd) {
+  const items = []; const seen = new Set(); let reached = false, ended = false, total = null, raw = 0, error = null;
+  for (let pg = 0; pg < NEWS_MAX_PAGES; pg++) {
+    let j;
+    try { j = await fetchPage(1 + pg * 100); } catch (e) { error = (e && e.message) || String(e); break; }
+    if (!j || typeof j !== "object") { error = "뉴스 응답 형식 이상"; break; }
+    if (j.errorMessage || j.errorCode) { error = "네이버 뉴스 API 오류(" + String(j.errorCode || "") + " " + String(j.errorMessage || "").slice(0, 80) + ")"; break; }
+    const list = Array.isArray(j.items) ? j.items : [];
+    total = Number(j.total); raw += list.length;
+    for (const it of list) {
+      const d = newsPubToYmd(it.pubDate); if (!d) continue;
+      if (d < cutoffYmd) { reached = true; continue; }
+      const title = newsClean(it.title), desc = newsClean(it.description);
+      if (name && title.indexOf(name) < 0 && desc.indexOf(name) < 0) continue; // 검색어와 무관하게 걸린 기사
+      const link = String(it.originallink || it.link || "");
+      if (seen.has(link || title)) continue; seen.add(link || title);
+      items.push({ d, t: title, l: link });
+    }
+    if (list.length < 100) ended = true;
+    if (reached || ended) break;
+  }
+  if (error && !items.length && !raw) return { items: [], partial: false, total: null, error };
+  const partial = !reached && !ended; // 기간 끝까지 못 갔고 결과가 더 있을 수 있음(쪽 수 한도·오류)
+  items.sort((a, b) => (a.d < b.d ? 1 : a.d > b.d ? -1 : 0));
+  return { items, partial: partial, total: Number.isFinite(total) ? total : null, error: error && items.length ? error : null, raw };
+}
+async function fetchNaverNewsPage(query, start, id, secret, timeoutMs = 12000) {
+  const url = new URL("https://openapi.naver.com/v1/search/news.json");
+  url.searchParams.set("query", query); url.searchParams.set("display", "100"); url.searchParams.set("start", String(start)); url.searchParams.set("sort", "date");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(url.toString(), { headers: { "X-Naver-Client-Id": id, "X-Naver-Client-Secret": secret }, signal: controller.signal });
+    return await resp.json();
+  } finally { clearTimeout(timer); }
+}
+// ===== /뉴스(재료 점검) 수집 =====
+
+// ===== 공시목록(재료 점검) 수집 =====
+// DART 공시검색(list.json)을 페이지별로 받아 합친다. 프록시가 page_count를 무시해 10건씩만 주더라도 total_page만큼(최대 MAT_MAX_PAGES) 돈다.
+// fetchPage(pageNo) → DART 응답 JSON. 반환: { items, total_count, partial, error }
+const MAT_MAX_PAGES = 12;
+async function collectDisclosures(fetchPage) {
+  const items = []; let total = null, totalPage = 1, lastFirst = null, partial = false;
+  for (let p = 1; p <= MAT_MAX_PAGES; p++) {
+    let j;
+    try { j = await fetchPage(p); } catch (e) { if (p === 1) return { items: [], total_count: null, partial: false, error: "공시목록 요청 실패: " + ((e && e.message) || String(e)) }; partial = true; break; }
+    if (!j || typeof j !== "object") { if (p === 1) return { items: [], total_count: null, partial: false, error: "공시목록 응답 형식 이상" }; partial = true; break; }
+    if (j.status === "013") break; // 조회된 데이터 없음
+    if (j.status !== "000") { if (p === 1) return { items: [], total_count: null, partial: false, error: "DART 공시목록 오류(" + String(j.status || "?") + " " + String(j.message || "").slice(0, 80) + "). 프록시(Apps Script)가 list 엔드포인트와 page_no·page_count를 전달하는지 확인하세요." }; partial = true; break; }
+    const rows = Array.isArray(j.list) ? j.list : [];
+    if (!rows.length) break;
+    if (lastFirst != null && rows[0].rcept_no === lastFirst) { partial = true; break; } // 프록시가 page_no를 무시하면 같은 쪽이 반복된다
+    lastFirst = rows[0].rcept_no;
+    for (const r of rows) items.push({ d: String(r.rcept_dt || ""), nm: String(r.report_nm || ""), no: String(r.rcept_no || ""), flr: String(r.flr_nm || "") });
+    total = Number(j.total_count); totalPage = Number(j.total_page) || 1;
+    if (p >= totalPage) break;
+    if (p === MAT_MAX_PAGES) partial = true;
+  }
+  if (Number.isFinite(total) && total > items.length) partial = true;
+  return { items, total_count: Number.isFinite(total) ? total : items.length, partial, error: null };
+}
+async function fetchDartList(corpCode, bgnDe, endDe, proxyUrl, pageNo, pageCount, timeoutMs = 15000) {
+  const url = new URL(proxyUrl);
+  url.searchParams.set("endpoint", "list");
+  url.searchParams.set("corp_code", corpCode);
+  url.searchParams.set("bgn_de", bgnDe);
+  url.searchParams.set("end_de", endDe);
+  url.searchParams.set("page_no", String(pageNo));
+  url.searchParams.set("page_count", String(pageCount));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(url.toString(), { signal: controller.signal });
+    return await resp.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+// ===== /공시목록(재료 점검) 수집 =====
+
 async function fetchDart(corpCode, bsnsYear, reprtCode, fsDiv, proxyUrl, timeoutMs = 15000) {
   const url = new URL(proxyUrl);
   url.searchParams.set("endpoint", "fnlttSinglAcntAll");
@@ -8505,6 +8874,42 @@ async function handleRequest(request, env) {
         corp_name: corpRow.corp_name, stock_code: corpRow.stock_code, n: hist.length, from: hist[0].date, to: hist[hist.length - 1].date,
         d: hist.map((x) => x.date), c: hist.map((x) => x.close), v: hist.map((x) => x.volume == null ? null : x.volume), tv: hist.map((x) => x.tradingValue == null ? null : x.tradingValue),
       }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "private, max-age=300" } });
+    }
+
+    // 재료 점검용 뉴스: 네이버 검색 API(제목·링크·날짜만 전달, 기사 본문은 받지 않음). 키는 Worker 환경변수에서만 읽고 응답·로그에 넣지 않는다.
+    if (pathname === "/api/news") {
+      const corpName = searchParams.get("corp_name");
+      const corpRow = await env.DB.prepare("SELECT corp_name FROM corp_master WHERE corp_name = ?").bind(corpName).first();
+      if (!corpRow) return Response.json({ error: `'${corpName}' 종목을 corp_master에서 찾을 수 없습니다.` }, { status: 404 });
+      if (!env.NAVER_CLIENT_ID || !env.NAVER_CLIENT_SECRET) return Response.json({ error: "NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 환경변수가 설정되지 않았습니다.", nokey: true }, { status: 501 });
+      const days = Math.min(Math.max(Number(searchParams.get("days")) || 365, 30), 400);
+      const kst = new Date(Date.now() + 9 * 3600 * 1000);
+      const endYmd = kst.toISOString().slice(0, 10).replace(/-/g, "");
+      const cutoff = addDaysStr(endYmd, -days);
+      const got = await collectNews((st) => fetchNaverNewsPage('"' + corpRow.corp_name + '"', st, env.NAVER_CLIENT_ID, env.NAVER_CLIENT_SECRET), corpRow.corp_name, cutoff);
+      if (got.error && !got.items.length) return Response.json({ error: got.error }, { status: 502 });
+      return new Response(JSON.stringify({ corp_name: corpRow.corp_name, from: cutoff, to: endYmd, days, got: got.items.length, partial: got.partial, total: got.total, warn: got.error, items: got.items }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "private, max-age=600" } });
+    }
+
+    // 재료 점검용: 최근 N일 DART 공시목록 + 같은 기간 코스피 일별 종가(시장조정 수익률 계산용). 뉴스는 /api/news.
+    if (pathname === "/api/disclosures") {
+      const corpName = searchParams.get("corp_name");
+      const corpRow = await env.DB.prepare("SELECT corp_code, corp_name, stock_code FROM corp_master WHERE corp_name = ?").bind(corpName).first();
+      if (!corpRow) return Response.json({ error: `'${corpName}' 종목을 corp_master에서 찾을 수 없습니다.` }, { status: 404 });
+      if (!env.DART_PROXY_URL) return Response.json({ error: "DART_PROXY_URL 미설정" }, { status: 500 });
+      const days = Math.min(Math.max(Number(searchParams.get("days")) || 365, 30), 400);
+      const kst = new Date(Date.now() + 9 * 3600 * 1000);
+      const endYmd = kst.toISOString().slice(0, 10).replace(/-/g, "");
+      const bgnYmd = addDaysStr(endYmd, -days);
+      const got = await collectDisclosures((p) => fetchDartList(corpRow.corp_code, bgnYmd, endYmd, env.DART_PROXY_URL, p, 100));
+      if (got.error) return Response.json({ error: got.error }, { status: 502 });
+      let idx = { d: [], c: [] };
+      try {
+        const { results } = await env.DB.prepare("SELECT market_date, close_price FROM market_index_daily WHERE idx_name = ? ORDER BY market_date DESC LIMIT 300").bind(KOSPI_NAME).all();
+        const rows = (results || []).slice().reverse();
+        idx = { d: rows.map((r) => r.market_date), c: rows.map((r) => r.close_price) };
+      } catch (e) { /* 지수 표가 없으면 시장조정 없이 표시 */ }
+      return new Response(JSON.stringify({ corp_name: corpRow.corp_name, stock_code: corpRow.stock_code, from: bgnYmd, to: endYmd, days, total_count: got.total_count, got: got.items.length, partial: got.partial, items: got.items, idx }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "private, max-age=600" } });
     }
 
     if (pathname === "/api/trend/stock") {
