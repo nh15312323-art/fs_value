@@ -5562,7 +5562,8 @@ async function pfuExport() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || '조회 실패');
         const aj = data.append_job ? ('  |  일괄 시세 추가 진행: ' + (data.append_job.nextPage - 1) + '/' + Math.ceil(data.append_job.total / data.append_job.pageSize) + '쪽') : '';
-        el.textContent = '유동성 통과: ' + data.passed_total + '개 (확인한 종목 총 ' + data.checked_total + '개)  |  백필 완료: ' + data.backfilled_total + '개  |  백필 대기: ' + data.queue_remaining + '개  |  오늘 백필: ' + data.backfilled_today + '/' + data.daily_cap + aj;
+        const dl = data.daily_log ? ('  |  마지막 자동 갱신 ' + new Date(data.daily_log.at).toLocaleString('ko-KR') + ': 시세 ' + (data.daily_log.universe || '-') + ', 코스피 ' + (data.daily_log.kospi || '-') + ', 빠진 날 ' + (data.daily_log.gaps || '-') + (data.daily_log.gapJob ? ' (' + data.daily_log.gapJob + ')' : '')) : '  |  자동 갱신 기록 없음';
+        el.textContent = '유동성 통과: ' + data.passed_total + '개 (확인한 종목 총 ' + data.checked_total + '개)  |  백필 완료: ' + data.backfilled_total + '개  |  백필 대기: ' + data.queue_remaining + '개  |  오늘 백필: ' + data.backfilled_today + '/' + data.daily_cap + aj + dl;
       } catch (e) {
         el.textContent = '오류: ' + e.message;
       }
@@ -9158,6 +9159,7 @@ async function handleRequest(request, env) {
         min_trading_value: (await getUniverseCfg(env)).minTv,
         min_mcap: (await getUniverseCfg(env)).minMcap,
         append_job: await (async () => { try { const r = await env.DB.prepare("SELECT v FROM market_job WHERE k = 'append'").first(); return r ? JSON.parse(r.v) : null; } catch (e) { return null; } })(),
+        daily_log: await (async () => { try { const r = await env.DB.prepare("SELECT v FROM market_job WHERE k = 'daily_log'").first(); return r ? JSON.parse(r.v) : null; } catch (e) { return null; } })(),
       });
     }
 
@@ -9965,6 +9967,50 @@ async function attachOpIncome(env, lists) {
   }
 }
 
+// ===== 일일 갱신 보완(재시도·빠진 날 채우기) =====
+// 예전에는 매일 18:01(한국) 딱 한 번만 시도해서, 그 순간 DB/공공데이터가 실패하면 그날 시세가 영영 비었다.
+// 이제 18:01~21:01(한국, 1시간 간격 4번) 재시도하고(이미 끝났으면 바로 건너뜀), 코스피 거래일 달력과 비교해 빠진 날이 있으면 기간 수집으로 채운다.
+// 순수 함수: calDesc = 코스피 거래일(최신순), hasRaw = 시세가 저장된 날짜 집합. 저장된 가장 최근 날짜보다 오래됐는데 시세가 없는 날(=중간 구멍)만 돌려준다(오름차순).
+function priceGapDates(calDesc, hasRaw) {
+  let newest = null;
+  for (const d of calDesc) if (hasRaw.has(d)) { newest = d; break; }
+  if (!newest) return [];
+  return calDesc.filter((d) => d < newest && !hasRaw.has(d)).slice().sort();
+}
+async function findPriceGaps(env, nDates) {
+  const { results } = await env.DB.prepare("SELECT market_date FROM market_index_daily WHERE idx_name = ? ORDER BY market_date DESC LIMIT ?").bind(KOSPI_NAME, nDates || 25).all();
+  const cal = (results || []).map((r) => r.market_date);
+  if (!cal.length) return [];
+  const rs = await env.DB.batch(cal.map((d) => env.DB.prepare("SELECT market_date FROM market_raw_daily WHERE market_date = ? LIMIT 1").bind(d))); // 날짜당 1행만 읽음
+  const has = new Set();
+  rs.forEach((r) => (r.results || []).forEach((x) => has.add(x.market_date)));
+  return priceGapDates(cal, has);
+}
+async function runDailyCatchUp(env, hourUtc) {
+  const msg = (e) => String((e && e.message) || e).slice(0, 160);
+  const log = { at: new Date().toISOString(), hourUtc, universe: null, kospi: null, gaps: null };
+  try {
+    // 진행 중인 일괄 추가를 새로 시작해 되돌리지 않는다. 단, 3시간 넘게 남아 있으면 멈춘 것으로 보고 다시 시작한다.
+    const runRow = await env.DB.prepare("SELECT v FROM market_job WHERE k = 'append'").first();
+    let running = false;
+    if (runRow) { try { const t = Date.parse(JSON.parse(runRow.v).startedAt); running = Number.isFinite(t) && Date.now() - t < 3 * 3600 * 1000; } catch (e) { running = false; } }
+    if (running) log.universe = "진행 중인 일괄 추가가 있어 새로 시작하지 않음";
+    else { const r = await runUniverseRefresh(env, false); log.basDt = r.bas_dt; log.universe = r.job_started ? "시작(" + r.bas_dt + ")" : (r.note || "건너뜀"); }
+  } catch (e) { log.universe = "실패: " + msg(e); console.error("일일 자동 유니버스 갱신 실패:", msg(e)); }
+  try { await refreshKospi(env); log.kospi = "ok"; } catch (e) { log.kospi = "실패: " + msg(e); console.error("코스피 지수 자동 갱신 실패:", msg(e)); }
+  try {
+    const gaps = await findPriceGaps(env, 25);
+    log.gaps = gaps.length ? gaps.join(",") : "없음";
+    if (gaps.length) {
+      const r = await startRangeJob(env, gaps[0], gaps[gaps.length - 1]);
+      log.gapJob = r.error ? ("시작 못 함: " + r.error) : "빠진 날 " + gaps.length + "일 기간 수집 시작";
+    }
+  } catch (e) { log.gaps = "확인 실패: " + msg(e); console.error("빠진 시세 확인 실패:", msg(e)); }
+  try { await env.DB.prepare("INSERT OR REPLACE INTO market_job (k, v) VALUES ('daily_log', ?)").bind(JSON.stringify(log)).run(); } catch (e) { /* 기록 실패는 무시 */ }
+  return log;
+}
+// ===== /일일 갱신 보완 =====
+
 async function handleScheduled(event, env, ctx) {
     const minute = new Date(event.scheduledTime).getUTCMinutes();
     const hour = new Date(event.scheduledTime).getUTCHours();
@@ -9981,20 +10027,22 @@ async function handleScheduled(event, env, ctx) {
       return;
     }
 
-    // 하루 한 번(UTC 9시 1분 = 한국시간 18:01) 최신 거래일 시세 일괄 추가를 "시작"한다(실제 처리는 이후 홀수 분마다 한 쪽씩).
-    if (hour === 9 && minute === 1) {
+    // 매일 18:01·19:01·20:01·21:01(한국) 최신 거래일 시세 일괄 추가를 "시작"한다(이미 끝났으면 건너뜀). 실제 처리는 이후 홀수 분마다 한 쪽씩.
+    // 코스피 지수 갱신과 빠진 날 채우기도 같이 한다. 한 번의 호출에 일을 몰지 않는다(subrequest 50건 한도).
+    if (hour >= 9 && hour <= 12 && minute === 1) {
+      await runDailyCatchUp(env, hour);
+      return;
+    }
+
+    // 매일 18:11(한국) 거시경제 지표(환율·금리·WTI) 증분 갱신: 지표별로 마지막 저장일 다음날부터만 받는다. 키가 없거나 실패해도 다른 작업에 영향 없음.
+    if (hour === 9 && minute === 11) {
       try {
-        await runUniverseRefresh(env, false);
+        const end = todayStr();
+        await runMacroRefresh(env, null, end, addDaysStr(end, -9 * 365));
       } catch (e) {
-        console.error("일일 자동 유니버스 갱신 실패:", (e && e.message) || e);
+        console.error("거시경제 지표 자동 갱신 실패:", (e && e.message) || e);
       }
-      // 코스피 지수 증분 갱신(없는 날짜만, 보통 쓰기 1행). 실패해도 다른 작업에 영향 없도록 따로 감싼다.
-      try {
-        await refreshKospi(env);
-      } catch (e) {
-        console.error("코스피 지수 자동 갱신 실패:", (e && e.message) || e);
-      }
-      return; // 한 번의 호출에 일을 몰지 않는다(subrequest 50건 한도)
+      return;
     }
 
     if (minute % 2 === 0) {
