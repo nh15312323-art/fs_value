@@ -441,6 +441,9 @@ const HTML_PAGE = `<!doctype html>
     .sc-sub { font-size: 13.5px; color: var(--text-muted); margin-top: 7px; line-height: 1.55; }
     .sc-act { display: flex; gap: 8px; margin-top: 8px; }
     .sc-act button { flex: 1; font-weight: 700; }
+    .sc-fin { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 0 8px; white-space: nowrap; }
+    .sc-fin input, .sc-fin-s input { width: 20px; height: 20px; margin: 0; }
+    .sc-fin-s { margin-left: 6px; vertical-align: middle; }
     .sc-cmp.on, .sc-cmp-s.on, #btnCmpAdd.on { background: #0f172a; color: #fff; border-color: #0f172a; }
     .sc-cmp-s { padding: 0 6px; min-height: 26px !important; font-size: 12px; margin-left: 4px; }
     .scr-view { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
@@ -716,10 +719,11 @@ const HTML_PAGE = `<!doctype html>
       <div id="screenCards" class="sc-cards"></div>
       <div id="screenWrap" class="tscroll" style="display:none; margin-top:10px;"></div>
       <div class="row" style="margin-top:10px;">
-        <button onclick="prepareFinancials()" title="지금 보이는 목록 상위 종목 중 재무데이터가 없는 종목을 서버가 백그라운드로 받아둡니다">📥 이 목록 상위 종목 재무데이터 미리 받아두기</button>
-        <select id="prepN"><option value="10">상위 10개</option><option value="20" selected>상위 20개</option><option value="50">상위 50개</option></select>
+        <button id="btnFinPrep" onclick="prepareFinancials()" title="카드/표에서 고른 종목의 재무데이터를 서버가 백그라운드로 받아둡니다(이미 받은 기간은 건너뜀)">📥 선택한 종목 재무데이터 받기 (0/20)</button>
+        <button onclick="finSelClear()">선택 해제</button>
         <span id="prepStatus" class="meta-line" style="margin:0;"></span>
       </div>
+      <div class="meta-line" style="margin-top:4px;">카드의 「재무 받기」 칸이나 표의 ☑ 칸으로 종목을 고르세요(최대 20개, 목록을 바꿔도 선택은 유지됩니다). 올해부터 11년치(분기·반기·3분기·사업보고서)를 받습니다.</div>
     </div>
 
     <details class="card">
@@ -5718,7 +5722,7 @@ async function pfuExport() {
         const hot = r.hot ? ' <span class="sc-warn" title="최근 1개월 수익률이 후보 중 상위 5%: 단기 과열·반전 위험">⚠</span>' : '';
         const comp = newFmt ? sCell(r.rw == null ? 'N/A' : (r.rw * 100).toFixed(1), kc('rw')) : ret(r.rw, 'rw');
         return '<tr><td class="f f1">' + (i + 1) + '</td>' +
-          '<td class="f f2"><a href="javascript:void(0)" onclick="goAnalyzeCode(&quot;' + r.stock_code + '&quot;)" title="클릭하면 종목분석으로 이동" style="color:var(--primary-dark); font-weight:700; text-decoration:none;">' + escHtml(r.corp_name) + '</a>' + hot + (r.corp_name !== r.stock_code ? '<button class="sc-cmp-s" data-cmp="' + escHtml(r.corp_name) + '" title="비교에 담기">⚖</button>' : '') + '<br /><span style="color:var(--text-muted); font-size:11px;">' + r.stock_code + '</span><div class="mini"><b>' + sN(r.c0) + '원</b><br />시총 ' + sN(r.mcapEok) + '억 · 대금 ' + sN(r.tvEok) + '억<br />영업이익 ' + (r.op ? sN(r.op.v) + '억' : (opFillRunning ? '조회 중…' : 'N/A')) + '</div></td>' +
+          '<td class="f f2"><a href="javascript:void(0)" onclick="goAnalyzeCode(&quot;' + r.stock_code + '&quot;)" title="클릭하면 종목분석으로 이동" style="color:var(--primary-dark); font-weight:700; text-decoration:none;">' + escHtml(r.corp_name) + '</a>' + hot + (r.corp_name !== r.stock_code ? '<button class="sc-cmp-s" data-cmp="' + escHtml(r.corp_name) + '" title="비교에 담기">⚖</button><label class="sc-fin-s" title="재무데이터 받기 선택(최대 20개)"><input type="checkbox" data-finsel="' + escHtml(r.corp_name) + '"' + (finSel.indexOf(r.corp_name) >= 0 ? ' checked' : '') + ' /></label>' : '') + '<br /><span style="color:var(--text-muted); font-size:11px;">' + r.stock_code + '</span><div class="mini"><b>' + sN(r.c0) + '원</b><br />시총 ' + sN(r.mcapEok) + '억 · 대금 ' + sN(r.tvEok) + '억<br />영업이익 ' + (r.op ? sN(r.op.v) + '억' : (opFillRunning ? '조회 중…' : 'N/A')) + '</div></td>' +
           '<td class="f f3">' + sN(r.c0) + '</td><td class="f f4">' + sN(r.mcapEok) + '</td><td class="f f5">' + sN(r.tvEok) + '</td>' + opCell +
           ret(r.r21, 'r21') + ret(r.r20, 'r20') + ret(r.r60, 'r60') + ret(r.r120, 'r120') + comp + ret(r.m16, 'm16') + rs(r.rs1, 'rs1') + rs(r.rs3, 'rs3') + rs(r.rs6, 'rs6') + sCell(r.z10 == null ? 'N/A' : sX(r.z10, 1), kc('z10')) + sCell(r.z20 == null ? 'N/A' : sX(r.z20, 1), kc('z20')) + extraCells(r) +
           sCell((overlap[r.stock_code] || 0) + '/' + SCREEN_LISTS.filter((L) => !L.attn).length, overlap[r.stock_code] >= 4 ? 'sc-good' : '') + '</tr>';
@@ -5740,36 +5744,50 @@ async function pfuExport() {
           '<div class="sc-grid"><div><small>1개월</small>' + pc(r.r21).replace('<div', '<span').replace('</div>', '</span>') + '</div><div><small>20일</small>' + pc(r.r20).replace('<div', '<span').replace('</div>', '</span>') + '</div><div><small>60일</small>' + pc(r.r60).replace('<div', '<span').replace('</div>', '</span>') + '</div><div><small>120일</small>' + pc(r.r120).replace('<div', '<span').replace('</div>', '</span>') + '</div></div>' +
           '<div class="sc-sub">현재가 ' + sN(r.c0) + '원 · 시총 ' + sN(r.mcapEok) + '억 · 거래대금(20일평균) ' + sN(r.tvEok) + '억<br />영업이익 ' + op + '</div>' +
           '<details class="adv"><summary>상세 지표</summary><div class="sc-grid" style="grid-template-columns:repeat(3,1fr);"><div><small>6-1</small>' + sP(r.m16) + '</div><div><small>12-1</small>' + sP(r.m121) + '</div><div><small>52주고점비</small>' + (r.hi52 == null ? 'N/A' : r.hi52.toFixed(2)) + '</div><div><small>RS 1M</small>' + sX(r.rs1, 3) + '</div><div><small>RS 3M</small>' + sX(r.rs3, 3) + '</div><div><small>RS 6M</small>' + sX(r.rs6, 3) + '</div><div><small>Z10</small>' + sX(r.z10, 1) + '</div><div><small>Z20</small>' + sX(r.z20, 1) + '</div><div><small>복합점수</small>' + (newFmt ? (r.rw == null ? 'N/A' : (r.rw * 100).toFixed(1)) : sP(r.rw)) + '</div></div></details>' +
-          '<div class="sc-act"><button class="primary" onclick="goAnalyzeCode(&quot;' + r.stock_code + '&quot;)">분석 →</button>' + (canCmp ? '<button class="sc-cmp" data-cmp="' + escHtml(r.corp_name) + '">⚖ 비교 담기</button>' : '') + '</div></div>';
+          '<div class="sc-act"><button class="primary" onclick="goAnalyzeCode(&quot;' + r.stock_code + '&quot;)">분석 →</button>' + (canCmp ? '<button class="sc-cmp" data-cmp="' + escHtml(r.corp_name) + '">⚖ 비교 담기</button><label class="sc-fin"><input type="checkbox" data-finsel="' + escHtml(r.corp_name) + '"' + (finSel.indexOf(r.corp_name) >= 0 ? ' checked' : '') + ' />재무 받기</label>' : '') + '</div></div>';
       }).join('');
       document.getElementById('screenCards').innerHTML = cards || '<div class="meta-line">표시할 종목이 없습니다.</div>';
       applyScrView(); cmpTrayRender();
     }
 
-    // 지금 보이는 목록의 상위 종목 중 재무데이터가 없는 종목을 서버 대기열에 등록한다(서버가 1분에 약 1개 기간씩 DART에서 받아 저장).
+    // 내가 고른 종목(최대 FIN_SEL_MAX개)의 재무데이터를 서버 대기열에 등록한다(서버가 1분에 약 1개 기간씩 DART에서 받아 저장).
+    // 올해부터 11년치(올해 포함 11개 연도 × 4개 보고서). 이미 받은 기간은 서버가 건너뛴다(skip_existing).
+    const FIN_SEL_MAX = 20, FIN_YEARS = 11;
+    let finSel = [];
+    function finSelSync() {
+      Array.prototype.forEach.call(document.querySelectorAll('[data-finsel]'), function (c) { c.checked = finSel.indexOf(c.getAttribute('data-finsel')) >= 0; });
+      const b = document.getElementById('btnFinPrep'); if (b) b.textContent = '📥 선택한 종목 재무데이터 받기 (' + finSel.length + '/' + FIN_SEL_MAX + ')';
+    }
+    function finSelToggle(name, on, box) {
+      const i = finSel.indexOf(name), st = document.getElementById('prepStatus');
+      if (on && i < 0) {
+        if (finSel.length >= FIN_SEL_MAX) { if (box) box.checked = false; if (st) st.textContent = '최대 ' + FIN_SEL_MAX + '개까지 선택할 수 있습니다. 다른 종목을 고르려면 먼저 하나를 해제하세요.'; return; }
+        finSel.push(name);
+      } else if (!on && i >= 0) finSel.splice(i, 1);
+      if (st) st.textContent = '';
+      finSelSync();
+    }
+    function finSelClear() { finSel = []; const st = document.getElementById('prepStatus'); if (st) st.textContent = ''; finSelSync(); }
+    document.addEventListener('change', function (ev) {
+      const c = ev.target && ev.target.closest ? ev.target.closest('[data-finsel]') : null;
+      if (c) finSelToggle(c.getAttribute('data-finsel'), c.checked, c);
+    });
     async function prepareFinancials() {
       const st = document.getElementById('prepStatus');
-      if (!screenData) { st.textContent = '먼저 스크리닝 결과를 불러오세요.'; return; }
-      const n = Number(document.getElementById('prepN').value) || 20;
-      const rows = ((screenData.lists || {})[screenTab] || []).slice(0, n);
-      let have;
-      try { have = await loadDbCompanies(true); } catch (e) { st.textContent = '오류: ' + e.message; return; }
-      const haveNames = {};
-      have.forEach(function (c) { haveNames[c.corp_name] = 1; });
-      const need = rows.filter(function (r) { return !haveNames[r.corp_name] && r.corp_name !== r.stock_code; });
-      if (!need.length) { st.textContent = '상위 ' + rows.length + '개 종목 모두 재무데이터가 이미 있습니다.'; return; }
-      const y1 = new Date().getFullYear(), y0 = y1 - 5;
-      const periods = need.length * (y1 - y0 + 1) * 4;
-      if (!confirm(need.length + '개 종목(' + y0 + '~' + y1 + '년, 약 ' + periods + '개 기간)을 서버 대기열에 등록합니다. 서버가 1분에 약 1개 기간씩 받으므로 완료까지 약 ' + Math.ceil(periods / 60) + '시간 걸립니다(화면을 꺼도 계속 진행됩니다). 진행할까요?')) return;
-      let ok = 0, fail = 0;
-      for (let i = 0; i < need.length; i++) {
-        st.textContent = '대기열 등록 중... ' + (i + 1) + '/' + need.length;
+      if (!finSel.length) { st.textContent = '먼저 카드나 표에서 재무데이터를 받을 종목을 고르세요(최대 ' + FIN_SEL_MAX + '개).'; return; }
+      const names = finSel.slice(0, FIN_SEL_MAX);
+      const y1 = new Date().getFullYear(), y0 = y1 - (FIN_YEARS - 1);
+      const maxPeriods = names.length * FIN_YEARS * 4;
+      if (!confirm(names.length + '개 종목(' + y0 + '~' + y1 + '년, 종목당 최대 ' + (FIN_YEARS * 4) + '개 기간)의 재무데이터를 서버 대기열에 등록합니다. 이미 받은 기간은 건너뛰고, 서버가 1분에 약 1개 기간씩 받으므로 처음 받는 종목만 있다면 최대 약 ' + Math.ceil(maxPeriods / 60) + '시간 걸립니다(화면을 꺼도 계속 진행됩니다). 아직 공시되지 않은 기간은 받지 못하고 건너뜁니다. 진행할까요?')) return;
+      let ok = 0, fail = 0, queued = 0, skipped = 0;
+      for (let i = 0; i < names.length; i++) {
+        st.textContent = '대기열 등록 중... ' + (i + 1) + '/' + names.length;
         try {
-          const res = await fetch('/api/queue-fetch?corp_name=' + encodeURIComponent(need[i].corp_name) + '&start_year=' + y0 + '&end_year=' + y1);
-          if (res.ok) ok++; else fail++;
+          const res = await fetch('/api/queue-fetch?skip_existing=1&corp_name=' + encodeURIComponent(names[i]) + '&start_year=' + y0 + '&end_year=' + y1);
+          if (res.ok) { ok++; const d = await res.json(); queued += d.queued || 0; skipped += d.skipped || 0; } else fail++;
         } catch (e) { fail++; }
       }
-      st.textContent = ok + '개 종목을 대기열에 등록했습니다' + (fail ? ' (' + fail + '개는 등록 실패)' : '') + '. ④ 데이터 관리에서 진행 상황을 볼 수 있습니다.';
+      st.textContent = ok + '개 종목 등록: 새로 받을 기간 ' + queued + '개 · 이미 있어 건너뜀 ' + skipped + '개' + (fail ? ' (' + fail + '개 종목은 등록 실패)' : '') + (queued ? ' · 예상 약 ' + Math.max(1, Math.ceil(queued / 60)) + '시간' : '') + '. ④ 데이터 관리에서 진행 상황을 볼 수 있습니다.';
     }
 
     // 영업이익이 없는 종목을 서버가 12개씩 data.go.kr에서 받아 오도록 반복 호출한다(받은 값은 서버 DB에 저장되어 다음부터는 바로 나옴).
@@ -8983,15 +9001,27 @@ async function handleRequest(request, env) {
       const corpRow = await env.DB.prepare("SELECT corp_code, corp_name, stock_code FROM corp_master WHERE corp_name = ?").bind(corpName).first();
       if (!corpRow) return Response.json({ error: `'${corpName}' 종목을 corp_master에서 찾을 수 없습니다.` }, { status: 404 });
 
-      const periods = buildPeriodList(startYear, endYear);
+      let periods = buildPeriodList(startYear, endYear);
+      let skipped = 0;
+      // skip_existing=1: 이미 값이 저장된 기간은 다시 받지 않는다(종목당 최대 44행만 읽음). 매출·영업이익·순이익이 모두 비어 있는 행(공시 전에 저장된 빈 행)은 없는 것으로 보고 다시 받는다.
+      if (searchParams.get("skip_existing") === "1") {
+        const { results: haveRows } = await env.DB.prepare(
+          "SELECT bsns_year, reprt_code FROM financial_raw WHERE corp_code = ? AND bsns_year >= ? AND bsns_year <= ? AND (revenue IS NOT NULL OR net_income IS NOT NULL OR operating_income IS NOT NULL)"
+        ).bind(corpRow.corp_code, String(startYear), String(endYear)).all();
+        const have = new Set((haveRows || []).map((r) => r.bsns_year + "|" + r.reprt_code));
+        const before = periods.length;
+        periods = periods.filter((p) => !have.has(p.year + "|" + p.code));
+        skipped = before - periods.length;
+      }
       const now = new Date().toISOString();
+      if (!periods.length) return Response.json({ corp_name: corpRow.corp_name, corp_code: corpRow.corp_code, queued: 0, skipped });
       // INSERT OR IGNORE: 이미 큐에 있는(아직 처리 안 된) 기간은 중복 등록하지 않음
       const stmts = periods.map((p) => env.DB.prepare(
         "INSERT OR IGNORE INTO fetch_queue (corp_code, corp_name, stock_code, bsns_year, reprt_code, period_order, queued_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
       ).bind(corpRow.corp_code, corpRow.corp_name, corpRow.stock_code, String(p.year), p.code, p.period_order, now));
       await env.DB.batch(stmts);
 
-      return Response.json({ corp_name: corpRow.corp_name, corp_code: corpRow.corp_code, queued: periods.length });
+      return Response.json({ corp_name: corpRow.corp_name, corp_code: corpRow.corp_code, queued: periods.length, skipped });
     }
 
     if (pathname === "/api/queue-status") {
