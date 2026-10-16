@@ -8,6 +8,7 @@ const calls = { uni: 0, kospi: 0, range: [] };
 const stubs = "const KOSPI_NAME = '코스피'; const __s = globalThis.__stub;" +
   "async function runUniverseRefresh(env, f) { __s.calls.uni++; if (__s.uniErr) throw new Error(__s.uniErr); return __s.uniRes; }" +
   "async function refreshKospi() { __s.calls.kospi++; if (__s.kErr) throw new Error(__s.kErr); }" +
+  "async function syncNewListings() { return { added: 0, missing: 0, names: [] }; }" +
   "async function startRangeJob(env, a, b) { __s.calls.range.push([a, b]); return __s.rangeRes || { ok: true }; }";
 globalThis.__stub = { calls, uniRes: { bas_dt: '20251012', job_started: true }, uniErr: null, kErr: null, rangeRes: null };
 const M = new Function(stubs + text.slice(i, j) + '\nreturn { priceGapDates, findPriceGaps, runDailyCatchUp };')();
