@@ -89,8 +89,15 @@ function mkEnv(nDays) {
   const a2 = await S.computeScreenLists({ DB: e5.DB }, o5);
   check('같은 조건 2번째 실행은 무거운 SQL을 다시 돌리지 않음', lag1 === 1 && rk1 === 1 && e5.cnt.lag === 1 && e5.cnt.withq === 1, 'LAG ' + lag1 + '→' + e5.cnt.lag + ', 순위SQL ' + rk1 + '→' + e5.cnt.withq);
   check('캐시 결과가 처음 계산과 동일(목록 rw)', a2.meta.cached === true && JSON.stringify(a2.lists.rw) === JSON.stringify(a1.lists.rw));
+  // 저장된 시세가 바뀌면(백필·빠진 날 채우기 등) 같은 조건·같은 기준일이어도 옛 계산을 그대로 쓰지 않는다
+  e5.db.exec("DELETE FROM market_raw_daily WHERE stock_code = '100090' AND market_date = '" + a1.meta.points.d20 + "'");
+  e5.db.exec("UPDATE market_universe_status SET backfilled = 0 WHERE stock_code = '100090'");
+  const a2b = await S.computeScreenLists({ DB: e5.DB }, o5);
+  check('시세·이력 확보 종목 수가 바뀌면 캐시를 쓰지 않고 새로 계산', a2b.meta.cached !== true && e5.cnt.withq === 2, 'cached=' + a2b.meta.cached + ', 순위SQL ' + e5.cnt.withq);
+  const a2c = await S.computeScreenLists({ DB: e5.DB }, o5);
+  check('바뀐 뒤 같은 조건 재실행은 다시 캐시 사용', a2c.meta.cached === true && e5.cnt.withq === 2);
   const a3 = await S.computeScreenLists({ DB: e5.DB }, Object.assign({}, o5, { pcMcap: 10 }));
-  check('조건을 바꾸면 새로 계산하되 52주 고가(LAG) 결과는 재사용', a3.meta.cached !== true && e5.cnt.lag === 1 && e5.cnt.withq === 2, 'LAG ' + e5.cnt.lag + ', 순위SQL ' + e5.cnt.withq);
+  check('조건을 바꾸면 새로 계산하되 52주 고가(LAG) 결과는 재사용', a3.meta.cached !== true && e5.cnt.lag === 1 && e5.cnt.withq === 3, 'LAG ' + e5.cnt.lag + ', 순위SQL ' + e5.cnt.withq);
   check('재사용해도 12-1·52주 고가 값이 같음', JSON.stringify(a3.lists.rw.map((q) => q.m121)) !== undefined && a3.meta.mom.ready === true);
   console.log(fail ? '\n실패 ' + fail + '건' : '\n전체 통과');
   process.exit(fail ? 1 : 0);
