@@ -275,7 +275,7 @@ const HTML_PAGE = `<!doctype html>
     .scr .f { position: sticky; background: #fff; z-index: 1; overflow: hidden; text-overflow: ellipsis; }
     .scr th.f { background: #f1f5f9; z-index: 6; }
     .scr .f1 { left: 0; min-width: 42px; max-width: 42px; }
-    .scr .f2 { left: 42px; min-width: 104px; max-width: 104px; text-align: left; }
+    .scr .f2 { left: 42px; min-width: 104px; max-width: 104px; text-align: left; white-space: normal; overflow: visible; }
     .scr .f3 { left: 146px; min-width: 80px; max-width: 80px; }
     .scr .f4 { left: 226px; min-width: 80px; max-width: 80px; }
     .scr .f5 { left: 306px; min-width: 96px; max-width: 96px; }
@@ -443,7 +443,8 @@ const HTML_PAGE = `<!doctype html>
     .sc-act button { flex: 1; font-weight: 700; }
     .sc-fin { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 0 8px; white-space: nowrap; }
     .sc-fin input, .sc-fin-s input { width: 20px; height: 20px; margin: 0; }
-    .sc-fin-s { margin-left: 6px; vertical-align: middle; }
+    .sc-fin-s { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; white-space: nowrap; }
+    .sc-ctl { display: flex; align-items: center; gap: 6px; margin-top: 3px; white-space: nowrap; }
     .sc-cmp.on, .sc-cmp-s.on, #btnCmpAdd.on { background: #0f172a; color: #fff; border-color: #0f172a; }
     .sc-cmp-s { padding: 0 6px; min-height: 26px !important; font-size: 12px; margin-left: 4px; }
     .scr-view { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
@@ -5722,7 +5723,7 @@ async function pfuExport() {
         const hot = r.hot ? ' <span class="sc-warn" title="최근 1개월 수익률이 후보 중 상위 5%: 단기 과열·반전 위험">⚠</span>' : '';
         const comp = newFmt ? sCell(r.rw == null ? 'N/A' : (r.rw * 100).toFixed(1), kc('rw')) : ret(r.rw, 'rw');
         return '<tr><td class="f f1">' + (i + 1) + '</td>' +
-          '<td class="f f2"><a href="javascript:void(0)" onclick="goAnalyzeCode(&quot;' + r.stock_code + '&quot;)" title="클릭하면 종목분석으로 이동" style="color:var(--primary-dark); font-weight:700; text-decoration:none;">' + escHtml(r.corp_name) + '</a>' + hot + (r.corp_name !== r.stock_code ? '<button class="sc-cmp-s" data-cmp="' + escHtml(r.corp_name) + '" title="비교에 담기">⚖</button><label class="sc-fin-s" title="재무데이터 받기 선택(최대 20개)"><input type="checkbox" data-finsel="' + escHtml(r.corp_name) + '"' + (finSel.indexOf(r.corp_name) >= 0 ? ' checked' : '') + ' /></label>' : '') + '<br /><span style="color:var(--text-muted); font-size:11px;">' + r.stock_code + '</span><div class="mini"><b>' + sN(r.c0) + '원</b><br />시총 ' + sN(r.mcapEok) + '억 · 대금 ' + sN(r.tvEok) + '억<br />영업이익 ' + (r.op ? sN(r.op.v) + '억' : (opFillRunning ? '조회 중…' : 'N/A')) + '</div></td>' +
+          '<td class="f f2"><a href="javascript:void(0)" onclick="goAnalyzeCode(&quot;' + r.stock_code + '&quot;)" title="클릭하면 종목분석으로 이동" style="color:var(--primary-dark); font-weight:700; text-decoration:none;">' + escHtml(r.corp_name) + '</a>' + hot + '<br /><span style="color:var(--text-muted); font-size:11px;">' + r.stock_code + '</span>' + (r.corp_name !== r.stock_code ? '<div class="sc-ctl"><label class="sc-fin-s" title="재무데이터 받기 선택(최대 20개)"><input type="checkbox" data-finsel="' + escHtml(r.corp_name) + '"' + (finSel.indexOf(r.corp_name) >= 0 ? ' checked' : '') + ' /><span>재무</span></label><button class="sc-cmp-s" data-cmp="' + escHtml(r.corp_name) + '" title="비교에 담기">⚖</button></div>' : '') + '<div class="mini"><b>' + sN(r.c0) + '원</b><br />시총 ' + sN(r.mcapEok) + '억 · 대금 ' + sN(r.tvEok) + '억<br />영업이익 ' + (r.op ? sN(r.op.v) + '억' : (opFillRunning ? '조회 중…' : 'N/A')) + '</div></td>' +
           '<td class="f f3">' + sN(r.c0) + '</td><td class="f f4">' + sN(r.mcapEok) + '</td><td class="f f5">' + sN(r.tvEok) + '</td>' + opCell +
           ret(r.r21, 'r21') + ret(r.r20, 'r20') + ret(r.r60, 'r60') + ret(r.r120, 'r120') + comp + ret(r.m16, 'm16') + rs(r.rs1, 'rs1') + rs(r.rs3, 'rs3') + rs(r.rs6, 'rs6') + sCell(r.z10 == null ? 'N/A' : sX(r.z10, 1), kc('z10')) + sCell(r.z20 == null ? 'N/A' : sX(r.z20, 1), kc('z20')) + extraCells(r) +
           sCell((overlap[r.stock_code] || 0) + '/' + SCREEN_LISTS.filter((L) => !L.attn).length, overlap[r.stock_code] >= 4 ? 'sc-good' : '') + '</tr>';
@@ -9379,7 +9380,7 @@ async function screenCachePut(env, key, obj, d0) {
     const txt = JSON.stringify(obj);
     if (txt.length > 1500000) return;
     // 기준일이 바뀌면 이전 날짜 캐시는 쓸모가 없으므로 비운다(표가 계속 커지지 않게).
-    await env.DB.prepare("DELETE FROM screen_cache WHERE cache_key NOT LIKE ?").bind(d0 + "|%").run();
+    await env.DB.prepare("DELETE FROM screen_cache WHERE cache_key NOT LIKE ? OR (cache_key NOT LIKE ? AND cache_key != ?)").bind(d0 + "|%", d0 + "|extra|%", key).run();
     await env.DB.prepare("INSERT OR REPLACE INTO screen_cache (cache_key, payload, created_at) VALUES (?, ?, ?)").bind(key, txt, new Date().toISOString()).run();
   } catch (e) { console.error("스크리닝 캐시 저장 실패:", (e && e.message) || e); }
 }
@@ -9587,7 +9588,18 @@ async function computeScreenLists(env, opts) {
   const pts = { d0: cal[i0], d20: cal[i0 + 20], d21: cal[i0 + 21], d60: cal[i0 + 60], d63: cal[i0 + 63], d120: cal[i0 + 120], d126: cal[i0 + 126] };
 
   // 2-1) 캐시 확인: 기준일 + 모든 조건이 같으면 이전 계산 결과를 그대로 쓴다(읽기 1행). 무료 읽기 한도(하루 500만 행) 보호용.
-  const cacheKey = [pts.d0, minMcap, minTv, minPrice, pcMcap, pcTv, nw.w3.toFixed(4), nw.w6.toFixed(4), cal.length >= 270 ? "h" : "s"].join("|");
+  //      키에는 "저장된 시세가 바뀌었는지"를 알려 주는 지문도 넣는다: 기준 지점 7개 날짜의 저장 행 수·시총 행 수 + 이력 확보 종목 수 + 목록 길이(TOP_N).
+  //      (예전 키는 기준일·조건만 봐서, 이력 백필·빠진 날 채우기가 진행돼도 하루 종일 옛 계산(예: 50개짜리)을 그대로 보여줄 수 있었다.)
+  const dateList = Object.values(pts);
+  let fp = "x";
+  try {
+    const { results: fr } = await env.DB
+      .prepare("SELECT market_date, COUNT(*) AS n, SUM(CASE WHEN market_cap IS NOT NULL THEN 1 ELSE 0 END) AS m FROM market_raw_daily WHERE market_date IN (" + dateList.map(() => "?").join(",") + ") GROUP BY market_date ORDER BY market_date")
+      .bind(...dateList).all();
+    const bfr = await env.DB.prepare("SELECT COUNT(*) AS c FROM market_universe_status WHERE backfilled = 1").first();
+    fp = (fr || []).map((r) => r.n + "/" + r.m).join(",") + "#" + (bfr ? bfr.c : 0);
+  } catch (e) { fp = "x" + Date.now(); } // 지문을 못 만들면 캐시를 쓰지 않는다(매번 새로 계산)
+  const cacheKey = [pts.d0, minMcap, minTv, minPrice, pcMcap, pcTv, nw.w3.toFixed(4), nw.w6.toFixed(4), cal.length >= 270 ? "h" : "s", "top" + SCREEN_TOP_N, fp].join("|");
   if (!opts.noCache) {
     const hit = await screenCacheGet(env, cacheKey);
     if (hit && hit.meta && hit.lists) {
@@ -9598,7 +9610,6 @@ async function computeScreenLists(env, opts) {
   }
 
   // 3) 코스피 값(같은 날짜 지점)
-  const dateList = Object.values(pts);
   const { results: kr } = await env.DB
     .prepare("SELECT market_date, close_price FROM market_index_daily WHERE idx_name = ? AND market_date IN (" + dateList.map(() => "?").join(",") + ")")
     .bind(KOSPI_NAME, ...dateList).all();

@@ -59,5 +59,13 @@ await pg.click('#btnFinPrep'); await pg.waitForTimeout(150);
 ok('선택 없이 누르면 안내', (await pg.innerText('#prepStatus')).includes('먼저'));
 ok('모바일 가로 넘침 없음', await pg.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
 ok('페이지 오류 없음', errs.length === 0, errs.join(' | '));
+// PC 화면(넓은 표): 종목명이 길어도 체크칸이 종목 칸 안에 보여야 한다(예전엔 칸 너비 104px에서 잘렸다)
+const ctx2 = await b.newContext({ viewport: { width: 1280, height: 900 } });
+const pg2 = await ctx2.newPage(); pg2.on('pageerror', (e) => errs.push(String(e)));
+await pg2.goto(base); await pg2.waitForTimeout(400);
+await pg2.evaluate(() => { switchTab('momentum'); }); await pg2.waitForTimeout(900);
+await pg2.evaluate(() => { screenData.lists.rw[0].corp_name = '삼성바이오로직스홀딩스'; screenData.lists.rw[1].corp_name = '에이치엘비생명과학'; setScrView('table'); renderScreen(); }); await pg2.waitForTimeout(200);
+const vis = await pg2.evaluate(() => { const rows = [].slice.call(document.querySelectorAll('#screenWrap tbody tr')).slice(0, 30); let bad = 0; rows.forEach((tr) => { const td = tr.querySelector('td.f2'), c = tr.querySelector('input[data-finsel]'); if (!td || !c) { bad++; return; } const a = td.getBoundingClientRect(), r = c.getBoundingClientRect(); if (!(r.width > 0 && r.left >= a.left - 1 && r.right <= a.right + 1 && r.bottom <= a.bottom + 1)) bad++; }); return { n: rows.length, bad: bad }; });
+ok('PC 표: 30행 모두 체크칸이 종목 칸 안에 보임(긴 이름 포함)', vis.n === 30 && vis.bad === 0, JSON.stringify(vis));
 await b.close(); srv.close();
 console.log(fail ? '\n실패 ' + fail + '건' : '\n전부 통과'); process.exit(fail ? 1 : 0);
