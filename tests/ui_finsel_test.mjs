@@ -1,0 +1,63 @@
+// 사용법: node tests/ui_finsel_test.mjs (Playwright + Chromium 필요)
+// 스크리닝에서 재무데이터 받을 종목을 직접 고르고(최대 20개) 올해부터 11년치를 대기열에 등록하는 흐름을 확인한다.
+import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'; import { pathToFileURL, fileURLToPath } from 'node:url';
+import http from 'node:http'; import { createRequire } from 'node:module';
+const src = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index.js');
+const tmp = path.join(os.tmpdir(), 'fs_value_uifin_' + process.pid + '.mjs');
+fs.writeFileSync(tmp, fs.readFileSync(src, 'utf8') + '\nexport { HTML_PAGE };\n');
+const { HTML_PAGE } = await import(pathToFileURL(tmp).href); fs.unlinkSync(tmp);
+const require = createRequire('/opt/npm-tools/node_modules/'); const { chromium } = require('playwright');
+const mkRow = (i) => ({ stock_code: String(100000 + i * 10), corp_name: '종목' + (i + 1), c0: 10000 + i, tvEok: 50 + i, tv1Eok: 60, mcapEok: 1000 + i, r20: 0.05, r60: 0.1, r120: 0.2, r21: 0.03, hot: 0, rw: 0.9 - i * 0.005, m16: 0.1, rs1: 1.01, rs3: 1.05, rs6: 1.1, z10: 1, z20: 1, m121: 0.2, hi52: 0.95, extra: 'ok', op: { v: 100, year: 2025, src: 'datago' } });
+const rows = Array.from({ length: 30 }, (_, i) => mkRow(i));
+const lists = {}; ['r20', 'r60', 'r120', 'rw', 'm16', 'rs1', 'rs3', 'rs6', 'z10', 'z20'].forEach((k) => { lists[k] = rows; });
+const queued = [];
+const srv = http.createServer((q, r) => {
+  const u = new URL(q.url, 'http://x'), p = u.pathname;
+  if (p === '/') { r.setHeader('content-type', 'text/html;charset=utf-8'); return r.end(HTML_PAGE); }
+  r.setHeader('content-type', 'application/json');
+  if (p === '/api/auth/status') return r.end('{"protected":false,"ok":true}');
+  if (p === '/api/screen/top') return r.end(JSON.stringify({ date: '20251010', dates: ['20251010'], meta: { asof: '20251010', kospi: { close: 2500 }, weights: { w3: 0.5, w6: 0.5 }, topN: 100, pcMcap: 20, pcTv: 20, minPrice: 1000, passed_floor: 300, asof_rows: 1300, mom: {} }, lists }));
+  if (p === '/api/queue-fetch') { queued.push(Object.fromEntries(u.searchParams)); return r.end(JSON.stringify({ corp_name: u.searchParams.get('corp_name'), queued: 40, skipped: 4 })); }
+  if (p === '/api/screen/fill-opincome') return r.end(JSON.stringify({ values: {}, remaining: 0, processed: 0 }));
+  if (p === '/api/stock/list') return r.end(JSON.stringify({ stocks: [] }));
+  if (p === '/api/db/usage') return r.end(JSON.stringify({ sizeBytes: 1e6, limitBytes: 5e8, limitMb: 500, warnPct: 90, pct: 0.2, warn: false }));
+  r.statusCode = 404; r.end(JSON.stringify({ error: 'none' }));
+}).listen(0);
+const base = 'http://localhost:' + srv.address().port + '/';
+const b = await chromium.launch({ args: ['--no-sandbox'] });
+let fail = 0; const ok = (n, v, d) => { if (!v) fail++; console.log((v ? 'PASS' : 'FAIL') + '  ' + n + (d ? '  ' + d : '')); };
+const errs = [];
+const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+const pg = await ctx.newPage(); pg.on('pageerror', (e) => errs.push(String(e)));
+const dialogs = []; pg.on('dialog', async (d) => { dialogs.push(d.message()); await d.accept(); });
+await pg.goto(base); await pg.waitForTimeout(400);
+await pg.evaluate(() => switchTab('momentum')); await pg.waitForTimeout(900);
+ok('카드에 「재무 받기」 체크칸 표시(30개)', (await pg.$$('#screenCards input[data-finsel]')).length === 30);
+ok('버튼 초기 문구 0/20', (await pg.innerText('#btnFinPrep')).includes('0/20'));
+ok('기존 상위 N개 선택 상자는 없어짐', (await pg.$('#prepN')) === null);
+for (let i = 0; i < 20; i++) await pg.evaluate((k) => document.querySelectorAll('#screenCards input[data-finsel]')[k].click(), i);
+ok('20개 선택 → 버튼 20/20', (await pg.innerText('#btnFinPrep')).includes('20/20'));
+await pg.evaluate(() => document.querySelectorAll('#screenCards input[data-finsel]')[20].click());
+const st = await pg.innerText('#prepStatus');
+ok('21번째 선택은 막히고 안내 문구', (await pg.innerText('#btnFinPrep')).includes('20/20') && st.includes('최대 20개') && (await pg.evaluate(() => document.querySelectorAll('#screenCards input[data-finsel]')[20].checked)) === false, st);
+await pg.evaluate(() => document.querySelectorAll('#screenCards input[data-finsel]')[0].click());
+ok('하나 해제 → 19/20', (await pg.innerText('#btnFinPrep')).includes('19/20'));
+await pg.evaluate(() => setScrView('table')); await pg.waitForTimeout(200);
+const chk = await pg.evaluate(() => { const c = document.querySelectorAll('#screenWrap input[data-finsel]'); return { n: c.length, on: [].slice.call(c).filter((x) => x.checked).length, first: c[0].checked }; });
+ok('표 보기에도 체크칸이 있고 선택 상태가 유지(30칸, 19개 체크, 1번 해제)', chk.n === 30 && chk.on === 19 && chk.first === false, JSON.stringify(chk));
+await pg.evaluate(() => setScreenTab('r60')); await pg.waitForTimeout(150);
+ok('목록 탭을 바꿔도 선택 유지(19/20)', (await pg.innerText('#btnFinPrep')).includes('19/20'));
+await pg.click('#btnFinPrep'); await pg.waitForTimeout(700);
+const y1 = new Date().getFullYear();
+ok('확인창: 19개 종목·올해부터 11년(' + (y1 - 10) + '~' + y1 + ')', dialogs.length === 1 && dialogs[0].includes('19개 종목') && dialogs[0].includes((y1 - 10) + '~' + y1), dialogs[0]);
+ok('19개 종목을 서버에 등록(skip_existing=1, 시작연도=올해−10, 종료=올해)', queued.length === 19 && queued.every((q) => q.skip_existing === '1' && q.start_year === String(y1 - 10) && q.end_year === String(y1)), JSON.stringify(queued[0]));
+const done = await pg.innerText('#prepStatus');
+ok('완료 문구: 새로 받을 기간·건너뜀 합계(40×19=760, 4×19=76)', done.includes('760') && done.includes('76'), done);
+await pg.click('text=선택 해제'); await pg.waitForTimeout(100);
+ok('선택 해제 → 0/20, 체크 모두 해제', (await pg.innerText('#btnFinPrep')).includes('0/20') && (await pg.evaluate(() => [].slice.call(document.querySelectorAll('[data-finsel]')).every((c) => !c.checked))));
+await pg.click('#btnFinPrep'); await pg.waitForTimeout(150);
+ok('선택 없이 누르면 안내', (await pg.innerText('#prepStatus')).includes('먼저'));
+ok('모바일 가로 넘침 없음', await pg.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+ok('페이지 오류 없음', errs.length === 0, errs.join(' | '));
+await b.close(); srv.close();
+console.log(fail ? '\n실패 ' + fail + '건' : '\n전부 통과'); process.exit(fail ? 1 : 0);
