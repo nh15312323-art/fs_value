@@ -9270,6 +9270,13 @@ async function handleRequest(request, env) {
       return Response.json(out);
     }
 
+    // 신규 상장 종목 정보(corp_master) 수동 동기화. 매일 자동으로도 하지만 지금 바로 확인하고 싶을 때 쓴다. force=1이면 최근에 못 찾은 코드도 다시 묻는다.
+    if (pathname === "/api/corp/sync") {
+      const bad = await adminAuthError(request, env); if (bad) return bad;
+      try { return Response.json(await syncNewListings(env, { force: searchParams.get("force") === "1" })); }
+      catch (e) { return Response.json({ error: String((e && e.message) || e) }, { status: 500 }); }
+    }
+
     if (pathname === "/api/screen/fill-opincome") {
       const codes = (searchParams.get("codes") || "").split(",").map((x) => x.trim()).filter((x) => /^[0-9A-Za-z]{6}$/.test(x)).slice(0, 400);
       if (!codes.length) return Response.json({ processed: 0, remaining: 0, values: {}, errors: [] });
@@ -10008,6 +10015,83 @@ async function attachOpIncome(env, lists) {
   }
 }
 
+// ===== 신규 상장 종목 정보 동기화 =====
+// corp_master(종목명·종목코드·DART 고유번호)는 처음에 파이썬(종목정보.ipynb)으로 한 번 넣은 것이라 신규 상장 종목이 없다.
+// 시세 쪽(유니버스·대기열)에 있는데 corp_master에 없는 종목코드를 찾아, 구글 Apps Script 프록시의 corpcode 기능으로 DART 고유번호를 받아 추가한다.
+// DART 키는 프록시에만 있고 Worker에는 없다(corpCode.xml은 압축 30MB 안팎이라 무료 Worker에서 직접 풀 수도 없다). 프록시가 상장사만 골라 JSON으로 준다.
+const CORP_SYNC_MAX = 60;          // 한 번에 조회하는 최대 종목 수(주소 길이·응답 크기 제한)
+const CORP_SYNC_RETRY_DAYS = 7;    // DART에 없는 코드(ETF·외국기업 등)는 이 기간 동안 다시 묻지 않는다
+function corpCodeOk(c) { return typeof c === "string" && /^[0-9A-Z]{6}$/.test(c); }
+// 순수 함수: 후보 코드에서 형식이 맞고, 최근에 이미 물어봤지만 못 찾은 것(tried: {코드: YYYYMMDD})을 뺀 뒤 최대 max개
+function pickCorpCodes(candidates, tried, todayYmd, retryDays, max) {
+  const lim = addDaysStr(todayYmd, -retryDays), out = [], seen = new Set();
+  for (const c of candidates) {
+    if (!corpCodeOk(c) || seen.has(c)) continue;
+    seen.add(c);
+    if (tried && tried[c] && tried[c] > lim) continue;
+    out.push(c);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+// 프록시 응답({status:"000", list:[{corp_code, corp_name, stock_code, modify_date}]})에서 쓸 수 있는 행만 골라 낸다.
+function parseCorpListed(j, wanted) {
+  if (!j || typeof j !== "object" || !Array.isArray(j.list)) return null;
+  const want = new Set(wanted), rows = [], seen = new Set();
+  for (const it of j.list) {
+    const cc = String((it && it.corp_code) || "").trim(), nm = String((it && it.corp_name) || "").trim(), sc = String((it && it.stock_code) || "").trim();
+    if (!/^\d{8}$/.test(cc) || !nm || !want.has(sc) || seen.has(sc)) continue;
+    seen.add(sc);
+    rows.push([cc, nm, sc, String((it && it.modify_date) || "").trim() || null]);
+  }
+  return rows;
+}
+async function fetchCorpListed(proxyUrl, codes, timeoutMs = 60000) {
+  const url = new URL(proxyUrl);
+  url.searchParams.set("endpoint", "corpcode");
+  url.searchParams.set("codes", codes.join(","));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(url.toString(), { signal: controller.signal });
+    return await resp.json();
+  } finally { clearTimeout(timer); }
+}
+async function syncNewListings(env, opts) {
+  opts = opts || {};
+  const out = { missing: 0, asked: 0, added: 0, names: [], note: null };
+  if (!env.DART_PROXY_URL) { out.note = "DART_PROXY_URL 미설정"; return out; }
+  await ensureAppSettings(env.DB);
+  const { results } = await env.DB.prepare(
+    "SELECT stock_code FROM market_universe_status WHERE stock_code NOT IN (SELECT stock_code FROM corp_master WHERE stock_code IS NOT NULL) " +
+    "UNION SELECT stock_code FROM market_fetch_queue WHERE stock_code NOT IN (SELECT stock_code FROM corp_master WHERE stock_code IS NOT NULL)"
+  ).all();
+  const cand = (results || []).map((r) => r.stock_code);
+  out.missing = cand.length;
+  if (!cand.length) return out;
+  let st = {};
+  try { const r = await env.DB.prepare("SELECT v FROM app_settings WHERE k = 'corp_sync'").first(); if (r && r.v) st = JSON.parse(r.v) || {}; } catch (e) { st = {}; }
+  const tried = st.tried || {}, today = todayStr();
+  const codes = pickCorpCodes(cand, opts.force ? null : tried, today, CORP_SYNC_RETRY_DAYS, CORP_SYNC_MAX);
+  out.asked = codes.length;
+  if (!codes.length) { out.note = "찾을 종목은 있지만 최근 " + CORP_SYNC_RETRY_DAYS + "일 안에 이미 물어봤으나 DART에 없던 코드입니다."; return out; }
+  const j = await fetchCorpListed(env.DART_PROXY_URL, codes);
+  const rows = parseCorpListed(j, codes);
+  if (rows == null) { out.note = "프록시가 corpcode 기능을 지원하지 않거나 형식이 다릅니다(Apps Script 코드 추가 필요): " + String(JSON.stringify(j) || "").slice(0, 120); return out; }
+  if (rows.length) {
+    await multiRowInsert(env.DB, "INSERT OR IGNORE INTO corp_master (corp_code, corp_name, stock_code, modify_date)", 4, rows, (r) => r);
+    out.added = rows.length; out.names = rows.map((r) => r[1]).slice(0, 10);
+  }
+  const found = new Set(rows.map((r) => r[2]));
+  for (const c of codes) if (!found.has(c)) tried[c] = today;
+  for (const c of found) delete tried[c];
+  const keep = Object.keys(tried).sort((a, b) => (tried[b] > tried[a] ? 1 : -1)).slice(0, 500), t2 = {};
+  keep.forEach((c) => { t2[c] = tried[c]; });
+  await env.DB.prepare("INSERT OR REPLACE INTO app_settings (k, v, updated_at) VALUES ('corp_sync', ?, ?)").bind(JSON.stringify({ tried: t2, lastRun: new Date().toISOString(), lastAdded: out.added }), new Date().toISOString()).run();
+  return out;
+}
+// ===== /신규 상장 종목 정보 동기화 =====
+
 // ===== 일일 갱신 보완(재시도·빠진 날 채우기) =====
 // 예전에는 매일 18:01(한국) 딱 한 번만 시도해서, 그 순간 DB/공공데이터가 실패하면 그날 시세가 영영 비었다.
 // 이제 18:01~21:01(한국, 1시간 간격 4번) 재시도하고(이미 끝났으면 바로 건너뜀), 코스피 거래일 달력과 비교해 빠진 날이 있으면 기간 수집으로 채운다.
@@ -10029,7 +10113,7 @@ async function findPriceGaps(env, nDates) {
 }
 async function runDailyCatchUp(env, hourUtc) {
   const msg = (e) => String((e && e.message) || e).slice(0, 160);
-  const log = { at: new Date().toISOString(), hourUtc, universe: null, kospi: null, gaps: null };
+  const log = { at: new Date().toISOString(), hourUtc, universe: null, corp: null, kospi: null, gaps: null };
   try {
     // 진행 중인 일괄 추가를 새로 시작해 되돌리지 않는다. 단, 3시간 넘게 남아 있으면 멈춘 것으로 보고 다시 시작한다.
     const runRow = await env.DB.prepare("SELECT v FROM market_job WHERE k = 'append'").first();
@@ -10038,6 +10122,7 @@ async function runDailyCatchUp(env, hourUtc) {
     if (running) log.universe = "진행 중인 일괄 추가가 있어 새로 시작하지 않음";
     else { const r = await runUniverseRefresh(env, false); log.basDt = r.bas_dt; log.universe = r.job_started ? "시작(" + r.bas_dt + ")" : (r.note || "건너뜀"); }
   } catch (e) { log.universe = "실패: " + msg(e); console.error("일일 자동 유니버스 갱신 실패:", msg(e)); }
+  try { const c = await syncNewListings(env); log.corp = c.added ? "신규 " + c.added + "종목 추가(" + c.names.join(", ") + ")" : (c.note || (c.missing ? "추가 0(미확인 " + c.missing + ")" : "신규 없음")); } catch (e) { log.corp = "실패: " + msg(e); console.error("신규 상장 종목 동기화 실패:", msg(e)); }
   try { await refreshKospi(env); log.kospi = "ok"; } catch (e) { log.kospi = "실패: " + msg(e); console.error("코스피 지수 자동 갱신 실패:", msg(e)); }
   try {
     const gaps = await findPriceGaps(env, 25);
