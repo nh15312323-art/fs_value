@@ -50,6 +50,10 @@ ok('종목분석에 ⑨ 시그널과 판단 점검 장 표시', an.includes('⑨
 await openSec(pg, '수익률 분해');
 const dec = await pg.evaluate(() => { const d = Array.prototype.slice.call(document.querySelectorAll('#analysis details.card')).filter((x) => x.querySelector('summary').textContent.indexOf('수익률 분해') >= 0)[0]; return d.innerText; });
 ok('수익률 분해 표: 3년·5년 구간과 연도별 행, 항등식 설명', /연환산 3년/.test(dec) && /연환산 5년/.test(dec) && /2023→2024/.test(dec) && dec.includes('(1+EPS성장)×(1+PER변화)'), dec.replace(/\n/g, ' ').slice(0, 260));
+ok('복원 주가변화 vs 실제 주가변화 비교표 표시(열 제목·덧셈 근사 오차 설명)', dec.includes('분해로 복원한 주가변화 vs 실제 주가변화') && dec.includes('실제 주가변화') && dec.includes('근사 오차') && /%p|N\/A|시세 범위 밖|시세 없음/.test(dec), dec.slice(dec.indexOf('🔎'), dec.indexOf('🔎') + 200).replace(/\n/g, ' '));
+ok('시세가 해당 기간을 덮지 못하면 ‘시세 범위 밖’으로 표시(거짓 숫자 없음)', await pg.evaluate(() => /시세 범위 밖/.test(document.getElementById('sigCmpBody').innerText)));
+await pg.evaluate(() => { const d = [], c = []; let t = Date.UTC(2022, 11, 1), i = 0; while (t < Date.UTC(2025, 0, 10)) { const x = new Date(t); if (x.getUTCDay() % 6) { d.push(x.toISOString().slice(0, 10).replace(/-/g, '')); c.push(40000 + i * 10); i++; } t += 86400000; } PRICE.data = { d: d, c: c, v: c.map(() => 1000), tv: c.map(() => 1e8) }; sigRefresh(); });
+ok('일별 시세가 기간을 덮으면 실제 주가변화가 숫자로 채워지고(늦게 도착해도 갱신) 차이 칸이 계산됨', await pg.evaluate(() => { const t = document.getElementById('sigCmpBody'); return [].slice.call(t.querySelectorAll('tbody tr')).some((tr) => /%/.test((tr.children[2] || {}).innerText || '') && /%p/.test((tr.children[3] || {}).innerText || '')); }));
 ok('분해 표에 숫자(%)가 채워짐', (dec.match(/[+-]\d+\.\d%/g) || []).length >= 12, String((dec.match(/[+-]\d+\.\d%/g) || []).length));
 await openSec(pg, '기대수익률');
 const g0 = await pg.inputValue('#sigG');
