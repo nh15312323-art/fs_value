@@ -4,7 +4,7 @@ const text = fs.readFileSync(path.join(__dirname, '..', 'src', 'index.js'), 'utf
 const i = text.indexOf('// ===== 시그널·수익률 분해'), j = text.indexOf('// ===== /시그널·수익률 분해 =====');
 if (i < 0 || j < 0) throw new Error('구간 없음');
 const pre = "const anFin = (v) => v != null && typeof v === 'number' && isFinite(v); const anPct = (v) => (v*100).toFixed(1)+'%'; const anEsc = (s) => String(s); const anBadge = () => ''; const anSection = () => ''; const AN_STATE = {}; let AN_CTX = null;";
-const S = new Function(pre + text.slice(i, j) + '\nreturn { sigDecomp, sigExpected, sigDetect, sigSma, sigAvg, sigMedian };')();
+const S = new Function(pre + text.slice(i, j) + '\nreturn { sigDecomp, sigCompare, sigCloseAsOf, sigExpected, sigDetect, sigSma, sigAvg, sigMedian };')();
 let fail = 0; const check = (n, ok, d) => { if (!ok) fail++; console.log((ok ? 'PASS' : 'FAIL') + '  ' + n + (d !== undefined ? '  ' + d : '')); };
 const near = (a, b, t) => Math.abs(a - b) <= (t || 1e-9);
 // 6개 연도: EPS 연 10% 성장, PER 10 고정, 주당배당 20원
@@ -69,4 +69,25 @@ check('거래대금이 전부 결측이면 거래량으로 대체', /거래량/.
 const cl2 = cl.slice(); for (let k = n - 20; k < n; k++) cl2[k] = cl2[n - 21] * (1 + 0.02 * (k - (n - 21)));
 r = S.sigDetect(base, { c: cl2, v, d: dt });
 check('1개월 +30%↑ → 단기 과열 경고', r.items.some((x) => x.id === 'rev1m'), String(r.meta.r1m));
+
+// ----- 분해로 복원한 주가변화 vs 실제 주가변화(일별 시세) -----
+{
+  const L = mk(); const dd = S.sigDecomp(L, 3);                               // 2021→2024 (2021→2024)
+  const dates = [], cl = [];
+  const pxOf = (yr) => L.find((q) => q.year === yr).r.price_at_period_end;
+  for (let y = 2019; y <= 2024; y++) { dates.push(y + '1229'); cl.push(pxOf(y)); }  // 기간말 이틀 전 종가(연말 휴장 가정)
+  const px = { d: dates, c: cl };
+  check('기준일 이전 가장 가까운 종가를 찾음(12/31 → 12/29)', S.sigCloseAsOf(px, '20231231') === pxOf(2023));
+  check('시세 범위 밖이면 null', S.sigCloseAsOf(px, '20181231') === null && S.sigCloseAsOf(px, '20251231') === null);
+  check('10일보다 오래된 종가는 쓰지 않음', S.sigCloseAsOf({ d: ['20231201'], c: [10] }, '20231231') === null && S.sigCloseAsOf({ d: ['20231201', '20250101'], c: [10, 11] }, '20231231') === null);
+  const k = S.sigCompare(dd, px);
+  check('일별 시세가 보고서 기간말 주가와 같으면 실제 = 복원, 차이 0, 경고 없음', near(k.real, k.restored, 1e-12) && near(k.gap, 0, 1e-12) && k.flag === false, k.real + ' vs ' + k.restored);
+  const px2 = { d: dates, c: cl.map((v, i) => i === cl.length - 1 ? v * 1.2 : v) };  // 마지막 기간말 종가만 20% 어긋남
+  const k2 = S.sigCompare(dd, px2);
+  check('끝 종가가 20% 다르면 연환산 차이가 생기고 ⚠(1%p 초과)', k2.gap > 0.05 && k2.flag === true, k2.gap.toFixed(4));
+  const k3 = S.sigCompare(dd, null);
+  check('일별 시세가 없으면 실제 = null, 차이 = null, 경고 없음', k3.real === null && k3.gap === null && k3.flag === false);
+  check('시작 기간말이 시세 범위 밖이면 비교하지 않음(null)', S.sigCompare(S.sigDecomp(L, 5), { d: dates.slice(2), c: cl.slice(2) }).real === null);
+  check('근사 오차 = 덧셈 근사 − 총수익률', near(k.approxErr, dd.approx - dd.tr, 1e-12) && Math.abs(k.approxErr) < 0.01);
+}
 console.log(fail ? '\n실패 ' + fail + '건' : '\n전체 통과'); process.exit(fail ? 1 : 0);

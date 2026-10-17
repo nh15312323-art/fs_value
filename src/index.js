@@ -3578,6 +3578,48 @@ function sigChecklistHtml(c) {
     '<div style="font-weight:700; font-size:13px; margin-top:14px;">보유 중 점검 규칙 (점수 아님 · 근거 평가 포함)</div>' + row(SIG_HOLD, 100, false) +
     '<div style="font-size:11.5px; color:var(--text-muted); margin-top:8px; line-height:1.5;">입력한 내용은 이 기기(브라우저)에만 종목별로 저장됩니다. 실제 매매 계획·일지는 ⑥ 내 계좌의 ‘계획’과 ‘매매일지’에서 관리하세요.</div>';
 }
+// 일별 시세에서 기준일(YYYYMMDD) 이전 가장 가까운 종가. 10일(연휴 감안)보다 오래된 값이나 시세 범위 밖이면 null.
+function sigCloseAsOf(px, ymd) {
+  if (!px || !px.d || !px.c || !px.d.length || !ymd) return null;
+  if (ymd < String(px.d[0])) return null;   // 시세가 시작되기 전 날짜(위쪽 범위 밖은 아래 10일 규칙이 거른다)
+  let k = -1;
+  for (let i = px.d.length - 1; i >= 0; i--) { if (String(px.d[i]) <= ymd) { k = i; break; } }
+  if (k < 0 || !(px.c[k] > 0)) return null;
+  const gap = (Date.UTC(+ymd.slice(0, 4), +ymd.slice(4, 6) - 1, +ymd.slice(6, 8)) - Date.UTC(+String(px.d[k]).slice(0, 4), +String(px.d[k]).slice(4, 6) - 1, +String(px.d[k]).slice(6, 8))) / 86400000;
+  return gap <= 10 ? px.c[k] : null;
+}
+// 분해로 복원한 주가변화와 실제 주가변화(일별 시세) 비교 한 줄. d = sigDecomp 결과(오류 없는 것), px = 일별 시세(없으면 null).
+//  - 복원(곱셈) = (1+EPS성장)×(1+PER변화)−1. 연간 보고서의 기간말 주가·EPS로 만든 값이다.
+//  - 실제(일별 시세) = 같은 두 기간말 날짜의 일별 종가로 직접 계산한 연환산 변화. 서로 다르면 보고서 주가·기간말 날짜·액면분할 반영 여부를 점검한다.
+//  - 덧셈 근사 = EPS성장+PER변화+배당수익률. 교차항 때문에 총수익률과 조금 다르다(근사 오차).
+function sigCompare(d, px) {
+  const diff = (x, y) => (anFin(x) && anFin(y)) ? x - y : null;
+  const c0 = sigCloseAsOf(px, d.a + '1231'), c1 = sigCloseAsOf(px, d.b + '1231');
+  const real = (c0 > 0 && c1 > 0) ? Math.pow(c1 / c0, 1 / d.n) - 1 : null;
+  const gap = diff(real, d.exactPrice);
+  return {
+    restored: d.exactPrice, real: real, gap: gap, c0: c0, c1: c1,
+    flag: anFin(gap) && Math.abs(gap) > 0.01,   // 연환산 1%p 넘게 어긋나면 점검
+    tr: d.tr, approx: d.approx, approxErr: diff(d.approx, d.tr),
+  };
+}
+const sigPp = (v) => anFin(v) ? (v >= 0 ? '+' : '') + (v * 100).toFixed(2) + '%p' : 'N/A';
+function sigCompareHtml(c) {
+  const L = c.list, px = sigPx(), rows = [];
+  const line = (label, d) => {
+    if (d.err) return '<tr><td class="an-first">' + label + '</td><td colspan="6" style="text-align:left; color:var(--text-muted);">산출 불가: ' + anEsc(d.err) + '</td></tr>';
+    const k = sigCompare(d, px);
+    const realTxt = k.real != null ? sigPct(k.real) : '<span style="color:var(--text-muted);">' + (px ? '시세 범위 밖' : '시세 없음') + '</span>';
+    return '<tr><td class="an-first">' + label + '</td><td>' + sigPct(k.restored) + '</td><td>' + realTxt + '</td><td' + (k.flag ? ' style="color:#dc2626; font-weight:700;"' : '') + '>' + sigPp(k.gap) + (k.flag ? ' ⚠' : '') + '</td><td>' + (k.tr != null ? sigPct(k.tr) : 'N/A') + '</td><td>' + (k.approx != null ? sigPct(k.approx) : 'N/A') + '</td><td>' + sigPp(k.approxErr) + '</td></tr>';
+  };
+  [3, 5].forEach((n) => { const d = sigDecomp(L, n); rows.push(line(d.a && d.b ? d.a + '→' + d.b + ' (연환산 ' + n + '년)' : '최근 ' + n + '년', d)); });
+  let cnt = 0;
+  for (let k = L.length - 1; k >= 1 && cnt < 8; k--, cnt++) { const d = sigDecomp(L.slice(0, k + 1), 1); rows.push(line((L[k].year - 1) + '→' + L[k].year, d)); }
+  const th = '<thead><tr><th class="an-first">기간</th><th>분해로 복원한<br />주가변화<br />(EPS×PER)</th><th>실제 주가변화<br />(일별 시세)</th><th>차이</th><th>총수익률<br />(배당 포함)</th><th>덧셈 근사<br />(EPS+PER+배당)</th><th>근사 오차</th></tr></thead>';
+  return '<div style="font-weight:600; font-size:12.5px; margin-top:12px;">🔎 분해로 복원한 주가변화 vs 실제 주가변화</div>' +
+    '<div style="font-size:12px; line-height:1.55; margin:4px 0;">① <b>복원한 주가변화</b>는 연간 보고서의 기간말 주가·EPS로 (1+EPS성장)×(1+PER변화)−1을 계산한 값이고, <b>실제 주가변화</b>는 같은 기간말 날짜의 <b>일별 시세 종가</b>로 직접 계산한 연환산 변화입니다. 둘이 연 1%p 넘게 다르면 ⚠로 표시하니 보고서 주가·기간말 날짜·액면분할 반영 여부를 점검하세요. 일별 시세는 최근 약 3년만 불러오므로 그보다 오래된 기간은 비교하지 못합니다. ② <b>덧셈 근사</b>는 세 항을 더한 값이라 배당 재투자를 반영한 <b>총수익률</b>과 조금 다릅니다(근사 오차 = 덧셈 근사 − 총수익률).</div>' +
+    '<div style="overflow-x:auto;"><table class="an-tbl">' + th + '<tbody>' + rows.join('') + '</tbody></table></div>';
+}
 // ----- 수익률 분해 · 기대수익률 -----
 const SIG_ST = { g: null, n: 3 };
 function sigDecompHtml(c) {
@@ -3598,6 +3640,7 @@ function sigDecompHtml(c) {
   return '<div style="font-size:12.5px; line-height:1.55; margin:4px 0;">주가수익률은 <b>배당수익률 + EPS 성장률 + PER 변화율</b>로 나뉩니다. 정확한 관계는 곱셈 (1+주가변화) = (1+EPS성장)×(1+PER변화)이고, 덧셈은 근사입니다(교차항·배당 재투자 때문에 총수익률과 조금 다름). ‘주가가 올랐다’가 <b>실적(EPS) 때문인지, 기대감(PER) 때문인지</b>를 가려내는 표입니다.</div>' +
     '<div style="overflow-x:auto;"><table class="an-tbl">' + th + '<tbody>' + rows.join('') + '</tbody></table></div>' +
     '<div style="font-weight:600; font-size:12.5px; margin-top:10px;">연도별</div><div style="overflow-x:auto;"><table class="an-tbl">' + th + '<tbody>' + yr.join('') + '</tbody></table></div>' +
+    '<div id="sigCmpBody">' + sigCompareHtml(c) + '</div>' +
     '<div style="font-size:11px; color:var(--text-muted); margin-top:6px; line-height:1.5;">기준: 연간 보고서의 기간말 주가(period end)와 연간 EPS(지배주주 순이익÷유통주식수, 적자면 N/A), 해당 연도 주당배당금(전년말 주가 대비). 주식수가 30% 넘게 변한 해는 분해하지 않습니다. 총수익률은 배당을 해당 연도 말 주가로 재투자한다고 가정한 연복리입니다. 세금·수수료 미반영. 과거 분해는 미래 수익을 보장하지 않습니다.</div>';
 }
 function sigCalcVals(c) {
@@ -3638,6 +3681,7 @@ function sigRenderSections(c) {
 function sigRefresh() {
   if (!AN_CTX) return;
   const a = document.getElementById('sigDetectBody'); if (a) a.innerHTML = sigRenderDetectBody(AN_CTX);
+  const cm = document.getElementById('sigCmpBody'); if (cm) cm.innerHTML = sigCompareHtml(AN_CTX); // 일별 시세가 늦게 도착해도 비교표가 채워지게
   const b = document.getElementById('sigChecklistBody'); if (b) { b.innerHTML = sigChecklistHtml(AN_CTX); sigUpdateSummary(); }
   try { matRefresh(); } catch (e) { /* 재료 점검 갱신 실패는 무시 */ }
 }
