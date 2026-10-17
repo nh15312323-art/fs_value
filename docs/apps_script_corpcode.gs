@@ -35,3 +35,16 @@ function corpListed_(apiKey, codesCsv) {
   return json_(out);
 }
 function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
+
+// ============================================================
+// (참고) 공시목록(list) 조회를 빠르게 하려면: doGet의 'bgn_de && end_de' 갈래(주요사항보고서류) URL 끝에 아래 두 줄을 추가한다.
+//   지금은 page_no / page_count를 DART로 넘기지 않아 한 번에 10건씩만 받는다(공시가 많은 종목은 여러 번 왕복해 느려지고 일부가 빠질 수 있다).
+//
+//     url = 'https://opendart.fss.or.kr/api/' + p.endpoint + '.json'
+//       + '?crtfc_key=' + encodeURIComponent(apiKey2)
+//       + '&corp_code=' + encodeURIComponent(p.corp_code)
+//       + '&bgn_de=' + encodeURIComponent(p.bgn_de)
+//       + '&end_de=' + encodeURIComponent(p.end_de)
+//       + (p.page_no ? '&page_no=' + encodeURIComponent(p.page_no) : '')          // ← 추가
+//       + (p.page_count ? '&page_count=' + encodeURIComponent(p.page_count) : ''); // ← 추가
+// ============================================================

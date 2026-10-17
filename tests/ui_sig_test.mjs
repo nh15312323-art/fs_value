@@ -31,6 +31,7 @@ const srv = http.createServer((q, r) => {
     const items = []; for (let k = 0; k < 4; k++) items.push({ d: dd(8 + k), t: '모의전자 로봇 사업 진출 ' + k + '호', l: 'https://news.example/r' + k }); for (let k = 0; k < 6; k++) items.push({ d: dd(200 + k), t: '모의전자 중국 공장 증설 소식 ' + k, l: 'https://news.example/c' + k });
     items.sort((a, b) => (a.d < b.d ? 1 : -1));
     return r.end(JSON.stringify({ corp_name: '모의전자', from: dd(365), to: L, days: 365, got: items.length, partial: false, total: items.length, items })); }
+  if (p.startsWith('/api/disclosures') && globalThis.__failDisc) { r.statusCode = 502; return r.end(JSON.stringify({ error: '공시목록 요청 실패: 프록시(Apps Script) 응답 시간 초과' })); }
   if (p.startsWith('/api/disclosures')) { const L = dates[dates.length - 1], dd = (n) => { const t = new Date(Date.UTC(+L.slice(0, 4), +L.slice(4, 6) - 1, +L.slice(6, 8)) - n * 86400000); return t.toISOString().slice(0, 10).replace(/-/g, ''); };
     return r.end(JSON.stringify({ corp_name: '모의전자', stock_code: '000001', from: dd(365), to: L, days: 365, total_count: 5, got: 5, partial: false,
       items: [{ d: dd(12), nm: '단일판매ㆍ공급계약체결', no: '20250101000001' }, { d: dd(40), nm: '영업(잠정)실적(공정공시)', no: '20250101000002' }, { d: dd(200), nm: '유상증자결정', no: '20250101000003' }, { d: dd(25), nm: '분기보고서 (2025.06)', no: '20250101000004' }, { d: dd(150), nm: '현금ㆍ현물배당결정', no: '20250101000005' }],
@@ -95,5 +96,18 @@ pg = await analyze(); await openSec(pg, '체크리스트');
 const sm2 = await pg.innerText('#sigChkSum');
 ok('재접속 후에도 체크·메모 유지(이 기기 저장)', sm2.includes('2/12') && sm2.includes('작성됨') && (await pg.$$eval('#sigChecklistBody textarea', (t) => t[0].value)).includes('흑자 전환'), sm2);
 ok('페이지 오류 없음', errs.length === 0, errs.join(' | '));
+
+// 공시 조회가 실패(502)해도 뉴스는 따로 보여주고, 다시 시도 버튼으로 복구된다
+globalThis.__failDisc = true;
+{
+  const pg2 = await analyze(); await openSec(pg2, '재료 점검'); await pg2.waitForTimeout(1500);
+  const t2 = await pg2.innerText('#matBody');
+  ok('공시 502여도 오류 문구와 ‘다시 시도’ 버튼 표시', t2.includes('공시 목록을 불러오지 못했습니다') && t2.includes('응답 시간 초과') && t2.includes('다시 시도'), t2.slice(0, 120).replace(/\n/g, ' '));
+  ok('공시가 실패해도 뉴스(월별 기사 수·최근 기사)는 표시', t2.includes('월별 기사 수') && t2.includes('최근 기사') && t2.includes('로봇'));
+  globalThis.__failDisc = false;
+  await pg2.click('#matBody button:has-text("다시 시도")'); await pg2.waitForTimeout(1500);
+  const t3 = await pg2.innerText('#matBody');
+  ok('다시 시도하면 공시 목록이 정상 표시', t3.includes('단일판매') && !t3.includes('불러오지 못했습니다'), t3.slice(0, 80).replace(/\n/g, ' '));
+}
 await b.close(); srv.close();
 console.log(fail ? '\n실패 ' + fail + '건' : '\n전부 통과'); process.exit(fail ? 1 : 0);

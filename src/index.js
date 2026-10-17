@@ -3858,7 +3858,7 @@ function matNewsMonthly(news, asof) {
 }
 function matSafeUrl(u) { const x = String(u || ''); return /^https?:[/][/]/.test(x) ? x.split('"').join('%22').split("'").join('%27').split('<').join('%3C').split(' ').join('%20') : '#'; }
 // ----- 화면 -----
-const MAT_ST = { name: null, data: null, err: null, loading: false, news: null, newsErr: null, newsNoKey: false };
+const MAT_ST = { name: null, data: null, err: null, loading: false, news: null, newsErr: null, newsNoKey: false, newsLoading: false };
 function matYmdDash(d) { const s = String(d); return s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8); }
 function matSigned(v) { return v == null || !isFinite(v) ? '<span style="color:#94a3b8;">N/A</span>' : '<span style="color:' + (v >= 0 ? '#dc2626' : '#2563eb') + ';">' + (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%</span>'; }
 function matNewsUrl(name, from, to) { return 'https://search.naver.com/search.naver?where=news&query=' + encodeURIComponent(name) + '&nso=so%3Ar%2Cp%3Afrom' + from + 'to' + to; }
@@ -3869,9 +3869,32 @@ function matSummary() {
   const nw = ng.filter((x) => x.st === 'new').map((x) => x.n), gn = ng.filter((x) => x.st === 'gone').map((x) => x.n);
   return '최근 1년 재료성 공시 ' + ev.filter(matCounted).length + '건 · 최근 3개월에 새로 나타난 유형: ' + (nw.length ? nw.join(', ') : '없음') + ' · 이전에는 있었으나 최근 3개월 없는 유형: ' + (gn.length ? gn.join(', ') : '없음') + (D.partial ? ' (공시 일부만 수신)' : '') + (MAT_ST.news ? ' · 뉴스 ' + MAT_ST.news.got + '건 수집' + (MAT_ST.news.partial ? '(일부 기간만)' : '') : '');
 }
+// 뉴스 구간(⑤). 공시 조회가 실패해도 뉴스는 따로 보여줄 수 있도록 함수로 분리했다. name=종목명, to=기준일(YYYYMMDD)
+function matNewsBlock(name, to) {
+  let h = '';
+  const th = 'style="white-space:nowrap;"';
+  h += '<div style="font-weight:700; font-size:13px; margin-top:12px;">⑤ 뉴스 (네이버 검색 API · 제목 기준)</div>';
+  const links = '<a href="' + matNewsUrl(name, addDays365(to), to) + '" target="_blank" rel="noopener">최근 1년 뉴스 검색(네이버)</a> · <a href="' + matNewsUrl(name, addDays90(to), to) + '" target="_blank" rel="noopener">최근 3개월만</a>';
+  const N = MAT_ST.news;
+  if (!N) {
+    h += '<div style="font-size:12.5px; line-height:1.6; margin:4px 0;">' + (MAT_ST.newsNoKey ? '뉴스 API 키(NAVER_CLIENT_ID / NAVER_CLIENT_SECRET)가 서버에 설정되지 않아 뉴스를 분석하지 못했습니다. ' : '뉴스를 불러오지 못했습니다' + (MAT_ST.newsErr ? ': ' + anEsc(MAT_ST.newsErr) : '') + '. ') + links + '</div>';
+  } else {
+    const nv = N.items, tm = matTerms(nv, name, to), sh = matStaleShare(nv, name, to), nm = matNewsMonthly(nv, to);
+    const oldest = nv.length ? nv[nv.length - 1].d : null;
+    h += '<div style="font-size:12px; line-height:1.55; margin:4px 0;">수집 ' + N.got + '건(종목명 포함 기사만, 중복 링크 제거) · 가장 오래된 기사 ' + (oldest ? matYmdDash(oldest) : 'N/A') + (N.partial ? ' <b style="color:#b45309;">⚠ 네이버는 최신순 1,000건까지만 볼 수 있어 1년 전까지 못 닿았습니다. 아래 비교는 수집된 기간 안에서만 의미가 있습니다.</b>' : '') + (N.warn ? ' ⚠ ' + anEsc(N.warn) : '') + '</div>';
+    h += '<div style="overflow-x:auto;"><table class="an-tbl"><thead><tr><th class="an-first">월별 기사 수</th>' + nm.months.map((m) => '<th ' + th + '>' + m.slice(2, 4) + '.' + m.slice(4) + '</th>').join('') + '</tr></thead><tbody><tr><td class="an-first">기사</td>' + nm.cnt.map((n) => '<td' + (n ? ' style="background:rgba(219,39,119,' + Math.min(0.5, 0.1 + n * 0.02) + ');font-weight:700;"' : ' style="color:#cbd5e1;"') + '>' + (n || '·') + '</td>').join('') + '</tr></tbody></table></div>';
+    const chips = (arr, col) => arr.length ? arr.map((x) => '<span style="display:inline-block; margin:2px 4px 2px 0; padding:1px 8px; border-radius:10px; border:1px solid ' + col + '; color:' + col + ';">' + anEsc(x[0]) + ' ' + x[1] + '</span>').join('') : '<span style="color:var(--text-muted);">해당 없음</span>';
+    h += '<div style="font-size:12.5px; line-height:1.7; margin-top:8px;"><b>최근 3개월에 새로 등장한 단어</b>(이전 9개월엔 0회, 최근 3회 이상): ' + chips(tm.fresh, '#16a34a') + '<br /><b>이전엔 자주 나왔으나 최근 사라진 단어</b>(이전 5회 이상, 최근 0회): ' + chips(tm.gone, '#d97706') + '<br /><b>같은 이야기의 반복도</b>: 최근 3개월 기사 ' + sh.n + '건 중 직전 10개 기사와 제목이 비슷한 기사 ' + (sh.share == null ? 'N/A' : sh.stale + '건(' + (sh.share * 100).toFixed(0) + '%)') + '</div>';
+    h += '<div style="font-size:11px; color:var(--text-muted); line-height:1.5; margin-top:4px;">단어는 제목을 공백·조사 단위로 단순 분리한 것이라 조사·복합어가 섞이고, 같은 사건을 여러 언론이 쓰면 중복 집계됩니다(주제·감성 분석이 아님). 반복도는 Tetlock(2011)의 ‘오래된 뉴스’(이전 기사와 텍스트 유사)를 단순화한 대용치입니다. 단어의 신규/소멸은 ‘새 재료의 단서’일 뿐 호재·악재 판단이 아닙니다.</div>';
+    h += '<div style="font-weight:600; font-size:12.5px; margin-top:8px;">최근 기사 (최신 12건)</div><ul style="margin:4px 0 0 18px; padding:0; font-size:12.5px; line-height:1.6;">' + nv.slice(0, 12).map((n) => '<li>' + matYmdDash(n.d) + ' <a href="' + matSafeUrl(n.l) + '" target="_blank" rel="noopener">' + anEsc(n.t) + '</a></li>').join('') + '</ul><div style="font-size:12.5px; margin-top:6px;">' + links + '</div>';
+  }
+  return h;
+}
+
 function matBodyHtml() {
-  if (MAT_ST.loading) return '<div style="font-size:12.5px;">공시 목록을 불러오는 중…</div>';
-  if (MAT_ST.err) return '<div style="font-size:12.5px; color:var(--danger);">공시 목록을 불러오지 못했습니다: ' + anEsc(MAT_ST.err) + '</div>';
+  const nwTo = MAT_ST.news && MAT_ST.news.to ? MAT_ST.news.to : null;
+  if (MAT_ST.loading) return '<div style="font-size:12.5px;">공시 목록을 불러오는 중…' + (MAT_ST.newsLoading ? ' (뉴스도 함께 불러오는 중)' : '') + '</div>' + (nwTo ? matNewsBlock(MAT_ST.name, nwTo) : '');
+  if (MAT_ST.err) return '<div style="font-size:12.5px; color:var(--danger);">공시 목록을 불러오지 못했습니다: ' + anEsc(MAT_ST.err) + ' <button onclick="matRetry()" style="padding:2px 10px; font-size:12px;">다시 시도</button></div>' + (nwTo ? matNewsBlock(MAT_ST.name, nwTo) : (MAT_ST.newsErr ? '<div style="font-size:12.5px; color:var(--danger); margin-top:6px;">뉴스도 불러오지 못했습니다: ' + anEsc(MAT_ST.newsErr) + '</div>' : (MAT_ST.newsLoading ? '<div style="font-size:12.5px; margin-top:6px;">뉴스를 불러오는 중…</div>' : '')));
   const D = MAT_ST.data; if (!D) return '<div style="font-size:12.5px; color:var(--text-muted);">이 항목을 열면 최근 1년 DART 공시 목록을 불러옵니다.</div>';
   const px = sigPx(), ixm = matIdxMap(D.idx), ev = matPrep(D.items), ng = matNewGone(ev, D.to), mo = matMonthly(ev, D.to);
   const name = D.corp_name, th = 'style="white-space:nowrap;"';
@@ -3906,21 +3929,7 @@ function matBodyHtml() {
         '<a href="' + matNewsUrl(name, o.d, o.d) + '" target="_blank" rel="noopener">검색</a></td></tr>').join('') + '</tbody></table></div>';
   }
   // 5) 뉴스
-  h += '<div style="font-weight:700; font-size:13px; margin-top:12px;">⑤ 뉴스 (네이버 검색 API · 제목 기준)</div>';
-  const links = '<a href="' + matNewsUrl(name, addDays365(D.to), D.to) + '" target="_blank" rel="noopener">최근 1년 뉴스 검색(네이버)</a> · <a href="' + matNewsUrl(name, addDays90(D.to), D.to) + '" target="_blank" rel="noopener">최근 3개월만</a>';
-  const N = MAT_ST.news;
-  if (!N) {
-    h += '<div style="font-size:12.5px; line-height:1.6; margin:4px 0;">' + (MAT_ST.newsNoKey ? '뉴스 API 키(NAVER_CLIENT_ID / NAVER_CLIENT_SECRET)가 서버에 설정되지 않아 뉴스를 분석하지 못했습니다. ' : '뉴스를 불러오지 못했습니다' + (MAT_ST.newsErr ? ': ' + anEsc(MAT_ST.newsErr) : '') + '. ') + links + '</div>';
-  } else {
-    const nv = N.items, tm = matTerms(nv, name, D.to), sh = matStaleShare(nv, name, D.to), nm = matNewsMonthly(nv, D.to);
-    const oldest = nv.length ? nv[nv.length - 1].d : null;
-    h += '<div style="font-size:12px; line-height:1.55; margin:4px 0;">수집 ' + N.got + '건(종목명 포함 기사만, 중복 링크 제거) · 가장 오래된 기사 ' + (oldest ? matYmdDash(oldest) : 'N/A') + (N.partial ? ' <b style="color:#b45309;">⚠ 네이버는 최신순 1,000건까지만 볼 수 있어 1년 전까지 못 닿았습니다. 아래 비교는 수집된 기간 안에서만 의미가 있습니다.</b>' : '') + (N.warn ? ' ⚠ ' + anEsc(N.warn) : '') + '</div>';
-    h += '<div style="overflow-x:auto;"><table class="an-tbl"><thead><tr><th class="an-first">월별 기사 수</th>' + nm.months.map((m) => '<th ' + th + '>' + m.slice(2, 4) + '.' + m.slice(4) + '</th>').join('') + '</tr></thead><tbody><tr><td class="an-first">기사</td>' + nm.cnt.map((n) => '<td' + (n ? ' style="background:rgba(219,39,119,' + Math.min(0.5, 0.1 + n * 0.02) + ');font-weight:700;"' : ' style="color:#cbd5e1;"') + '>' + (n || '·') + '</td>').join('') + '</tr></tbody></table></div>';
-    const chips = (arr, col) => arr.length ? arr.map((x) => '<span style="display:inline-block; margin:2px 4px 2px 0; padding:1px 8px; border-radius:10px; border:1px solid ' + col + '; color:' + col + ';">' + anEsc(x[0]) + ' ' + x[1] + '</span>').join('') : '<span style="color:var(--text-muted);">해당 없음</span>';
-    h += '<div style="font-size:12.5px; line-height:1.7; margin-top:8px;"><b>최근 3개월에 새로 등장한 단어</b>(이전 9개월엔 0회, 최근 3회 이상): ' + chips(tm.fresh, '#16a34a') + '<br /><b>이전엔 자주 나왔으나 최근 사라진 단어</b>(이전 5회 이상, 최근 0회): ' + chips(tm.gone, '#d97706') + '<br /><b>같은 이야기의 반복도</b>: 최근 3개월 기사 ' + sh.n + '건 중 직전 10개 기사와 제목이 비슷한 기사 ' + (sh.share == null ? 'N/A' : sh.stale + '건(' + (sh.share * 100).toFixed(0) + '%)') + '</div>';
-    h += '<div style="font-size:11px; color:var(--text-muted); line-height:1.5; margin-top:4px;">단어는 제목을 공백·조사 단위로 단순 분리한 것이라 조사·복합어가 섞이고, 같은 사건을 여러 언론이 쓰면 중복 집계됩니다(주제·감성 분석이 아님). 반복도는 Tetlock(2011)의 ‘오래된 뉴스’(이전 기사와 텍스트 유사)를 단순화한 대용치입니다. 단어의 신규/소멸은 ‘새 재료의 단서’일 뿐 호재·악재 판단이 아닙니다.</div>';
-    h += '<div style="font-weight:600; font-size:12.5px; margin-top:8px;">최근 기사 (최신 12건)</div><ul style="margin:4px 0 0 18px; padding:0; font-size:12.5px; line-height:1.6;">' + nv.slice(0, 12).map((n) => '<li>' + matYmdDash(n.d) + ' <a href="' + matSafeUrl(n.l) + '" target="_blank" rel="noopener">' + anEsc(n.t) + '</a></li>').join('') + '</ul><div style="font-size:12.5px; margin-top:6px;">' + links + '</div>';
-  }
+  h += matNewsBlock(name, D.to);
   h += '<div style="font-size:12.5px; line-height:1.6; margin:6px 0;">직접 비교해 보세요: ① 최근 3개월에 처음 등장한 이야기(수주·정책·신사업)는 공시로 뒷받침되는가? ② 1년 전엔 자주 나왔지만 지금은 사라진 이야기는 무엇인가? ③ 같은 내용이 되풀이되는 기사인가?</div>';
   h += '<div style="font-size:11px; color:var(--text-muted); line-height:1.5; margin-top:6px;">공시 분류는 제목 글자 규칙이라 오분류가 있을 수 있고, 같은 사건의 정정·후속 공시는 정정만 제외됩니다. ‘1년’은 사용자가 정한 관찰 창이며 학술적으로 증명된 최적 기간이 아닙니다(아래 근거 참고).</div>';
   return h;
@@ -3941,16 +3950,27 @@ function matSectionHtml() {
 async function matLoad() {
   const name = (document.getElementById('corpName').value || '').trim(); if (!name) return;
   if (MAT_ST.name === name && (MAT_ST.data || MAT_ST.loading)) { matRefresh(); return; }
-  MAT_ST.name = name; MAT_ST.data = null; MAT_ST.err = null; MAT_ST.loading = true; MAT_ST.news = null; MAT_ST.newsErr = null; MAT_ST.newsNoKey = false; matRefresh();
+  MAT_ST.name = name; MAT_ST.data = null; MAT_ST.err = null; MAT_ST.loading = true; MAT_ST.news = null; MAT_ST.newsErr = null; MAT_ST.newsNoKey = false; MAT_ST.newsLoading = false; matRefresh();
   const getJ = async (url) => { const res = await fetch(url); let j = null; try { j = await res.json(); } catch (e) { j = null; } return { ok: res.ok, status: res.status, j: j }; };
   const enc = encodeURIComponent(name);
-  const [rd, rn] = await Promise.all([getJ('/api/disclosures?corp_name=' + enc).catch((e) => ({ ok: false, j: { error: (e && e.message) || String(e) } })), getJ('/api/news?corp_name=' + enc).catch((e) => ({ ok: false, j: { error: (e && e.message) || String(e) } }))]);
+  const bad = (e) => ({ ok: false, j: { error: (e && e.message) || String(e) } });
+  MAT_ST.newsLoading = true;
+  // 공시와 뉴스는 서로 기다리지 않는다(한쪽이 느리거나 실패해도 다른 쪽을 먼저 보여준다)
+  const pD = getJ('/api/disclosures?corp_name=' + enc).catch(bad).then((rd) => {
+    if (MAT_ST.name !== name) return;
+    if (rd.ok) MAT_ST.data = rd.j; else MAT_ST.err = (rd.j && rd.j.error) || '조회 실패';
+    MAT_ST.loading = false; matRefresh();
+  });
+  const pN = getJ('/api/news?corp_name=' + enc).catch(bad).then((rn) => {
+    if (MAT_ST.name !== name) return;
+    if (rn.ok) MAT_ST.news = rn.j; else { MAT_ST.newsErr = (rn.j && rn.j.error) || '조회 실패'; MAT_ST.newsNoKey = !!(rn.j && rn.j.nokey); }
+    MAT_ST.newsLoading = false; matRefresh();
+  });
+  await Promise.all([pD, pN]);
   if (MAT_ST.name !== name) return;
-  if (rd.ok) MAT_ST.data = rd.j; else MAT_ST.err = (rd.j && rd.j.error) || '조회 실패';
-  if (rn.ok) MAT_ST.news = rn.j; else { MAT_ST.newsErr = (rn.j && rn.j.error) || '조회 실패'; MAT_ST.newsNoKey = !!(rn.j && rn.j.nokey); }
-  MAT_ST.loading = false; matRefresh();
   try { sigRefresh(); } catch (e) { /* 체크리스트 갱신 실패는 무시 */ }
 }
+function matRetry() { MAT_ST.name = null; matLoad(); }
 function matOnToggle(el) { if (el && el.open) { try { matLoad(); if (typeof loadPriceSeries === 'function' && !sigPx()) loadPriceSeries(); } catch (e) { /* 무시 */ } } }
 function matRefresh() { const el = document.getElementById('matBody'); if (el) el.innerHTML = matBodyHtml(); }
 function matAutoText() {
@@ -6973,7 +6993,7 @@ async function collectDisclosures(fetchPage) {
   const items = []; let total = null, totalPage = 1, lastFirst = null, partial = false;
   for (let p = 1; p <= MAT_MAX_PAGES; p++) {
     let j;
-    try { j = await fetchPage(p); } catch (e) { if (p === 1) return { items: [], total_count: null, partial: false, error: "공시목록 요청 실패: " + ((e && e.message) || String(e)) }; partial = true; break; }
+    try { j = await fetchPage(p); } catch (e) { if (p === 1) return { items: [], total_count: null, partial: false, error: "공시목록 요청 실패: " + (/abort|timeout/i.test(String((e && (e.name + " " + e.message)) || e)) ? "프록시(Apps Script) 응답 시간 초과" : ((e && e.message) || String(e))) }; partial = true; break; }
     if (!j || typeof j !== "object") { if (p === 1) return { items: [], total_count: null, partial: false, error: "공시목록 응답 형식 이상" }; partial = true; break; }
     if (j.status === "013") break; // 조회된 데이터 없음
     if (j.status !== "000") { if (p === 1) return { items: [], total_count: null, partial: false, error: "DART 공시목록 오류(" + String(j.status || "?") + " " + String(j.message || "").slice(0, 80) + "). 프록시(Apps Script)가 list 엔드포인트와 page_no·page_count를 전달하는지 확인하세요." }; partial = true; break; }
@@ -6989,7 +7009,7 @@ async function collectDisclosures(fetchPage) {
   if (Number.isFinite(total) && total > items.length) partial = true;
   return { items, total_count: Number.isFinite(total) ? total : items.length, partial, error: null };
 }
-async function fetchDartList(corpCode, bgnDe, endDe, proxyUrl, pageNo, pageCount, timeoutMs = 15000) {
+async function fetchDartList(corpCode, bgnDe, endDe, proxyUrl, pageNo, pageCount, timeoutMs = 25000) {
   const url = new URL(proxyUrl);
   url.searchParams.set("endpoint", "list");
   url.searchParams.set("corp_code", corpCode);
@@ -8965,7 +8985,11 @@ async function handleRequest(request, env) {
       const kst = new Date(Date.now() + 9 * 3600 * 1000);
       const endYmd = kst.toISOString().slice(0, 10).replace(/-/g, "");
       const bgnYmd = addDaysStr(endYmd, -days);
-      const got = await collectDisclosures((p) => fetchDartList(corpRow.corp_code, bgnYmd, endYmd, env.DART_PROXY_URL, p, 100));
+      // Apps Script는 첫 호출이 느리거나(콜드 스타트) DART가 잠깐 지연될 수 있어, 첫 쪽만 한 번 더 시도한다.
+      const got = await collectDisclosures(async (p) => {
+        try { return await fetchDartList(corpRow.corp_code, bgnYmd, endYmd, env.DART_PROXY_URL, p, 100); }
+        catch (e) { if (p !== 1) throw e; return await fetchDartList(corpRow.corp_code, bgnYmd, endYmd, env.DART_PROXY_URL, p, 100); }
+      });
       if (got.error) return Response.json({ error: got.error }, { status: 502 });
       let idx = { d: [], c: [] };
       try {
