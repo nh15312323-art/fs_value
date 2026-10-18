@@ -806,6 +806,20 @@ const HTML_PAGE = `<!doctype html>
     </div>
 
     <div class="card">
+      <div class="card-title">C. 종목별 보기 — 재무 값 · 주가 · 주가수익률 한 번에</div>
+      <div style="font-size:12px; color:var(--text-muted); line-height:1.55; margin-bottom:6px;">위 A의 연간 재무 백테스트가 종목마다 실제로 쓰는 값을 결산연도별로 모아 보여 줍니다. <b>매수가</b> = 사업보고서 공시 다음 거래일 종가, <b>매도가</b> = 다음 해 사업보고서 공시 다음 거래일 종가, <b>12개월 수익률</b> = 매도가 ÷ 매수가 − 1(배당 제외). 재무 팩터 값은 공시 시점에 알 수 있었던 자료와 매수가로만 계산합니다.</div>
+      <div class="row" style="gap:8px; flex-wrap:wrap; align-items:center;">
+        <input id="btStkIn" list="btStkList" placeholder="종목명 입력 또는 선택 (재무 데이터가 저장된 종목)" style="flex:1; min-width:200px;" onchange="btStkPick(this.value)" onkeydown="if(event.key==='Enter'){btStkPick(this.value);}" />
+        <datalist id="btStkList"></datalist>
+        <button onclick="btStkPick(document.getElementById('btStkIn').value)">보기</button>
+        <button onclick="btStkDownload(false)" title="지금 보고 있는 종목을 엑셀에서 열 수 있는 CSV로 저장">이 종목 CSV</button>
+        <button onclick="btStkDownload(true)" title="위 A의 ① 「저장된 종목 불러오기」를 누른 뒤 쓸 수 있습니다">전체 종목 CSV</button>
+      </div>
+      <div id="btStkMsg" class="meta-line"></div>
+      <div id="btStkOut"></div>
+    </div>
+
+    <div class="card">
       <div class="card-title">B. 스크리닝 조건 백테스트 (일별 시세)</div>
       <div style="font-size:12px; color:var(--text-muted); line-height:1.55; margin-bottom:6px;">스크리닝과 같은 방식(최근 1개월을 뺀 수익률 순위 + 시총·거래대금 하위 제외)으로 과거 기준일마다 종목을 줄 세우고, 이후 보유기간 수익률을 비교합니다. 저장된 시세 이력이 짧아 기준일이 매우 적을 수 있습니다.</div>
       <div class="row" style="font-size:12.5px; gap:10px; flex-wrap:wrap;">
@@ -4779,6 +4793,131 @@ async function btRunFin() {
   document.getElementById('btFinOut').innerHTML = btRenderResult(res, { title, ppy, nTr, kind: mode === 'momq' ? 'momq' : 'fin', keys: keysShown, stocks: BT.stocks.length });
 }
 
+// ===== 종목별 백테스트 값 보기 =====
+// 연간 재무 백테스트(btBuildAnnual)가 종목마다 실제로 쓰는 값 — 재무 지표, 매수가, 매도가, 12개월 수익률 — 을 결산연도별로 한 표에 모은다. 같은 규칙을 쓴다.
+const BT_FAC_SHORT = { fscore: 'F-Score', gpa: 'GP/A', lowaccr: '낮은 발생액', ep: 'EP(이익수익률)', bp: 'BP(장부가/주가)', fcfy: 'FCF수익률', graham: 'PER×PBR', roic: 'ROIC(3년평균)', growth: '성장(3년)', legacy4: 'Quality 4점' };
+const BT_STATUS_TXT = { ok: '', open: '보유 중 (다음 해 공시 전)', noP0: '매수가 없음 (공시 다음 거래일 가격 채우기 필요)', noP1: '매도가 없음 (다음 해 가격 채우기 필요)', order: '공시일 순서 이상' };
+function btStockTable(s) {
+  const ann = {};
+  (s.rows || []).forEach((r) => { if (r.reprt_code === '11011' && isUsable(r)) ann[Number(r.bsns_year)] = r; });
+  const years = Object.keys(ann).map(Number).sort((a, b) => a - b), keys = Object.keys(BT_FACTORS), out = [];
+  years.forEach((Y) => {
+    const a = ann[Y], nx = ann[Y + 1];
+    let L = null, d = null;
+    try { L = anBuildSeries(s.rows.filter((r) => Number(r.bsns_year) <= Y)); d = L.length ? L[L.length - 1] : null; } catch (e) { L = null; d = null; }
+    if (!d || d.year !== Y) d = null;
+    const P0 = a.price_next_day > 0 ? a.price_next_day : null, P1 = nx && nx.price_next_day > 0 ? nx.price_next_day : null;
+    let f = null, status = 'ok';
+    if (!nx) status = 'open';
+    else if (!P0) status = 'noP0';
+    else if (!P1) status = 'noP1';
+    else if (a.filing_date && nx.filing_date && !(nx.filing_date > a.filing_date)) status = 'order';
+    else f = P1 / P0 - 1;
+    const fac = {};
+    keys.forEach((k) => { let v = null; if (d) { try { v = BT_FACTORS[k].fn(L, d, P0); } catch (e) { v = null; } } fac[k] = anFin(v) ? v : null; });
+    out.push({
+      year: Y, filing: a.filing_date || null, pPe: a.price_at_period_end > 0 ? a.price_at_period_end : null, buyDate: a.price_next_day_date || null, P0: P0, sellDate: nx ? (nx.price_next_day_date || null) : null, P1: P1, f: f, status: status, fac: fac,
+      fin: d ? { revenue: d.revenue, ebit: d.ebit, ni: d.ni, fcf: d.fcf, eps: d.eps, roic: d.roic, roe: d.roe } : null,
+    });
+  });
+  return out.reverse(); // 최신 연도가 위
+}
+function btFmtEok(v) { return anFin(v) ? Math.round(v / 1e8).toLocaleString('ko-KR') : 'N/A'; }
+function btFmtWon(v) { return anFin(v) ? Math.round(v).toLocaleString('ko-KR') : 'N/A'; }
+function btFmtPct(v, d) { return anFin(v) ? (v * 100).toFixed(d == null ? 1 : d) + '%' : 'N/A'; }
+function btFacTxt(k, v) {
+  if (!anFin(v)) return 'N/A';
+  if (k === 'fscore') return v + '/9';
+  if (k === 'legacy4') return v + '/4';
+  if (k === 'bp') return v.toFixed(2) + '배';
+  if (k === 'graham') return (-v).toFixed(1);
+  return btFmtPct(v);
+}
+function btFmtDate(d) { const t = String(d || ''); return /^\\d{8}$/.test(t) ? t.slice(0, 4) + '-' + t.slice(4, 6) + '-' + t.slice(6) : (t || 'N/A'); }
+function btStockHtml(name, table) {
+  if (!table.length) return '<div class="meta-line">이 종목은 사업보고서(연간) 재무 데이터가 없어 보여 줄 값이 없습니다.</div>';
+  const keys = Object.keys(BT_FACTORS), th = 'style="white-space:nowrap;"';
+  const head = '<thead><tr><th class="an-first">결산<br />연도</th><th ' + th + '>공시일</th><th ' + th + '>기간말<br />주가</th><th ' + th + '>매수가<br />(공시 다음<br />거래일)</th><th ' + th + '>매도가<br />(다음 해)</th><th ' + th + '>12개월<br />수익률</th>' +
+    '<th ' + th + '>매출<br />(억)</th><th ' + th + '>영업이익<br />(억)</th><th ' + th + '>순이익<br />(억)</th><th ' + th + '>FCF<br />(억)</th><th ' + th + '>EPS<br />(원)</th><th ' + th + '>ROIC</th><th ' + th + '>ROE</th>' +
+    keys.map((k) => '<th ' + th + ' title="' + anEsc(BT_FACTORS[k].name + ' · 근거: ' + BT_FACTORS[k].ev) + '">' + anEsc(BT_FAC_SHORT[k] || k) + '</th>').join('') + '<th ' + th + '>백테스트</th></tr></thead>';
+  const tone = (v) => v == null ? '' : ' style="color:' + (v >= 0 ? '#16a34a' : '#dc2626') + '; font-weight:700;"';
+  const body = table.map((r) => {
+    const fin = r.fin || {};
+    return '<tr><td class="an-first">' + r.year + '</td><td>' + btFmtDate(r.filing) + '</td><td>' + btFmtWon(r.pPe) + '</td><td title="' + anEsc(btFmtDate(r.buyDate)) + '">' + btFmtWon(r.P0) + '</td><td title="' + anEsc(btFmtDate(r.sellDate)) + '">' + btFmtWon(r.P1) + '</td><td' + tone(r.f) + '>' + (r.f == null ? 'N/A' : (r.f >= 0 ? '+' : '') + btFmtPct(r.f)) + '</td>' +
+      '<td>' + btFmtEok(fin.revenue) + '</td><td>' + btFmtEok(fin.ebit) + '</td><td>' + btFmtEok(fin.ni) + '</td><td>' + btFmtEok(fin.fcf) + '</td><td>' + btFmtWon(fin.eps) + '</td><td>' + btFmtPct(fin.roic) + '</td><td>' + btFmtPct(fin.roe) + '</td>' +
+      keys.map((k) => '<td>' + btFacTxt(k, r.fac[k]) + '</td>').join('') +
+      '<td style="text-align:left; font-size:11.5px; white-space:nowrap;">' + (r.status === 'ok' ? '<span style="color:#16a34a;">✓ 수익률 사용</span>' : '<span style="color:var(--text-muted);">' + anEsc(BT_STATUS_TXT[r.status] || '') + '</span>') + '</td></tr>';
+  }).join('');
+  const rs = table.filter((r) => r.f != null), up = rs.filter((r) => r.f > 0).length, mean = rs.length ? rs.reduce((a, r) => a + r.f, 0) / rs.length : null;
+  return '<div style="font-weight:700; font-size:13px; margin-top:8px;">' + anEsc(name) + ' · 결산연도 ' + table.length + '개 중 12개월 수익률이 계산된 해 ' + rs.length + '개' + (rs.length ? ' (상승 ' + up + '개, 단순평균 ' + btFmtPct(mean) + ')' : '') + '</div>' +
+    '<div style="overflow-x:auto;"><table class="an-tbl">' + head + '<tbody>' + body + '</tbody></table></div>' +
+    '<div style="font-size:11px; color:var(--text-muted); line-height:1.5; margin-top:6px;">매수가·매도가 칸에 마우스를 올리면 실제 기준 거래일이 보입니다. 재무 값은 연결 우선 연간 기준이며 억 원 단위(EPS는 원)입니다. 팩터 열 머리글에 마우스를 올리면 정의와 학술 근거가 보입니다. 팩터 값은 해당 연도 매수가로 계산하므로 매수가가 없는 해는 가격이 필요한 팩터(EP·BP·FCF수익률·PER×PBR)가 N/A입니다. 수익률은 배당·거래비용을 제외한 주가 수익률이고, 한 종목의 몇 개 해는 통계적 증거가 아닙니다(백테스트는 많은 종목을 함께 봐야 의미가 있습니다).</div>';
+}
+function btStkCsv(list) {
+  const NL = String.fromCharCode(10), keys = Object.keys(BT_FACTORS);
+  const q = (v) => { if (v == null) return ''; const t = String(v); return /[",]/.test(t) || t.indexOf(NL) >= 0 ? '"' + t.replace(/"/g, '""') + '"' : t; };
+  const head = ['종목', '종목코드', '결산연도', '공시일', '기간말주가', '매수일', '매수가', '매도일', '매도가', '12개월수익률', '상태', '매출', '영업이익', '순이익', 'FCF', 'EPS', 'ROIC', 'ROE'].concat(keys.map((k) => BT_FAC_SHORT[k] || k));
+  const lines = [head.map(q).join(',')];
+  list.forEach((it) => it.table.forEach((r) => {
+    const f = r.fin || {};
+    lines.push([it.name, it.code, r.year, r.filing, r.pPe, r.buyDate, r.P0, r.sellDate, r.P1, r.f, r.status, f.revenue, f.ebit, f.ni, f.fcf, f.eps, f.roic, f.roe].concat(keys.map((k) => r.fac[k])).map(q).join(','));
+  }));
+  return String.fromCharCode(0xFEFF) + lines.join(NL);
+}
+// ===== /종목별 백테스트 값 보기 =====
+
+const BT_STK = { list: null, cur: null, token: 0, cache: {}, pending: {} };
+async function btStkLoadList() {
+  if (BT_STK.list) return;
+  try {
+    const r = await fetch('/api/db/companies'); const d = await r.json();
+    BT_STK.list = (d.companies || []).filter((c) => c.corp_name);
+    const dl = document.getElementById('btStkList');
+    if (dl) dl.innerHTML = BT_STK.list.map((c) => '<option value="' + anEsc(c.corp_name) + '"></option>').join('');
+  } catch (e) { BT_STK.list = null; }
+}
+async function btStkPick(raw) {
+  const q = String(raw || '').trim(), msg = document.getElementById('btStkMsg'), out = document.getElementById('btStkOut');
+  if (!q) { msg.textContent = '종목명을 입력하세요.'; return; }
+  await btStkLoadList();
+  const L = BT_STK.list || [];
+  const c = L.filter((x) => x.corp_name === q)[0] || L.filter((x) => x.corp_name.indexOf(q) === 0)[0] || L.filter((x) => x.corp_name.indexOf(q) >= 0)[0];
+  if (!c) { msg.textContent = '재무 데이터가 저장된 종목 중에서 「' + q + '」를 찾지 못했습니다. ④ 데이터 관리에서 먼저 재무 데이터를 받아 주세요.'; out.innerHTML = ''; return; }
+  const tk = ++BT_STK.token;
+  msg.textContent = c.corp_name + ' 불러오는 중...';
+  try {
+    let rows = null;
+    const have = BT.stocks ? BT.stocks.filter((s) => s.code === c.corp_code)[0] : null;
+    if (have) rows = have.rows;
+    else if (BT_STK.cache[c.corp_code]) rows = BT_STK.cache[c.corp_code];
+    else {
+      // 같은 종목을 입력칸의 change와 Enter가 동시에 부르더라도 서버에는 한 번만 요청한다
+      BT_STK.pending[c.corp_code] = BT_STK.pending[c.corp_code] || fetch('/api/backtest/fin-batch?codes=' + encodeURIComponent(c.corp_code)).then(async (res) => { const d = await res.json(); if (!res.ok) throw new Error(d.error || '불러오기 실패'); return d.rows || []; });
+      try { rows = await BT_STK.pending[c.corp_code]; BT_STK.cache[c.corp_code] = rows; } finally { delete BT_STK.pending[c.corp_code]; }
+    }
+    if (tk !== BT_STK.token) return;
+    const table = btStockTable({ code: c.corp_code, name: c.corp_name, rows: rows });
+    BT_STK.cur = { code: c.corp_code, name: c.corp_name, stock: c.stock_code || '', table: table };
+    document.getElementById('btStkIn').value = c.corp_name;
+    msg.textContent = '';
+    out.innerHTML = fiscalBanner(c.acc_mt) + btStockHtml(c.corp_name, table);
+  } catch (e) { if (tk === BT_STK.token) { msg.textContent = '오류: ' + (e.message || e); } }
+}
+function btStkDownload(all) {
+  let list;
+  if (all) {
+    if (!BT.stocks) { document.getElementById('btStkMsg').textContent = '전체 종목 CSV는 위 A의 「① 저장된 종목 불러오기」를 먼저 누른 뒤 쓸 수 있습니다.'; return; }
+    list = BT.stocks.map((s) => ({ name: s.name, code: s.code, table: btStockTable(s) }));
+  } else {
+    if (!BT_STK.cur) { document.getElementById('btStkMsg').textContent = '먼저 종목을 선택하세요.'; return; }
+    list = [{ name: BT_STK.cur.name, code: BT_STK.cur.code, table: BT_STK.cur.table }];
+  }
+  const blob = new Blob([btStkCsv(list)], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = all ? 'backtest_all_stocks.csv' : 'backtest_' + BT_STK.cur.name + '.csv';
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+
 // ---------- 스크리닝 백테스트(서버 SQL이 기준일별 점수·미래수익을 계산해 주고, 분위 집계는 여기서) ----------
 async function btRunScreen() {
   const g = (id) => document.getElementById(id).value;
@@ -4901,6 +5040,7 @@ function btFinModeChange() {
 let btUiReady = false;
 function btInitUi() {
   if (btUiReady) return; btUiReady = true;
+  try { btStkLoadList(); } catch (e) { /* 목록은 입력 시 다시 시도 */ }
   const keys = Object.keys(BT_FACTORS);
   document.getElementById('btFinFactors').innerHTML = '<div style="font-size:12.5px; font-weight:600; margin-bottom:4px;">검증할 방법 (여러 개 고르면 순위를 평균한 복합 점수)</div>' +
     keys.map((k) => '<label style="display:block; font-size:12.5px; margin:2px 0;"><input type="checkbox" class="btFac" value="' + k + '"' + (k === 'fscore' ? ' checked' : '') + ' /> ' + BT_FACTORS[k].name + ' ' + anBadge(BT_FACTORS[k].badge) + ' <span style="color:var(--text-muted); font-size:11px;">' + BT_FACTORS[k].ev + '</span></label>').join('');
