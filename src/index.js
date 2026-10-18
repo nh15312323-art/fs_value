@@ -784,7 +784,7 @@ const HTML_PAGE = `<!doctype html>
       <div class="card-title">A. 재무분석 방법 백테스트 (DART 저장 데이터)</div>
       <div class="row"><button onclick="btLoadStocks()">① 저장된 종목 불러오기</button><button onclick="btBackfillNextDay()" title="연간 백테스트가 매매가로 쓰는 '공시 다음 거래일 종가'를 기존 저장 행에 채웁니다(처음 한 번, 이후 새로 받는 행은 자동 저장)">공시 다음 거래일 가격 채우기</button><span id="btFinInfo" style="font-size:12px; color:var(--text-muted);"></span></div>
       <div style="margin:8px 0; font-size:12.5px;">
-        <label>방식 <select id="btFinMode" onchange="btFinModeChange()"><option value="annual">연간 재무 방법 (공시 다음 거래일 종가 매수 → 다음 해 공시 다음 거래일 종가 매도)</option><option value="momq">분기 모멘텀 (분기말 주가)</option></select></label>
+        <label>방식 <select id="btFinMode" onchange="btFinModeChange()"><option value="annual">연간 재무 방법 (공시 다음 거래일 종가 매수 → 다음 해 공시 다음 거래일 종가 매도)</option><option value="qttm">분기 TTM 재무 방법 (분기보고서 공시 다음 거래일 종가 매수 → 다음 분기보고서 공시 다음 거래일 종가 매도)</option><option value="momq">분기 모멘텀 (분기말 주가)</option></select></label>
       </div>
       <div id="btFinFactors" style="margin:6px 0;"></div>
       <div id="btMomBox" style="display:none; margin:6px 0; font-size:12.5px;">
@@ -2725,8 +2725,9 @@ function anBuildTtmPoint(rows) {
   d.incRoic = null; d.incRoe = null;
   return d;
 }
-function anBuildSeries(rows) {
-  const annual = toAnnualRows(rows);
+function anBuildSeries(rows) { return anBuildSeriesFrom(toAnnualRows(rows)); }
+// annual = 연 1개씩의 행 목록(사업보고서 행, 또는 같은 분기 슬롯의 TTM 행). 각 점은 과거 점만 참조하므로 뒤쪽 점을 잘라내도 앞쪽 값이 같다.
+function anBuildSeriesFrom(annual) {
   const by = {}; annual.forEach((r) => { by[r.bsns_year] = r; });
   const list = annual.map((r) => anMakePoint(r, by[String(Number(r.bsns_year) - 1)]));
   const idx = {}; list.forEach((d) => { idx[d.year] = d; });
@@ -4740,14 +4741,58 @@ function btBuildAnnual(keys, o) {
       (perYear[Y] = perYear[Y] || []).push({ id: s.code, vals, f: P1 / P0 - 1 });
     });
   });
-  return Object.keys(perYear).map(Number).sort((a, b) => a - b).map((Y) => {
-    const arr = perYear[Y];
-    // 방법이 여러 개면 각 방법의 횡단면 순위(퍼센타일)를 같은 비중으로 평균한다.
+  return btFinPeriods(perYear, keys, (Y) => 'FY' + Y + ' → ' + (Y + 1));
+}
+// 기간 키 → 종목 목록을 백테스트 기간 배열로. 방법이 여러 개면 각 방법의 횡단면 순위(퍼센타일)를 같은 비중으로 평균한다.
+function btFinPeriods(perKey, keys, labelOf) {
+  return Object.keys(perKey).map(Number).sort((a, b) => a - b).map((K) => {
+    const arr = perKey[K];
     const sc = arr.map(() => 0);
     keys.forEach((k) => { const rk = btRankAvg(arr.map((x) => x.vals[k])); rk.forEach((v, i) => { sc[i] += v / arr.length / keys.length; }); });
-    return { label: 'FY' + Y + ' → ' + (Y + 1), items: arr.map((x, i) => ({ id: x.id, s: keys.length === 1 ? x.vals[keys[0]] : sc[i], f: x.f, v: x.vals })), bench: null };
+    return { label: labelOf(K), items: arr.map((x, i) => ({ id: x.id, s: keys.length === 1 ? x.vals[keys[0]] : sc[i], f: x.f, v: x.vals })), bench: null };
   });
 }
+// ===== 분기 TTM 재무 백테스트 =====
+// 분기보고서(1Q·반기·3Q·사업보고서)가 공시될 때마다: 그 시점까지 알려진 "최근 4개 분기 합산(TTM)" 재무로 방법 값을 계산 →
+// 공시 다음 거래일 종가에 매수 → 바로 다음 분기보고서 공시 다음 거래일 종가에 매도. 연 4회 구간(공시 간격은 1.5~3개월로 일정하지 않음).
+// 연도별 변화율·3년 평균 등은 "같은 분기의 TTM을 1년씩 이어 붙인 시계열"(예: 2Q TTM끼리)로 계산해 기간 길이를 맞춘다. 미래 분기는 쓰지 않는다.
+function btBuildQuarterly(keys) {
+  const per = {};
+  BT.skipNoNext = 0; BT.qSkipTtm = 0;
+  const SLOT = { '11013': 1, '11012': 2, '11014': 3, '11011': 4 };
+  BT.stocks.forEach((s) => {
+    const rep = {};
+    s.rows.filter(isUsable).forEach((r) => { const n = SLOT[r.reprt_code]; if (n) rep[Number(r.bsns_year) + '|' + n] = r; });
+    const qr = toQuarterlyRows(s.rows);
+    const ser = {};
+    for (let N = 1; N <= 4; N++) {
+      const chain = [];
+      Object.keys(rep).map((k) => k.split('|').map(Number)).filter((a) => a[1] === N).sort((a, b) => a[0] - b[0]).forEach((a) => {
+        const Y = a[0], r = rep[Y + '|' + N];
+        let t = null;
+        if (N === 4) t = Object.assign({}, r, { period_label: Y + ' 연간' }); // 4분기 슬롯의 TTM = 사업보고서 연간 값
+        else { const q = qr.filter((z) => z.bsns_year === String(Y) && z.period_label === Y + ' ' + N + '분기')[0]; t = q ? buildTTMFlowForQuarter(qr, q) : null; }
+        if (t) chain.push(t);
+      });
+      ser[N] = anBuildSeriesFrom(chain);
+    }
+    Object.keys(rep).forEach((k) => {
+      const ym = k.split('|').map(Number), Y = ym[0], N = ym[1];
+      const a = rep[k], nx = rep[(N === 4 ? Y + 1 : Y) + '|' + (N === 4 ? 1 : N + 1)];
+      if (!nx) return;
+      const P0 = a.price_next_day, P1 = nx.price_next_day;
+      if (!(P0 > 0 && P1 > 0)) { BT.skipNoNext++; return; }
+      if (a.filing_date && nx.filing_date && !(nx.filing_date > a.filing_date)) return;
+      const L = ser[N].filter((d) => d.year <= Y), d = L.length ? L[L.length - 1] : null;
+      if (!d || d.year !== Y) { BT.qSkipTtm++; return; }
+      const vals = {};
+      for (const f of keys) { let v = null; try { v = BT_FACTORS[f].fn(L, d, P0); } catch (e) { v = null; } if (!anFin(v)) return; vals[f] = v; }
+      (per[Y * 10 + N] = per[Y * 10 + N] || []).push({ id: s.code, vals, f: P1 / P0 - 1 });
+    });
+  });
+  return btFinPeriods(per, keys, (K) => { const Y = Math.floor(K / 10), N = K % 10, nm = ['', '1Q', '2Q', '3Q', '4Q']; return Y + ' ' + nm[N] + ' → ' + (N === 4 ? (Y + 1) + ' 1Q' : Y + ' ' + nm[N + 1]); });
+}
+// ===== /분기 TTM 재무 백테스트 =====
 // 분기 모멘텀: 분기말 주가만 사용. 형성기간 K분기, 건너뛰기 skip분기, 보유 1분기. (분기 자료라 "최근 1개월 제외"는 불가 — 0 또는 1분기 건너뛰기만 가능)
 function btBuildMomQ(K, skip) {
   const per = {};
@@ -4781,8 +4826,9 @@ async function btRunFin() {
     sig = 'momq|' + K + '|' + skip + '|' + G;
   } else {
     if (!keys.length) { btMsg('재무 방법을 하나 이상 고르세요.'); return; }
-    periods = btBuildAnnual(keys, {}); ppy = 1; title = '연간 재무: ' + keys.map((k) => BT_FACTORS[k].name.split(' (')[0]).join(' + ') + (keys.length > 1 ? ' (순위 평균 복합)' : '');
-    sig = 'fin|' + keys.slice().sort().join('+') + '|' + G;
+    const q = mode === 'qttm';
+    periods = q ? btBuildQuarterly(keys) : btBuildAnnual(keys, {}); ppy = q ? 4 : 1; title = (q ? '분기 TTM 재무: ' : '연간 재무: ') + keys.map((k) => BT_FACTORS[k].name.split(' (')[0]).join(' + ') + (keys.length > 1 ? ' (순위 평균 복합)' : '');
+    sig = (q ? 'finq|' : 'fin|') + keys.slice().sort().join('+') + '|' + G;
   }
   const skipNote = (mode !== 'momq' && BT.skipNoNext) ? '공시 다음 거래일 가격이 없어 제외된 종목·연도: ' + BT.skipNoNext + '건 (「공시 다음 거래일 가격 채우기」를 먼저 실행하세요)' : '';
   btMsg(skipNote);
@@ -4790,7 +4836,8 @@ async function btRunFin() {
   const nTr = btTrials(sig);
   BT.last = { kind: 'fin', mode, keys, G };
   const keysShown = mode === 'momq' ? [] : keys;
-  document.getElementById('btFinOut').innerHTML = btRenderResult(res, { title, ppy, nTr, kind: mode === 'momq' ? 'momq' : 'fin', keys: keysShown, stocks: BT.stocks.length });
+  const qx = mode === 'qttm' ? ['분기 TTM 방식: 보유기간이 공시 간격(사업보고서→1Q 약 1.5개월, 그 밖에는 약 3개월)이라 서로 다릅니다. 샤프·CAGR 환산은 연 4회로 가정한 근사입니다.', '같은 시장 국면에 집중된 기간이 많아 기간 간 독립성이 연간보다 낮습니다(분기 수익률이 겹치는 TTM 재무를 공유). t통계량은 낙관적일 수 있습니다.'].concat(BT.qSkipTtm ? ['TTM(최근 4개 분기)을 만들 수 없어 제외된 종목·분기: ' + BT.qSkipTtm + '건 (중간 분기 보고서가 저장돼 있지 않은 경우)'] : []) : [];
+  document.getElementById('btFinOut').innerHTML = btRenderResult(res, { title, ppy, nTr, kind: mode === 'momq' ? 'momq' : 'fin', keys: keysShown, stocks: BT.stocks.length, extra: qx });
 }
 
 // ===== 종목별 백테스트 값 보기 =====
@@ -5095,7 +5142,7 @@ function btRenderResult(res, m) {
 
 function btFinModeChange() {
   const m = document.getElementById('btFinMode').value;
-  document.getElementById('btFinFactors').style.display = m === 'annual' ? '' : 'none';
+  document.getElementById('btFinFactors').style.display = (m === 'annual' || m === 'qttm') ? '' : 'none';
   document.getElementById('btMomBox').style.display = m === 'momq' ? '' : 'none';
 }
 let btUiReady = false;
