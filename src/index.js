@@ -4552,7 +4552,7 @@ function btRun(periods, o) {
     if (prevTop) { let keep = 0; topIds.forEach((id) => { if (prevTop.has(id)) keep++; }); turn = 1 - keep / topIds.size; }
     prevTop = topIds;
     const topNet = gm[G - 1] - turn * cost;
-    rows.push({ label: p.label, n, trimmed, gm, uni, ic, spread: gm[G - 1] - gm[0], excess: gm[G - 1] - uni, excessNet: topNet - uni, topNet, turn, bench: p.bench });
+    rows.push({ label: p.label, n, trimmed, top: groups[G - 1].slice().reverse().map((x) => ({ id: x.id, s: x.s, f: x.f, v: x.v })), gm, uni, ic, spread: gm[G - 1] - gm[0], excess: gm[G - 1] - uni, excessNet: topNet - uni, topNet, turn, bench: p.bench });
   });
   const T = rows.length;
   const res = { rows, skipped, T, G, ppy, cost };
@@ -4745,7 +4745,7 @@ function btBuildAnnual(keys, o) {
     // 방법이 여러 개면 각 방법의 횡단면 순위(퍼센타일)를 같은 비중으로 평균한다.
     const sc = arr.map(() => 0);
     keys.forEach((k) => { const rk = btRankAvg(arr.map((x) => x.vals[k])); rk.forEach((v, i) => { sc[i] += v / arr.length / keys.length; }); });
-    return { label: 'FY' + Y + ' → ' + (Y + 1), items: arr.map((x, i) => ({ id: x.id, s: keys.length === 1 ? x.vals[keys[0]] : sc[i], f: x.f })), bench: null };
+    return { label: 'FY' + Y + ' → ' + (Y + 1), items: arr.map((x, i) => ({ id: x.id, s: keys.length === 1 ? x.vals[keys[0]] : sc[i], f: x.f, v: x.vals })), bench: null };
   });
 }
 // 분기 모멘텀: 분기말 주가만 사용. 형성기간 K분기, 건너뛰기 skip분기, 보유 1분기. (분기 자료라 "최근 1개월 제외"는 불가 — 0 또는 1분기 건너뛰기만 가능)
@@ -4973,6 +4973,67 @@ function btApplyFin() {
   if (typeof renderAnalysis === 'function' && rawRows.length) renderAnalysis();
 }
 
+// ===== 상위 그룹 종목 상세 =====
+// 백테스트에서 "상위 그룹"에 들어간 종목을 기간별로 펼쳐 보여준다. 점수 높은 순, 같은 기간의 12개월(또는 보유기간) 수익률과 함께.
+const BT_TOP = {};
+function btTopName(kind, id) {
+  if (kind === 'scr') { const c = (BT_STK.list || []).filter((z) => z.stock_code === id)[0]; return c ? c.corp_name : ''; }
+  const s = BT.stocks ? BT.stocks.filter((z) => z.code === id)[0] : null; return s ? s.name : '';
+}
+function btTopScore(kind, m, s) {
+  if (!anFin(s)) return 'N/A';
+  if (kind === 'fin') return m.keys.length === 1 ? btFacTxt(m.keys[0], s) : (s * 100).toFixed(0) + '점(순위평균)';
+  if (kind === 'momq') return (s * 100).toFixed(1) + '%';
+  return s.toFixed(2);
+}
+function btTopPct(v) { return anFin(v) ? (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%' : 'N/A'; }
+function btTopHtml(kind, i) {
+  const c = BT_TOP[kind]; if (!c) return '';
+  const r = c.res.rows[i]; if (!r) return '';
+  const m = c.m, keys = kind === 'fin' ? m.keys : [];
+  const list = r.top || [], win = list.filter((z) => z.f > 0).length;
+  const best = list.slice().sort((a, b) => b.f - a.f);
+  const sum = '<div style="font-size:12.5px; line-height:1.6; margin:6px 0;"><b>' + escHtml(r.label) + '</b> · 상위 그룹 ' + list.length + '개 종목 (전체 ' + r.n + '개 중) · 그룹 평균 <b>' + btTopPct(r.gm[c.res.G - 1]) + '</b> · 전체 평균 ' + btTopPct(r.uni) + ' · 오른 종목 ' + win + '개(' + (list.length ? Math.round(win * 100 / list.length) : 0) + '%)' +
+    (best.length ? ' · 최고 ' + escHtml(btTopName(kind, best[0].id) || best[0].id) + ' ' + btTopPct(best[0].f) + ' / 최저 ' + escHtml(btTopName(kind, best[best.length - 1].id) || best[best.length - 1].id) + ' ' + btTopPct(best[best.length - 1].f) : '') + '</div>';
+  const head = '<th>순위</th><th class="an-first">종목</th><th>코드</th><th>점수</th>' + keys.map((k) => '<th>' + escHtml(BT_FAC_SHORT[k] || k) + '</th>').join('') + '<th>수익률</th>';
+  const body = list.map((z, n) => {
+    const nm = btTopName(kind, z.id);
+    const cell = nm ? '<a href="#" onclick="btTopOpen(\\'' + kind + '\\',\\'' + z.id + '\\'); return false;" title="재무 값·매수가·매도가를 연도별로 보기">' + escHtml(nm) + '</a>' : '<span style="color:var(--text-muted);">이름 없음</span>';
+    return '<tr><td>' + (n + 1) + '</td><td class="an-first">' + cell + '</td><td>' + escHtml(z.id) + '</td><td>' + btTopScore(kind, m, z.s) + '</td>' + keys.map((k) => '<td>' + btFacTxt(k, z.v ? z.v[k] : null) + '</td>').join('') + '<td style="color:' + (z.f >= 0 ? '#16a34a' : '#dc2626') + ';">' + btTopPct(z.f) + '</td></tr>';
+  }).join('');
+  return sum + '<div class="tscroll" style="max-height:55vh;"><table class="an-tbl"><thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table></div>';
+}
+function btTopBlock(kind, res, m) {
+  if (!res.rows.length || !res.rows[0].top) return '';
+  BT_TOP[kind] = { res, m };
+  if (kind === 'scr') btStkLoadList().then(() => { const sel = document.getElementById('btTopSel_' + kind); if (sel) btTopShow(kind, Number(sel.value)); });
+  const last = res.rows.length - 1;
+  const opts = res.rows.map((r, i) => '<option value="' + i + '"' + (i === last ? ' selected' : '') + '>' + escHtml(r.label) + ' (' + btTopPct(r.gm[res.G - 1]) + ')</option>').join('');
+  return '<details open style="margin-top:10px; border:1px solid #bbf7d0; background:#f0fdf4; border-radius:8px; padding:8px 10px;"><summary style="cursor:pointer; font-weight:700;">상위 그룹에 들어간 종목 상세</summary>' +
+    '<div class="row" style="margin:6px 0;"><label style="font-size:12.5px;">기간 <select id="btTopSel_' + kind + '" onchange="btTopShow(\\'' + kind + '\\', Number(this.value))">' + opts + '</select></label><button onclick="btTopDownload(\\'' + kind + '\\')">전체 기간 CSV</button></div>' +
+    '<div id="btTopBody_' + kind + '">' + btTopHtml(kind, last) + '</div>' +
+    '<div style="font-size:11.5px; color:var(--text-muted); margin-top:6px; line-height:1.5;">점수가 높은 순입니다. 종목명을 누르면 위 「C. 종목별 보기」에서 그 종목의 연도별 재무 값·매수가·매도가를 봅니다. 한 기간의 상위 종목 몇 개는 우연의 영향이 커서 선정 근거가 될 수 없고, 과거 결과는 미래를 보장하지 않습니다.</div></details>';
+}
+function btTopShow(kind, i) { const el = document.getElementById('btTopBody_' + kind); if (el) el.innerHTML = btTopHtml(kind, i); }
+function btTopOpen(kind, id) {
+  const nm = btTopName(kind, id); if (!nm) return;
+  btStkPick(nm).then(() => { const el = document.getElementById('btStkOut'); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+}
+function btTopCsv(kind) {
+  const c = BT_TOP[kind], NL = String.fromCharCode(10); if (!c) return '';
+  const keys = kind === 'fin' ? c.m.keys : [];
+  const q = (v) => { if (v == null) return ''; const t = String(v); return /[",]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+  const lines = [['기간', '순위', '종목', '코드', '점수', '수익률'].concat(keys.map((k) => BT_FAC_SHORT[k] || k)).map(q).join(',')];
+  c.res.rows.forEach((r) => (r.top || []).forEach((z, n) => { lines.push([r.label, n + 1, btTopName(kind, z.id), z.id, z.s, z.f].concat(keys.map((k) => z.v ? z.v[k] : null)).map(q).join(',')); }));
+  return String.fromCharCode(0xFEFF) + lines.join(NL);
+}
+function btTopDownload(kind) {
+  const blob = new Blob([btTopCsv(kind)], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'backtest_top_group_' + kind + '.csv';
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+// ===== /상위 그룹 종목 상세 =====
+
 // ---------- 결과 화면 ----------
 function btBadgeFor(k) { const f = BT_FACTORS[k]; return f ? anBadge(f.badge) : ''; }
 function btChart(res) {
@@ -5027,7 +5088,7 @@ function btRenderResult(res, m) {
     '<div style="margin:6px 0; font-weight:700; color:' + vcol + ';">판정: ' + verdict + dir + '</div>' + evid + cards +
     '<div style="margin:8px 0; font-size:12px; line-height:1.55;"><b>표본 분할 점검</b> ' + splitTxt + '</div>' +
     btChart(res) +
-    '<div class="tscroll" style="max-height:50vh; margin-top:8px;"><table class="an-tbl"><thead><tr><th class="an-first">그룹(낮은 점수 → 높은 점수)</th><th>기간당 평균</th><th>전체 대비</th><th>연환산 샤프</th><th>누적</th><th>최대낙폭</th><th>적중</th></tr></thead><tbody>' + grow + '</tbody></table></div>' +
+    '<div class="tscroll" style="max-height:50vh; margin-top:8px;"><table class="an-tbl"><thead><tr><th class="an-first">그룹(낮은 점수 → 높은 점수)</th><th>기간당 평균</th><th>전체 대비</th><th>연환산 샤프</th><th>누적</th><th>최대낙폭</th><th>적중</th></tr></thead><tbody>' + grow + '</tbody></table></div>' + btTopBlock(m.kind, res, m) +
     '<details style="margin-top:8px;"><summary style="cursor:pointer; font-weight:600;">기간별 결과 (' + res.T + '개)</summary><div class="tscroll" style="max-height:50vh;"><table class="an-tbl"><thead><tr><th class="an-first">기간</th><th>종목수</th><th>상위</th><th>하위</th><th>롱숏</th><th>IC</th><th>코스피</th></tr></thead><tbody>' + prow + '</tbody></table></div></details>' +
     '<div style="margin-top:8px; padding:8px 10px; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; font-size:12px; line-height:1.55;"><b>주의할 점</b><ul style="margin:4px 0 0 18px; padding:0;">' + warns.map((w) => '<li>' + w + '</li>').join('') + '</ul></div></div>';
 }
