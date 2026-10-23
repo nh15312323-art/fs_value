@@ -3300,6 +3300,26 @@ function anRenderGlossary(c) {
     '<div class="tscroll" style="max-height:60vh;"><table class="an-tbl"><thead><tr><th class="an-first">용어</th><th>현재 값</th><th>뜻</th><th>계산식</th><th>근거 수준</th></tr></thead><tbody>' + body + '</tbody></table></div>', false);
 }
 
+// 한눈에 보기: 4개 축(점수 하나로 합치지 않음) + 데이터 기준 + 장 바로가기
+function anRenderGlance(c, m) {
+  const lv = (v) => v == null ? 'N/A' : v, r = c.last && c.last.r ? c.last.r : null;
+  const chip = (name, v) => '<div style="flex:1 1 120px; border:1px solid var(--border); border-radius:10px; padding:8px 10px; background:#fff;"><div style="font-size:11.5px; color:var(--text-muted);">' + name + '</div><div style="font-size:16px; font-weight:800;">' + anEsc(lv(v)) + '</div></div>';
+  const fd = r && r.fs_div ? (r.fs_div === 'CFS' ? '연결' : r.fs_div === 'OFS' ? '개별(별도)' : r.fs_div) : '기준 미확인';
+  const filing = r && r.filing_date ? btFmtDate(r.filing_date) : '공시일 미저장';
+  const px = m && anFin(m.priceInput) && m.priceInput > 0 ? Math.round(m.priceInput).toLocaleString('ko-KR') + '원' : '주가 미입력(주가가 필요한 지표는 N/A)';
+  const jump = [['①', '사업의 질', '좋은 사업인가?'], ['②', '현금', '이익이 현금으로 확인되는가?'], ['③', '안전', '재무적으로 안전한가?'], ['④', '성장', '어떻게 성장하고 있는가?'], ['⑤', '자본배분', '경영진은 번 돈을 잘 쓰는가?'], ['⑥', '가격', '지금 가격은 합당한가?'], ['⑦', '시장', '시장은 어떻게 보고 있는가?'], ['⑧', '결론', '종합 결론']]
+    .map((j) => '<button type="button" title="' + j[2] + '" style="font-size:12.5px; padding:4px 10px; min-height:36px;" onclick="anGoChap(\\'' + j[0] + '\\')">' + j[0] + ' ' + j[1] + '</button>').join('');
+  return '<div class="card" id="anGlance" style="border-left:4px solid #0f172a;"><div style="font-weight:800; font-size:14.5px;">한눈에 보기 <span style="font-size:11.5px; font-weight:400; color:var(--text-muted);">— 4개 축은 합산하지 않고 따로 봅니다</span></div>' +
+    '<div style="display:flex; flex-wrap:wrap; gap:8px; margin:8px 0;">' + chip('Growth 성장', c.grades.growth) + chip('Quality 사업의 질', c.grades.quality) + chip('Valuation 가격', c.grades.val) + chip('Momentum 주가 흐름', c.grades.mom) + '</div>' +
+    '<div style="font-size:12px; color:var(--text-muted); line-height:1.55;">기준: 최근 연간 ' + (c.last ? c.last.year : 'N/A') + '년 · ' + fd + '재무제표 · 공시일 ' + filing + ' · 연간 ' + c.list.length + '개년 · 현재가 입력값 ' + px + '. 등급의 계산식·근거는 아래 「🏷 종합 분류」와 맨 아래 「참고」 장에 있습니다.</div>' +
+    '<div style="margin-top:8px; font-size:12px; font-weight:600;">질문별로 바로가기 <span style="font-weight:400; color:var(--text-muted);">(누르면 해당 장이 펼쳐집니다)</span></div><div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;">' + jump + '</div></div>';
+}
+function anGoChap(no) {
+  const el = document.getElementById('analysis'); if (!el) return;
+  const ch = Array.prototype.filter.call(el.querySelectorAll(':scope > .an-chap'), (d) => d.getAttribute('data-short').split(' ')[0] === no)[0]; if (!ch) return;
+  anChapItems(ch).forEach((d) => { d.open = true; }); anChapUpdateLabel(ch);
+  ch.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 function anRenderClassify(c) {
   const h = c.cls.head; const col = h.kind === 'match' ? '#16a34a' : h.kind === 'near' ? '#d97706' : '#64748b';
   const lv = (x) => x == null ? 'N/A' : x;
@@ -4315,10 +4335,48 @@ function anUpdateMethods() {
 // 스토리 흐름의 장(章) 머리글. 투자 대가들의 분석 순서를 종합한 것(하나의 정해진 표준 순서가 있는 것은 아님)
 function anChapter(no, title, ask, lens) {
   return '<div class="an-chap" data-short="' + no + ' ' + title + '" style="margin:16px 0 6px; padding:8px 12px; border-radius:8px; background:var(--card,#fff); border:1px solid var(--border); border-left:5px solid #0f172a;">' +
-    '<div style="font-weight:800; font-size:14.5px;">' + no + ' ' + title + '</div>' +
+    '<div style="display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:pointer;" onclick="anChapToggle(this.parentNode)" title="누르면 이 장의 항목을 모두 펼치거나 접습니다"><div style="font-weight:800; font-size:14.5px;">' + no + ' ' + title + '</div><span class="an-chap-st" style="font-size:11.5px; color:var(--primary); white-space:nowrap;">▸ 항목 펼치기</span></div>' +
     '<div style="font-size:12.5px; margin-top:2px;">' + ask + '</div>' +
-    '<div style="font-size:11.5px; color:var(--text-muted); margin-top:2px; line-height:1.5;">' + lens + '</div></div>';
+    '<details style="margin-top:2px;"><summary style="cursor:pointer; font-size:11.5px; color:var(--text-muted);">이 질문의 근거</summary><div style="font-size:11.5px; color:var(--text-muted); margin-top:2px; line-height:1.5;">' + lens + '</div></details></div>';
 }
+// ===== 종목분석 접기·펼치기 =====
+// 장(章) 머리글을 누르면 그 장에 속한 항목(details)을 모두 펼치거나 접는다. 처음에는 요약·분류·투자 판단 요약만 펼치고 나머지는 접어,
+// 첫 화면이 길지 않게 한다. 사용자가 연 항목은 같은 종목을 다시 그릴 때(가격 입력 등) 그대로 유지한다.
+const AN_UI = { key: null, open: {} };
+const AN_KEEP_OPEN = ['🏷 종합 분류', '🧭 투자 판단 요약'];
+function anChapItems(chap) {
+  const out = []; let n = chap.nextElementSibling;
+  while (n && !(n.classList && n.classList.contains('an-chap'))) { if (n.tagName === 'DETAILS') out.push(n); n = n.nextElementSibling; }
+  return out;
+}
+function anChapUpdateLabel(chap) {
+  const it = anChapItems(chap), st = chap.querySelector('.an-chap-st'); if (!st) return;
+  const allOpen = it.length > 0 && it.every((d) => d.open);
+  st.textContent = !it.length ? '' : allOpen ? '▾ 항목 접기' : '▸ 항목 ' + it.length + '개 펼치기';
+}
+function anChapToggle(chap) {
+  const it = anChapItems(chap); if (!it.length) return;
+  const open = !it.every((d) => d.open);
+  it.forEach((d) => { d.open = open; });
+  anChapUpdateLabel(chap);
+}
+function anSecTitle(d) { const s = d.querySelector('summary'); return s ? s.textContent.trim() : ''; }
+function anFoldCapture(el, key) {
+  if (AN_UI.key !== key) { AN_UI.key = key; AN_UI.open = {}; return; }
+  Array.prototype.forEach.call(el.children, (d) => { if (d.tagName === 'DETAILS') AN_UI.open[anSecTitle(d)] = d.open; });
+}
+function anFoldApply(el) {
+  Array.prototype.forEach.call(el.children, (d) => {
+    if (d.tagName !== 'DETAILS') return;
+    const t = anSecTitle(d);
+    if (Object.prototype.hasOwnProperty.call(AN_UI.open, t)) d.open = !!AN_UI.open[t];
+    else d.open = AN_KEEP_OPEN.some((k) => t.indexOf(k) === 0);
+    d.addEventListener('toggle', () => { const ch = anChapOf(d); if (ch) anChapUpdateLabel(ch); });
+  });
+  Array.prototype.forEach.call(el.querySelectorAll(':scope > .an-chap'), anChapUpdateLabel);
+}
+function anChapOf(d) { let n = d.previousElementSibling; while (n) { if (n.classList && n.classList.contains('an-chap')) return n; n = n.previousElementSibling; } return null; }
+// ===== /종목분석 접기·펼치기 =====
 function anBuildNav() {
   const el = document.getElementById('analysis'); if (!el) return;
   const ds = Array.prototype.slice.call(el.children).filter(function (x) { return x.tagName === 'DETAILS'; });
@@ -5185,8 +5243,9 @@ function renderAnalysis() {
   const needRefetch = !c.last.r || !anRefetched(c.last.r);
   const notice = fiscalBanner(AN_ACCMT) + (needRefetch ? '<div class="card" style="background:#fffbeb; border-color:#fcd34d; font-size:12.5px;">⚠ 이 종목은 <b>감가상각·배당지급·자사주·차입금 구성 항목이 아직 저장되어 있지 않습니다</b>. EBITDA, 순차입금, 총주주환원성향 등은 N/A로 표시되며, 위쪽에서 이 종목을 <b>다시 조회/저장</b>하면 채워집니다(DART 호출량은 기존과 같음).</div>' : '');
   const A = anRenderAreas(c);
+  anFoldCapture(el, key);
   // 스토리 순서: 유형 → 사업의 질 → 이익의 진위 → 안전 → 성장 → 자본배분 → 가격 → 시장의 시선 → 결론, 마지막에 참고(설명서·설정)
-  el.innerHTML = notice + anRenderClassify(c) + anRenderFcfType(c) +
+  el.innerHTML = notice + anRenderGlance(c, m) + anRenderClassify(c) + anRenderFcfType(c) +
     anChapter('①', '좋은 사업인가?', '높은 자본수익률(ROIC)을 낼 수 있는 구조이고, 그 이유가 무엇인가', '버핏·멍거(경제적 해자), 그린왈드(진입장벽), 피셔(질적 우수성)가 가장 먼저 묻는 질문. 숫자로는 ROIC·매출총이익률·자산회전율을 봅니다.') + A.quality + anRenderRoic4(c) + A.capeff +
     anChapter('②', '이익이 현금으로 확인되는가?', '장부상 이익이 실제 주주가 가져갈 수 있는 현금으로 이어지는가', '버핏의 오너어닝스, 슬로언(1996)의 발생액 연구: 현금이 뒷받침되지 않는 이익은 지속성이 낮습니다.') + A.cash +
     anChapter('③', '재무적으로 안전한가?', '빚 때문에 사업이 흔들리거나 기회를 놓치지 않는가', '그레이엄·클라먼·막스: "먼저 잃지 않는 것". 좋은 사업도 과도한 차입 앞에서는 위험합니다.') + A.bs +
@@ -5197,6 +5256,7 @@ function renderAnalysis() {
     anChapter('⑧', '종합 결론', '위 질문들의 결과를 한곳에 모아 정리', '자동 생성 문장입니다. 점수가 아니라 숫자가 가리키는 방향의 요약입니다.') + anRenderJudge(c) +
     anChapter('⑨', '시그널과 판단 점검', '실적과 기대감을 나눠 보고, 변화(없다가 생김·있다가 사라짐)와 내 판단 과정을 점검', '주가수익률 분해는 항등식, 시그널은 연구별 근거 수준을 표시합니다. 결론을 대신 내리지 않고 판단 과정을 기록하게 돕습니다.') + sigRenderSections(c) +
     anChapter('참고', '설명서 · 용어 · 설정', '계산식·실제 입력값·근거와 판정 기준 변경', '숫자의 출처를 확인하거나 기준선을 바꾸고 싶을 때 펼쳐 보세요.') + anRenderExplain(c) + anRenderSettings();
+  anFoldApply(el);
   anBuildNav();
   try { sigUpdateSummary(); } catch (e) { /* 체크리스트 요약 실패는 무시 */ }
   anUpdateScenarioView();
