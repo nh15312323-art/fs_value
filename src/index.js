@@ -185,6 +185,9 @@ const HTML_PAGE = `<!doctype html>
     .topbar .brand { font-size: 19px; font-weight: 800; letter-spacing: -.01em; }
     .topbar .tagline { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
     .nav { display: flex; gap: 6px; position: sticky; top: 0; z-index: 20; background: var(--bg); padding: 6px 0 8px; margin-bottom: 8px; border-bottom: 1px solid var(--border); }
+    .grpnav { display: flex; gap: 6px; position: sticky; top: var(--navh); z-index: 19; background: var(--bg); padding: 2px 0 8px; margin: -4px 0 8px; overflow-x: auto; flex-wrap: nowrap; border-bottom: 1px solid var(--border); }
+    .grpnav button { flex: 0 0 auto; padding: 7px 14px; font-size: 13px; font-weight: 600; border-radius: 999px; white-space: nowrap; }
+    @media (max-width: 760px) { .grpnav button { min-height: 40px; } }
     .nav button { flex: 1; padding: 10px 6px; font-size: 14px; font-weight: 600; white-space: nowrap; }
     .pfl { display: flex; flex-direction: column; font-size: 12px; color: var(--text-muted); gap: 3px; flex: 1; min-width: 150px; }
     .pfl input { width: 100%; }
@@ -481,9 +484,10 @@ const HTML_PAGE = `<!doctype html>
 </head>
 <body>
   <nav id="bnav" aria-label="주 메뉴">
-    <button id="bn_momentum" onclick="switchTab('momentum')"><span class="ic">🔎</span><span>스크리닝</span></button>
-    <button id="bn_financial" onclick="switchTab('financial')"><span class="ic">📈</span><span>종목분석</span></button>
-    <button id="bn_pf" onclick="switchTab('pf')"><span class="ic">💼</span><span>내 계좌</span></button>
+    <button id="bn_find" onclick="switchGroup('find')"><span class="ic">🔎</span><span>발굴</span></button>
+    <button id="bn_stock" onclick="switchGroup('stock')"><span class="ic">📈</span><span>종목</span></button>
+    <button id="bn_my" onclick="switchGroup('my')"><span class="ic">💼</span><span>내 투자</span></button>
+    <button id="bn_admin" onclick="switchGroup('admin')"><span class="ic">⚙</span><span>검증·관리</span></button>
     <button id="bn_more" onclick="toggleMore()"><span class="ic">☰</span><span>더보기</span></button>
   </nav>
   <div id="moreSheet">
@@ -491,10 +495,6 @@ const HTML_PAGE = `<!doctype html>
     <div class="ms-body">
       <b style="font-size:15px;">메뉴 더보기</b>
       <button onclick="closeMore(); cmpOpen()">⚖ 종목 비교 (최대 5)</button>
-      <button id="mn_macro" onclick="switchTab('macro')">🌐 ③ 거시·상관</button>
-      <button id="mn_data" onclick="switchTab('data')">🗄️ ④ 데이터 관리</button>
-      <button id="mn_bt" onclick="switchTab('bt')">🧪 ⑤ 백테스트</button>
-      <button id="mn_db" onclick="switchTab('db')">💾 ⑦ DB 용량 관리</button>
       <button onclick="closeMore(); appLock('잠겼습니다. 키를 입력하면 다시 열립니다.')">🔒 지금 잠그기</button>
     </div>
   </div>
@@ -522,16 +522,22 @@ const HTML_PAGE = `<!doctype html>
 
   <div id="dbBanner" role="alert"><span id="dbBannerTxt"></span> <button onclick="switchTab('db')">DB 용량 열기</button> <button onclick="dbBannerHide()" title="이번 접속 동안 숨기기">✕</button></div>
   <div class="nav" id="mainNav">
-    <button id="tabBtnMomentum" onclick="switchTab('momentum')">① 스크리닝</button>
-    <button id="tabBtnFinancial" class="toggle-active" onclick="switchTab('financial')">② 종목분석</button>
-    <button id="tabBtnMacro" onclick="switchTab('macro')">③ 거시·상관</button>
-    <button id="tabBtnData" onclick="switchTab('data')">④ 데이터 관리</button>
-    <button id="tabBtnBt" onclick="switchTab('bt')">⑤ 백테스트</button>
-    <button id="tabBtnPf" onclick="switchTab('pf')">⑥ 내 계좌</button>
-    <button id="tabBtnDb" onclick="switchTab('db')">⑦ DB 용량</button>
+    <button id="grpBtn_find" onclick="switchGroup('find')">🔎 발굴</button>
+    <button id="grpBtn_stock" class="toggle-active" onclick="switchGroup('stock')">📈 종목</button>
+    <button id="grpBtn_my" onclick="switchGroup('my')">💼 내 투자</button>
+    <button id="grpBtn_admin" onclick="switchGroup('admin')">⚙ 검증·관리</button>
+  </div>
+  <div class="grpnav" id="grpNav" style="display:none;">
+    <button id="tabBtnMomentum" data-grp="find" onclick="switchTab('momentum')">스크리닝</button>
+    <button id="tabBtnMacro" data-grp="find" onclick="switchTab('macro')">거시·상관</button>
+    <button id="tabBtnFinancial" data-grp="stock" class="toggle-active" onclick="switchTab('financial')">종목분석</button>
+    <button id="tabBtnPf" data-grp="my" onclick="switchTab('pf')">내 계좌</button>
+    <button id="tabBtnBt" data-grp="admin" onclick="switchTab('bt')">백테스트</button>
+    <button id="tabBtnData" data-grp="admin" onclick="switchTab('data')">데이터 관리</button>
+    <button id="tabBtnDb" data-grp="admin" onclick="switchTab('db')">DB 용량</button>
   </div>
 
-  <!-- ===================== ② 종목분석 ===================== -->
+  <!-- ===================== 종목분석 ===================== -->
   <div id="tabFinancial">
     <div class="card" id="searchCard">
       <div class="row">
@@ -675,7 +681,7 @@ const HTML_PAGE = `<!doctype html>
     </div>
   </div><!-- /tabFinancial -->
 
-  <!-- ===================== ① 스크리닝 ===================== -->
+  <!-- ===================== 스크리닝 ===================== -->
   <div id="tabMomentum" style="display:none;">
     <div class="card">
       <div class="card-title">조건 설정</div>
@@ -751,7 +757,7 @@ const HTML_PAGE = `<!doctype html>
     </details>
   </div><!-- /tabMomentum -->
 
-  <!-- ===================== ③ 거시·상관 ===================== -->
+  <!-- ===================== 거시·상관 ===================== -->
   <div id="tabMacro" style="display:none;">
     <div class="card">
       <div class="card-title">거시경제 변화와 실적·주가수익률의 상관관계</div>
@@ -764,7 +770,7 @@ const HTML_PAGE = `<!doctype html>
     <div id="macroCorrWrap" style="display:none;"></div>
   </div><!-- /tabMacro -->
 
-  <!-- ===================== ⑤ 백테스트 ===================== -->
+  <!-- ===================== 백테스트 ===================== -->
   <div id="tabBt" style="display:none;">
     <div class="card">
       <div class="card-title">🧪 백테스트 — 과거에 이 방법을 썼다면 어땠을까?</div>
@@ -858,7 +864,7 @@ const HTML_PAGE = `<!doctype html>
   </div>
 
 
-  <!-- ===================== ⑦ DB 용량 ===================== -->
+  <!-- ===================== DB 용량 ===================== -->
   <div id="tabDb" style="display:none;">
     <div class="card">
       <div class="card-title">DB 용량 현황</div>
@@ -899,10 +905,10 @@ const HTML_PAGE = `<!doctype html>
     </div>
   </div>
 
-  <!-- ===================== ⑥ 내 계좌 ===================== -->
+  <!-- ===================== 내 계좌 ===================== -->
   <div id="tabPf" style="display:none;">
     <div class="card" style="border-left:4px solid #f59e0b;">
-      <div class="card-title">⑥ 내 계좌·매매 관리 (기록과 점검 도구 — 주문은 내지 않습니다)</div>
+      <div class="card-title">내 계좌·매매 관리 (기록과 점검 도구 — 주문은 내지 않습니다)</div>
       <div style="font-size:12.5px; line-height:1.6;">증권사에서 실제로 체결한 내용을 여기에 <b>기록</b>하면 평균단가·비중·현금·행동 통계를 계산합니다. 이 화면의 수량·경고는 <b>참고용 계산</b>이며 투자 권유나 최적 수익을 보장하지 않습니다.
         근거 수준: ①정의·산식(평균단가, 비중, 손실 예산 = 확립된 계산) ②반복 관찰된 행동 편향(처분효과 Shefrin&amp;Statman 1985·Odean 1998, 과잉거래 Barber&amp;Odean 2000, 손실회피 Kahneman&amp;Tversky 1979) ③실무 관행(체크리스트·숙려 시간·일지) ④정책값은 <b>본인 선택</b>이며 정답이 증명된 값이 아닙니다. 논문은 이 앱에서 온라인으로 재확인하지 못했습니다.</div>
     </div>
@@ -1042,7 +1048,7 @@ const HTML_PAGE = `<!doctype html>
   </div>
   </div><!-- /tabPf -->
 
-  <!-- ===================== ④ 데이터 관리 ===================== -->
+  <!-- ===================== 데이터 관리 ===================== -->
   <div id="tabData" style="display:none;">
     <div class="card">
       <div class="card-title">데이터 현황</div>
@@ -1101,7 +1107,7 @@ const HTML_PAGE = `<!doctype html>
       <div class="card-title">2. 재무 데이터 (DART)</div>
       <div class="row">
         <button onclick="toggleDbList()">DB 저장 종목 보기</button>
-        <span class="meta-line" style="margin:0;">개별 종목은 ② 종목분석에서 "분석하기"를 누르면 없을 때 자동으로 받습니다.</span>
+        <span class="meta-line" style="margin:0;">개별 종목은 종목분석에서 "분석하기"를 누르면 없을 때 자동으로 받습니다.</span>
       </div>
       <div class="row" style="margin-top:8px;">
         <button onclick="checkFiscalMonths()" title="저장된 종목의 결산월을 DART 회사개요에서 확인합니다">결산월 확인 (12월 결산이 아닌 종목 찾기)</button>
@@ -1121,7 +1127,7 @@ const HTML_PAGE = `<!doctype html>
     <div class="card">
       <div class="card-title">3. 거시경제 데이터 (환율·금리·WTI)</div>
       <p class="meta-line" style="margin-top:0;">
-        원/달러 환율·통안증권(1년)·국고채(3년)·국고채(10년)는 한국은행 ECOS, WTI는 미국 FRED에서 최근 9년치를 받아옵니다. 한 번 받아두면 ③ 거시·상관 탭이 계속 재사용합니다.
+        원/달러 환율·통안증권(1년)·국고채(3년)·국고채(10년)는 한국은행 ECOS, WTI는 미국 FRED에서 최근 9년치를 받아옵니다. 한 번 받아두면 거시·상관 탭이 계속 재사용합니다.
       </p>
       <div class="row"><button class="primary" onclick="refreshMacroData()">거시경제 데이터 갱신</button></div>
       <div id="macroStatus" class="meta-line" style="white-space:pre-line;"></div>
@@ -1270,10 +1276,22 @@ const HTML_PAGE = `<!doctype html>
     let curTab = 'financial';
     function toggleMore() { const e = document.getElementById('moreSheet'); e.style.display = e.style.display === 'block' ? 'none' : 'block'; }
     function closeMore() { const e = document.getElementById('moreSheet'); if (e) e.style.display = 'none'; }
+    // 메뉴는 4개 묶음(발굴·종목·내 투자·검증/관리). 묶음 안의 화면은 위쪽 보조 메뉴(#grpNav)로 옮긴다. 화면(탭) 자체와 switchTab은 그대로다.
+    const TAB_GROUP = { momentum: 'find', macro: 'find', financial: 'stock', pf: 'my', bt: 'admin', data: 'admin', db: 'admin' };
+    const GROUP_FIRST = { find: 'momentum', stock: 'financial', my: 'pf', admin: 'bt' };
+    const grpLast = {};
+    function switchGroup(g) { switchTab(grpLast[g] || GROUP_FIRST[g]); }
     function updateBnav(tab) {
-      ['momentum', 'financial', 'pf'].forEach(function (k) { const b = document.getElementById('bn_' + k); if (b) b.className = k === tab ? 'on' : ''; });
-      const more = ['macro', 'data', 'bt', 'db'].indexOf(tab) >= 0; const mb = document.getElementById('bn_more'); if (mb) mb.className = more ? 'on' : '';
-      ['macro', 'data', 'bt', 'db'].forEach(function (k) { const b = document.getElementById('mn_' + k); if (b) b.className = k === tab ? 'on' : ''; });
+      const g = TAB_GROUP[tab]; grpLast[g] = tab;
+      Object.keys(GROUP_FIRST).forEach(function (k) {
+        const b = document.getElementById('bn_' + k); if (b) b.className = k === g ? 'on' : '';
+        const t = document.getElementById('grpBtn_' + k); if (t) t.className = k === g ? 'toggle-active' : '';
+      });
+      const mb = document.getElementById('bn_more'); if (mb) mb.className = '';
+      const gn = document.getElementById('grpNav'); if (gn) {
+        let n = 0; Array.prototype.forEach.call(gn.querySelectorAll('button'), function (b) { const on = b.getAttribute('data-grp') === g; b.style.display = on ? '' : 'none'; if (on) n++; });
+        gn.style.display = n > 1 ? 'flex' : 'none';
+      }
     }
     function navRecord(tab, mode) {
       try { if (mode === 'replace') history.replaceState({ tab: tab }, '', '#' + tab); else if (mode !== 'none') history.pushState({ tab: tab }, '', '#' + tab); } catch (e) {}
@@ -1291,7 +1309,7 @@ const HTML_PAGE = `<!doctype html>
     });
 
 
-    // ===== ⑦ DB 용량 =====
+    // ===== DB 용량 =====
     function fmtBytes(b) { if (b == null) return 'N/A'; if (b >= 1073741824) return (b / 1073741824).toFixed(2) + ' GB'; if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB'; if (b >= 1024) return (b / 1024).toFixed(0) + ' KB'; return b + ' B'; }
     let dbUse = null, dbPrev = null, dbStopFlag = false, dbRunning = false;
     function dbBannerApply(u) {
@@ -3591,7 +3609,7 @@ function sigChecklistHtml(c) {
     ta('disproof', '틀렸다고 인정할 조건 (반증·손절 기준)', '예: 종가가 120일선 아래로 2일 이상 / 다음 분기 영업이익이 다시 적자') +
     ta('exit', '목표·익절 계획 (분할 기준)', '예: +25%에서 1/3, +40%에서 1/3, 나머지는 60일선 이탈 시') +
     '<div style="font-weight:700; font-size:13px; margin-top:14px;">보유 중 점검 규칙 (점수 아님 · 근거 평가 포함)</div>' + row(SIG_HOLD, 100, false) +
-    '<div style="font-size:11.5px; color:var(--text-muted); margin-top:8px; line-height:1.5;">입력한 내용은 이 기기(브라우저)에만 종목별로 저장됩니다. 실제 매매 계획·일지는 ⑥ 내 계좌의 ‘계획’과 ‘매매일지’에서 관리하세요.</div>';
+    '<div style="font-size:11.5px; color:var(--text-muted); margin-top:8px; line-height:1.5;">입력한 내용은 이 기기(브라우저)에만 종목별로 저장됩니다. 실제 매매 계획·일지는 내 계좌의 ‘계획’과 ‘매매일지’에서 관리하세요.</div>';
 }
 // 일별 시세에서 기준일(YYYYMMDD) 이전 가장 가까운 종가. 10일(연휴 감안)보다 오래된 값이나 시세 범위 밖이면 null.
 function sigCloseAsOf(px, ymd) {
@@ -4603,7 +4621,7 @@ function anCfgReset() { AN_CFG.qm = 'fscore'; Object.keys(AN_CFG_DEF).forEach((k
 function anRenderSettings() {
   const changed = AN_CFG.qm !== 'fscore' || Object.keys(AN_CFG_DEF).some((k) => AN_TH[k] !== AN_CFG_DEF[k]);
   const num = (k, label, pct, hint) => '<label style="display:block; margin:4px 0; font-size:12.5px;">' + label + ' <input type="number" step="' + (pct ? 1 : 0.5) + '" value="' + (pct ? +(AN_TH[k] * 100).toFixed(2) : AN_TH[k]) + '" onchange="anCfgSet(' + "'" + k + "'" + ', this.value)" style="width:70px;" /> ' + (pct ? '%' : '') + ' <span style="color:var(--text-muted); font-size:11px;">' + hint + '</span></label>';
-  const inner = '<div style="font-size:12px; line-height:1.55; margin:4px 0;">종목분석의 등급 기준을 바꿀 수 있습니다. 바꾼 값은 이 브라우저에 저장되고 즉시 모든 분류에 반영됩니다. 어떤 값이 더 나은지는 「⑤ 백테스트」로 확인하세요(기준을 바꿔 가며 고르면 과최적화 위험이 있어 백테스트가 시도 횟수를 세어 보정합니다).</div>' +
+  const inner = '<div style="font-size:12px; line-height:1.55; margin:4px 0;">종목분석의 등급 기준을 바꿀 수 있습니다. 바꾼 값은 이 브라우저에 저장되고 즉시 모든 분류에 반영됩니다. 어떤 값이 더 나은지는 「백테스트」로 확인하세요(기준을 바꿔 가며 고르면 과최적화 위험이 있어 백테스트가 시도 횟수를 세어 보정합니다).</div>' +
     '<label style="display:block; margin:4px 0; font-size:12.5px;">Quality 판정 방식 <select onchange="anCfgSet(' + "'qm'" + ', this.value)"><option value="fscore"' + (AN_CFG.qm === 'fscore' ? ' selected' : '') + '>Piotroski F-Score (학술 검증)</option><option value="legacy4"' + (AN_CFG.qm === 'legacy4' ? ' selected' : '') + '>기존 4점(ROIC·ROE·FCF/NI·발생액, 임의 기준)</option></select></label>' +
     num('pioLow', 'F-Score 미흡 상한', false, '이 점수 이하면 미흡 (논문의 극단 구간은 0~1)') +
     num('roicSpread', 'ROIC 높음 여유폭', true, 'ROIC ≥ 자본비용 + 이 값이면 높음') +
@@ -4700,7 +4718,7 @@ async function btLoadStocks() {
     const fs = btSplitFiscal(comps0);
     const comps = fs.use;
     BT.fiscalNote = (fs.excluded.length ? '12월 결산이 아니라 제외: ' + fs.excluded.length + '개(' + fs.excluded.slice(0, 5).map((c) => c.corp_name).join(', ') + (fs.excluded.length > 5 ? ' 외' : '') + '). ' : '') +
-      (fs.unknownN ? '결산월 미확인 ' + fs.unknownN + '개는 12월 결산으로 가정(④ 데이터 관리의 「결산월 확인」 권장).' : '');
+      (fs.unknownN ? '결산월 미확인 ' + fs.unknownN + '개는 12월 결산으로 가정(데이터 관리의 「결산월 확인」 권장).' : '');
     if (!comps.length) { btMsg('백테스트에 쓸 수 있는 12월 결산 종목이 없습니다. ' + BT.fiscalNote); return; }
     const by = {};
     for (let i = 0; i < comps.length; i += 8) {
@@ -4929,7 +4947,7 @@ async function btStkPick(raw) {
   await btStkLoadList();
   const L = BT_STK.list || [];
   const c = L.filter((x) => x.corp_name === q)[0] || L.filter((x) => x.corp_name.indexOf(q) === 0)[0] || L.filter((x) => x.corp_name.indexOf(q) >= 0)[0];
-  if (!c) { msg.textContent = '재무 데이터가 저장된 종목 중에서 「' + q + '」를 찾지 못했습니다. ④ 데이터 관리에서 먼저 재무 데이터를 받아 주세요.'; out.innerHTML = ''; return; }
+  if (!c) { msg.textContent = '재무 데이터가 저장된 종목 중에서 「' + q + '」를 찾지 못했습니다. 데이터 관리에서 먼저 재무 데이터를 받아 주세요.'; out.innerHTML = ''; return; }
   const tk = ++BT_STK.token;
   msg.textContent = c.corp_name + ' 불러오는 중...';
   try {
@@ -5001,7 +5019,7 @@ async function btRunScreen() {
     const notes = okP.filter((p) => p.note).map((p) => p.note);
     BT.last = { kind: 'scr', pcm: g('btScPcm'), pct: g('btScPct'), price: g('btScPrice'), w3, w6 };
     out.innerHTML = btRenderResult(res, { title: '스크리닝: 신호 가중치 2~3M ' + w3 + ' / 2~6M ' + w6 + ', 건너뛰기 ' + S + '일, 보유 ' + H + '거래일', ppy: 252 / H, nTr, kind: 'scr', extra: notes.length ? ['기준일 중 ' + notes.length + '개는 시가총액 이력이 없어 시가총액 제외 필터를 적용하지 못했습니다(거래대금·주가 필터만 적용).'] : [], bases: bases.length, used: use.length, calLen: cal.length })
-      + '<div class="row" style="margin:8px 0;"><button onclick="btApplyScreen()">이 필터·가중치를 ① 스크리닝에 적용</button><span style="font-size:11.5px; color:var(--text-muted);">적용되는 것: 시총·거래대금 하위 제외 %, 최소 주가, 신호 가중치. (건너뛰기·형성·보유 기간은 스크리닝이 21/63/126거래일로 고정이라 옮겨지지 않습니다.)</span></div>';
+      + '<div class="row" style="margin:8px 0;"><button onclick="btApplyScreen()">이 필터·가중치를 스크리닝에 적용</button><span style="font-size:11.5px; color:var(--text-muted);">적용되는 것: 시총·거래대금 하위 제외 %, 최소 주가, 신호 가중치. (건너뛰기·형성·보유 기간은 스크리닝이 21/63/126거래일로 고정이라 옮겨지지 않습니다.)</span></div>';
     btMsg('완료: ' + okP.length + '개 기준일');
   } catch (e) { btMsg('오류: ' + (e.message || e)); }
 }
@@ -5383,7 +5401,7 @@ function renderAnalysis() {
       }
     }
 
-// ===== ⑥ 내 계좌 (클라이언트). 계산 엔진(pf*)은 서버와 같은 소스를 그대로 주입받아 쓴다. =====
+// ===== 내 계좌 (클라이언트). 계산 엔진(pf*)은 서버와 같은 소스를 그대로 주입받아 쓴다. =====
 ${PF_CLIENT_FUNCS}
 const PFU = { key: '', st: null, panel: 'home', qc: {}, side: 'buy', emo: '', reason: '', q: null, inited: false };
 async function pfuUnlock() {
@@ -5764,7 +5782,7 @@ async function pfuExport() {
         const d = await res.json();
         if (!res.ok) throw new Error(d.error || '조회 실패');
         const ml = { usdkrw: '환율', msb1y: '통안1Y', ktb3y: '국고3Y', ktb10y: '국고10Y', wti: 'WTI' };
-        const macroTxt = d.macro && d.macro.length ? d.macro.map(function (m) { return (ml[m.series] || m.series) + ' ~' + m.last; }).join(' · ') : '없음(③ 거시·상관을 쓰려면 아래에서 갱신)';
+        const macroTxt = d.macro && d.macro.length ? d.macro.map(function (m) { return (ml[m.series] || m.series) + ' ~' + m.last; }).join(' · ') : '없음(거시·상관을 쓰려면 아래에서 갱신)';
         el.innerHTML =
           '• <b>시세(스크리닝)</b>: 최근 거래일 ' + (d.market_last || '없음') + ' · 가격이력 확보 종목 ' + sN(d.backfilled) + '개 / 조건 통과 ' + sN(d.passed) + '개 (대기 ' + sN(d.market_queue) + '개)<br />' +
           '• <b>스크리닝 결과</b>: 저장된 주간 결과 ' + sN(d.screen_snaps) + '회, 최신 ' + (d.screen_last || '없음') + '<br />' +
@@ -5994,7 +6012,7 @@ async function pfuExport() {
         stTxt = '구버전 결과: 시총 ≥ ' + sN(meta.minMcapEok) + '억 · 하루 거래대금 ≥ ' + sN(meta.minTvEok) + '억';
       }
       if (meta.no_mcap > 0 && meta.asof_rows > 0 && meta.no_mcap / meta.asof_rows > 0.2) {
-        stTxt += ' · 주의: 기준일 행 중 시가총액이 아직 저장되지 않은 종목이 ' + sN(meta.no_mcap) + '개 있어 결과에서 빠졌습니다(④ 데이터 관리에서 "오늘자 시세 받기"를 한 번 누르고 몇 분 뒤 다시 실행하세요).';
+        stTxt += ' · 주의: 기준일 행 중 시가총액이 아직 저장되지 않은 종목이 ' + sN(meta.no_mcap) + '개 있어 결과에서 빠졌습니다(데이터 관리에서 "오늘자 시세 받기"를 한 번 누르고 몇 분 뒤 다시 실행하세요).';
       }
       if (meta.clamped && meta.clamped.length) stTxt += ' · ' + meta.clamped.join(' ');
       if (((screenData.lists || {}).rw || []).length < 50) {
@@ -6100,7 +6118,7 @@ async function pfuExport() {
           if (res.ok) { ok++; const d = await res.json(); queued += d.queued || 0; skipped += d.skipped || 0; } else fail++;
         } catch (e) { fail++; }
       }
-      st.textContent = ok + '개 종목 등록: 새로 받을 기간 ' + queued + '개 · 이미 있어 건너뜀 ' + skipped + '개' + (fail ? ' (' + fail + '개 종목은 등록 실패)' : '') + (queued ? ' · 예상 약 ' + Math.max(1, Math.ceil(queued / 60)) + '시간' : '') + '. ④ 데이터 관리에서 진행 상황을 볼 수 있습니다.';
+      st.textContent = ok + '개 종목 등록: 새로 받을 기간 ' + queued + '개 · 이미 있어 건너뜀 ' + skipped + '개' + (fail ? ' (' + fail + '개 종목은 등록 실패)' : '') + (queued ? ' · 예상 약 ' + Math.max(1, Math.ceil(queued / 60)) + '시간' : '') + '. 데이터 관리에서 진행 상황을 볼 수 있습니다.';
     }
 
     // 영업이익이 없는 종목을 서버가 12개씩 data.go.kr에서 받아 오도록 반복 호출한다(받은 값은 서버 DB에 저장되어 다음부터는 바로 나옴).
@@ -7087,17 +7105,17 @@ async function pfuExport() {
       const statusEl = document.getElementById('macroCorrStatus');
       const wrapEl = document.getElementById('macroCorrWrap');
       wrapEl.style.display = 'none';
-      if (rawRows.length === 0) { statusEl.textContent = '먼저 ② 종목분석 탭에서 종목을 분석해주세요.'; return; }
+      if (rawRows.length === 0) { statusEl.textContent = '먼저 종목분석 탭에서 종목을 분석해주세요.'; return; }
       statusEl.textContent = '계산 중...';
       let macro;
       try {
         macro = await loadMacroSeries();
       } catch (e) {
-        statusEl.textContent = '오류: ' + e.message + ' (④ 데이터 관리 탭에서 "거시경제 데이터 갱신"을 먼저 눌러주세요)';
+        statusEl.textContent = '오류: ' + e.message + ' (데이터 관리 탭에서 "거시경제 데이터 갱신"을 먼저 눌러주세요)';
         return;
       }
       if (Object.keys(macro).length === 0) {
-        statusEl.textContent = '거시경제 데이터가 비어 있습니다. ④ 데이터 관리 탭에서 "거시경제 데이터 갱신"을 먼저 눌러주세요.';
+        statusEl.textContent = '거시경제 데이터가 비어 있습니다. 데이터 관리 탭에서 "거시경제 데이터 갱신"을 먼저 눌러주세요.';
         return;
       }
       const annualPts = buildAnnualCorrPoints(rawRows, macro);
@@ -7130,7 +7148,7 @@ async function pfuExport() {
         '· 수준(환율 1,300원 등)이 아니라 같은 기간의 <b>변화</b>를 비교합니다. 수준끼리 비교하면 시간 추세 때문에 가짜 상관이 생기기 쉽습니다(Granger &amp; Newbold, 1974).<br />' +
         '· "같은 해 주가수익률"은 동행성, "다음 해 주가수익률(선행)"은 거시 변화가 이후 주가를 예측했는지를 봅니다. 주가는 배당을 뺀 종가 수익률이고 시장(코스피) 효과를 제거하지 않았습니다.<br />' +
         '· 표의 칸이 많아(5×6) 5% 수준에서도 우연히 * 가 1~2개는 나올 수 있고, 표본이 수년뿐이라 <b>인과나 예측 근거가 아닌 참고용</b>입니다.<br />' +
-        '· 회계기간은 12월 결산 기준(분기말 3·6·9·12월)으로 가정합니다. 결산월이 다른 회사는 기간이 어긋나므로 이 표를 믿지 마세요(④ 데이터 관리의 「결산월 확인」으로 12월 결산이 아닌 종목을 찾을 수 있습니다).</div>';
+        '· 회계기간은 12월 결산 기준(분기말 3·6·9·12월)으로 가정합니다. 결산월이 다른 회사는 기간이 어긋나므로 이 표를 믿지 마세요(데이터 관리의 「결산월 확인」으로 12월 결산이 아닌 종목을 찾을 수 있습니다).</div>';
       statusEl.textContent = '';
       wrapEl.style.display = 'block';
       macroCorrDirty = false;
@@ -7950,7 +7968,7 @@ async function purgeSpec(env, kind, p) {
   }
   if (kind === "price_inactive") {
     const r = await env.DB.prepare("SELECT COUNT(*) AS n FROM market_universe_status WHERE passed = 1").first();
-    if (!r || !(r.n > 0)) return { error: "현재 기준을 통과한 종목 목록이 비어 있어 안전을 위해 실행하지 않습니다(④ 데이터 관리에서 유니버스를 먼저 갱신하세요)." };
+    if (!r || !(r.n > 0)) return { error: "현재 기준을 통과한 종목 목록이 비어 있어 안전을 위해 실행하지 않습니다(데이터 관리에서 유니버스를 먼저 갱신하세요)." };
     return { table: "market_raw_daily", cond: "stock_code NOT IN (SELECT stock_code FROM market_universe_status WHERE passed = 1)", binds: [], label: "현재 저장 기준을 통과하지 못한 종목의 일별 시세" };
   }
   if (kind === "screen_old") {
@@ -9510,7 +9528,7 @@ async function handleRequest(request, env) {
       });
     }
 
-    // ④ 데이터 관리 화면의 현황판: 가벼운 집계만(각 쿼리는 PK 인덱스로 처리되는 작은 표).
+    // 데이터 관리 화면의 현황판: 가벼운 집계만(각 쿼리는 PK 인덱스로 처리되는 작은 표).
     if (pathname === "/api/data/summary") {
       await ensureScreenTables(env.DB);
       const one = async (sql) => { try { return await env.DB.prepare(sql).first(); } catch (e) { return null; } };
