@@ -1,5 +1,5 @@
 // 사용법: node tests/ui_btq_test.mjs (Playwright + Chromium 필요)
-// ⑤ 백테스트 A: 「분기 TTM 재무 방법」. 분기보고서마다 최근 4개 분기 합산(TTM) 재무로 방법 값을 계산하고, 공시 다음 거래일 종가 → 다음 분기보고서 공시 다음 거래일 종가 수익률을 쓰는지 확인한다.
+// 백테스트 A: 「분기 TTM 재무 방법」. 분기보고서마다 최근 4개 분기 합산(TTM) 재무로 방법 값을 계산하고, 공시 다음 거래일 종가 → 다음 분기보고서 공시 다음 거래일 종가 수익률을 쓰는지 확인한다.
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'; import { pathToFileURL, fileURLToPath } from 'node:url';
 import http from 'node:http'; import { createRequire } from 'node:module';
 const src = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index.js');

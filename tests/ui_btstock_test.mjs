@@ -1,5 +1,5 @@
 // 사용법: node tests/ui_btstock_test.mjs (Playwright + Chromium 필요)
-// ⑤ 백테스트 C. 종목별 보기: 종목을 고르면 재무 값 · 매수·매도가 · 12개월 수익률 · 팩터 값이 한 표에 나오는지 확인한다.
+// 백테스트 C. 종목별 보기: 종목을 고르면 재무 값 · 매수·매도가 · 12개월 수익률 · 팩터 값이 한 표에 나오는지 확인한다.
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'; import { pathToFileURL, fileURLToPath } from 'node:url';
 import http from 'node:http'; import { createRequire } from 'node:module';
 const src = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index.js');

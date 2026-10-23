@@ -1,5 +1,5 @@
 // 사용법: node tests/ui_bttop_test.mjs (Playwright + Chromium 필요)
-// ⑤ 백테스트 결과의 「상위 그룹에 들어간 종목 상세」: 기간별 상위 그룹 종목·점수·수익률 표, 기간 선택, 종목명 클릭 시 C 카드 연결, CSV를 확인한다.
+// 백테스트 결과의 「상위 그룹에 들어간 종목 상세」: 기간별 상위 그룹 종목·점수·수익률 표, 기간 선택, 종목명 클릭 시 C 카드 연결, CSV를 확인한다.
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'; import { pathToFileURL, fileURLToPath } from 'node:url';
 import http from 'node:http'; import { createRequire } from 'node:module';
 const src = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index.js');

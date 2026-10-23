@@ -41,9 +41,10 @@ ok('viewport-fit=cover, 홈 화면 앱 메타·매니페스트·아이콘 링크
 ok('확대 제한 없음(접근성): user-scalable/maximum-scale 미사용', await pg.evaluate(() => !/user-scalable|maximum-scale/.test(document.querySelector('meta[name=viewport]').content)));
 ok('아이폰 폭: 하단 메뉴바 표시·상단 메뉴 숨김', await pg.isVisible('#bnav') && !(await pg.isVisible('#mainNav')));
 const bb = await pg.$eval('#bnav', (e) => e.getBoundingClientRect().height);
-ok('하단 메뉴바 높이 ≥ 56px, 버튼 4개 모두 ≥ 44px', bb >= 56 && (await pg.$$eval('#bnav button', (bs) => bs.every((x) => x.getBoundingClientRect().height >= 44 && x.getBoundingClientRect().width >= 44))));
+ok('하단 메뉴바 높이 ≥ 56px, 버튼 5개 모두 ≥ 44px', bb >= 56 && (await pg.$$eval('#bnav button', (bs) => bs.every((x) => x.getBoundingClientRect().height >= 44 && x.getBoundingClientRect().width >= 44))));
 const tabs = ['momentum', 'financial', 'macro', 'data', 'bt', 'db', 'pf'];
-const tabVia = async (pg, t) => { if (['macro', 'data', 'bt', 'db'].includes(t)) { await pg.click('#bn_more'); await pg.click('#mn_' + t); } else await pg.click('#bn_' + t); await pg.waitForTimeout(250); };
+const GRP = { momentum: 'find', macro: 'find', financial: 'stock', pf: 'my', bt: 'admin', data: 'admin', db: 'admin' };
+const tabVia = async (pg, t) => { await pg.click('#bn_' + GRP[t]); if (await pg.isVisible('#tabBtn' + t[0].toUpperCase() + t.slice(1))) await pg.click('#tabBtn' + t[0].toUpperCase() + t.slice(1)); await pg.waitForTimeout(250); };
 if (process.env.DBG) { for (const t of tabs) { await pg.evaluate((t) => switchTab(t), t); await pg.waitForTimeout(300); console.log(t, await pg.evaluate(() => { const o = []; document.querySelectorAll('body *').forEach((e) => { const r = e.getBoundingClientRect(); if (r.width > 0 && r.right > 391 && !e.closest('.tscroll,.combo-list,table,[style*="overflow"]') && getComputedStyle(e).position !== 'fixed') o.push(e.tagName + '#' + e.id + '.' + String(e.className).slice(0, 20) + ' w=' + Math.round(r.width) + ' r=' + Math.round(r.right)); }); return document.documentElement.scrollWidth + ' :: ' + o.slice(0, 8).join(' | '); })); } process.exit(0); }
 for (const t of tabs) {
   await tabVia(pg, t);
@@ -59,10 +60,10 @@ for (const t of tabs) {
   ok(t + ': 입력칸 높이 44px 이상', m.tiny.length === 0, m.tiny.join(','));
   ok(t + ': 버튼 높이 40px 이상', m.btn.length === 0, m.btn.join(' | '));
   ok(t + ': 가로 넘침 없음', m.over <= 1, String(m.over));
-  ok(t + ': 하단바 강조·주소 #탭 기록', m.hash === '#' + t && m.active === ({ macro: 'bn_more', data: 'bn_more', bt: 'bn_more', db: 'bn_more' }[t] || 'bn_' + t), m.active + ' ' + m.hash);
+  ok(t + ': 하단바 강조·주소 #탭 기록', m.hash === '#' + t && m.active === 'bn_' + GRP[t], m.active + ' ' + m.hash);
 }
 // 뒤로가기 / 링크 / 마지막 탭 기억
-await tabVia(pg, 'financial'); await tabVia(pg, 'momentum');
+await pg.evaluate(() => switchTab('financial')); await pg.waitForTimeout(150); await pg.evaluate(() => switchTab('momentum')); await pg.waitForTimeout(150);
 await pg.goBack(); await pg.waitForTimeout(300);
 ok('뒤로가기: 이전 탭(종목분석)으로 이동', await pg.isVisible('#tabFinancial') && !(await pg.isVisible('#tabMomentum')));
 const pg2 = await open(base + '#data');

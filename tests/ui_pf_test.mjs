@@ -1,4 +1,4 @@
-// 사용법: node tests/ui_pf_test.mjs  (Playwright + Chromium 필요) — ⑥ 내 계좌 탭: 키 입력 → 현황 → 경고 승인 흐름 → 계산기
+// 사용법: node tests/ui_pf_test.mjs  (Playwright + Chromium 필요) — 내 계좌 탭: 키 입력 → 현황 → 경고 승인 흐름 → 계산기
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'; import { pathToFileURL, fileURLToPath } from 'node:url';
 const src = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index.js');
 const tmp = path.join(os.tmpdir(), 'fs_value_uipf_' + process.pid + '.mjs');
@@ -31,7 +31,7 @@ const pg = await b.newPage({ viewport: { width: 390, height: 800 } });
 const errs = []; pg.on('pageerror', (e) => errs.push(String(e))); pg.on('console', (m) => { if (m.type() === 'error' && !/404|401|409/.test(m.text())) errs.push(m.text()); });
 await pg.goto('http://localhost:' + port + '/'); await pg.waitForTimeout(400);
 let fail = 0; const ok = (n, v, d) => { if (!v) fail++; console.log((v ? 'PASS' : 'FAIL') + '  ' + n + (d ? '  ' + d : '')); };
-await pg.click('#bn_pf'); await pg.waitForTimeout(100);
+await pg.click('#bn_my'); await pg.waitForTimeout(100);
 ok('탭 전환: 키 입력 칸만 보이고 본문은 숨김', await pg.isVisible('#pfuKey') && !(await pg.isVisible('#pfuMain')));
 await pg.fill('#pfuKey', 'wrongwrongwrong'); await pg.click('#pfuGate button'); await pg.waitForTimeout(200);
 ok('틀린 키 → 오류 문구, 본문 안 열림', (await pg.innerText('#pfuGateMsg')).includes('맞지 않') && !(await pg.isVisible('#pfuMain')));
