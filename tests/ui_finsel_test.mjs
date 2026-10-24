@@ -46,6 +46,7 @@ await pg.evaluate(() => setScrView('table')); await pg.waitForTimeout(200);
 const chk = await pg.evaluate(() => { const c = document.querySelectorAll('#screenWrap input[data-finsel]'); return { n: c.length, on: [].slice.call(c).filter((x) => x.checked).length, first: c[0].checked }; });
 ok('표 보기에도 체크칸이 있고 선택 상태가 유지(30칸, 19개 체크, 1번 해제)', chk.n === 30 && chk.on === 19 && chk.first === false, JSON.stringify(chk));
 await pg.evaluate(() => setScreenTab('r60')); await pg.waitForTimeout(150);
+ok('표 보기에 「분석 ›」 버튼(종목분석으로 바로 이동)이 종목마다 있음', (await pg.evaluate(() => [].slice.call(document.querySelectorAll('#screenWrap .sc-ctl button')).filter((b) => b.textContent.indexOf('분석') >= 0 && /goAnalyzeCode/.test(b.getAttribute('onclick') || '')).length)) === 30);
 ok('목록 탭을 바꿔도 선택 유지(19/20)', (await pg.innerText('#btnFinPrep')).includes('19/20'));
 await pg.click('#btnFinPrep'); await pg.waitForTimeout(700);
 const y1 = new Date().getFullYear();
