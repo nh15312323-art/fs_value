@@ -3399,6 +3399,39 @@ function anRenderFcfType(c) {
     '<div style="font-size:16px; font-weight:800; color:' + col + '; margin:6px 0;">' + anEsc(f.head.text) + '</div>' + tiles + cards + counters, false);
 }
 
+// ===== 종목분석 ↔ 내 투자 가설 메모 =====
+// 가설·무효화 조건은 내 투자(pf)의 계획서에 이미 저장됩니다. 여기서는 읽어서 보여주고, 쓰러 가는 길만 만듭니다(새 테이블·서버 경로 없음).
+function anThesisName() { return (rawRows && rawRows[0] && rawRows[0].corp_name) || (document.getElementById('corpName') ? document.getElementById('corpName').value.trim() : ''); }
+function anThesisHtml() {
+  const nm = anThesisName(); if (!nm) return '';
+  const head = '<div style="font-weight:700; margin-bottom:4px;">📝 내 투자 가설 메모</div>';
+  const note = '<div style="font-size:11.5px; color:var(--text-muted); margin-top:6px; line-height:1.45;">매수 전에 "왜 사는지"와 "무엇이 틀리면 접는지"를 글로 남기는 <b>습관 도구</b>입니다. 편향을 막는다고 입증된 것은 아니며, 사전부검(Klein 2007)의 아이디어를 쓴 실무 관행입니다. 손절 기준이 아니라 <b>가설이 깨졌는지 판단하는 조건</b>입니다.</div>';
+  if (!PFU.st) {
+    return head + '<div style="font-size:12.5px;">내 투자 탭에서 잠금을 풀면 이 종목의 가설·무효화 조건이 여기에 표시됩니다.</div>' +
+      '<button onclick="anThesisGo(0)" style="margin-top:6px;">내 투자 열기</button>' + note;
+  }
+  const plans = (PFU.st.plans || []).filter(function (p) { return p.corp_name === nm; });
+  const p = plans.length ? plans[0] : null;
+  if (!p) {
+    return head + '<div style="font-size:12.5px;">이 종목에 대한 가설 메모가 아직 없습니다.</div>' +
+      '<button class="primary" onclick="anThesisGo(1)" style="margin-top:6px;">이 종목 투자 가설 쓰기</button>' + note;
+  }
+  const e = escHtml;
+  return head + '<div style="font-size:12.5px; line-height:1.55;">상태 <b>' + e(p.status || '') + '</b> · 버전 v' + e(String(p.version)) + (p.review_date ? ' · 재검토 ' + e(p.review_date) : '') +
+    '<div style="margin-top:4px;"><b>가설</b>: ' + (p.thesis ? e(p.thesis) : '<span style="color:var(--text-muted);">(비어 있음)</span>') + '</div>' +
+    '<div style="margin-top:4px;"><b>가설 무효화 조건</b>: ' + (p.disproof ? e(p.disproof) : '<span style="color:var(--text-muted);">(비어 있음)</span>') + '</div></div>' +
+    '<button onclick="anThesisGo(2)" style="margin-top:6px;">계획서 열어 수정</button>' + note;
+}
+function anThesisUpdate() { const el = document.getElementById('anThesisBox'); if (el) el.innerHTML = anThesisHtml(); }
+function anThesisGo(mode) {
+  const nm = anThesisName();
+  switchTab('pf');
+  if (mode === 0 || !PFU.st) return;
+  pfuPanel('plan');
+  const p = (PFU.st.plans || []).filter(function (x) { return x.corp_name === nm; })[0];
+  if (mode === 2 && p) pfuEditPlan(p.plan_key);
+  else { pfuClearPlan(); document.getElementById('pfpName').value = nm; window.scrollTo(0, 0); }
+}
 function anRenderJudge(c) {
   const L = c.list, last = c.last, vs = c.vs, r = c.r, scen = c.scen;
   const items = [];
@@ -5296,6 +5329,7 @@ function renderAnalysis() {
     anChapter('⑥', '지금 가격은 합당한가?', '좋은 회사라도 비싸게 사면 나쁜 투자입니다. 배수 → 시장이 요구하는 성장 → 시나리오 순으로 확인', '그레이엄의 안전마진, 오너어닝스·잔여이익·PEG 등 여러 방법으로 가치의 범위를 보고, 한 숫자에 의존하지 않습니다.') + anRenderValuation(c) + anRenderMethods(c) + anRenderScenario(c) +
     anChapter('⑦', '시장은 지금 이 주식을 어떻게 보고 있는가?', '가격 추세와 상대강도가 펀더멘털 판단과 어긋나지 않는가', '가치투자자에게는 참고 신호이고, 미너비니·오닐에게는 핵심 조건. 모멘텀 효과는 제가디시·티트먼(1993) 등 학술 근거가 있습니다.') + anRenderMomentum() + anRenderTrend(c) +
     anChapter('⑧', '종합 결론', '위 질문들의 결과를 한곳에 모아 정리', '자동 생성 문장입니다. 점수가 아니라 숫자가 가리키는 방향의 요약입니다.') + anRenderJudge(c) +
+    '<div id="anThesisBox" class="card">' + anThesisHtml() + '</div>' +
     anChapter('⑨', '시그널과 판단 점검', '실적과 기대감을 나눠 보고, 변화(없다가 생김·있다가 사라짐)와 내 판단 과정을 점검', '주가수익률 분해는 항등식, 시그널은 연구별 근거 수준을 표시합니다. 결론을 대신 내리지 않고 판단 과정을 기록하게 돕습니다.') + sigRenderSections(c) +
     anChapter('참고', '설명서 · 용어 · 설정', '계산식·실제 입력값·근거와 판정 기준 변경', '숫자의 출처를 확인하거나 기준선을 바꾸고 싶을 때 펼쳐 보세요.') + anRenderExplain(c) + anRenderSettings();
   anFoldApply(el);
@@ -5570,7 +5604,7 @@ async function pfuLoad() {
   try {
     const r = await pfuApi('/api/pf/state');
     if (!r.ok) { pfuMsg(r.data.error || '불러오기 실패', true); return false; }
-    PFU.prev = PFU.st; PFU.st = r.data; pfuRender(); pfuPanel(PFU.panel); pfuMsg(''); return true;
+    PFU.prev = PFU.st; PFU.st = r.data; try { anThesisUpdate(); } catch (e) {} pfuRender(); pfuPanel(PFU.panel); pfuMsg(''); return true;
   } catch (e) { pfuMsg('오류: ' + e.message, true); return false; }
 }
 function pfuPlanOf(code) { return (PFU.st.plans || []).filter(function (p) { return p.stock_code === code; })[0] || null; }
