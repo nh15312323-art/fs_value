@@ -2696,7 +2696,7 @@ const HTML_PAGE = `<!doctype html>
 
 // ================= 재무분석 확장: 영역별 지표 · 시나리오 밸류에이션 · 분류 · 판단 요약 =================
 // 원칙: 정의가 분명하고 학술적으로 쓰이는 지표만 넣는다. 임계값(기준선)은 "참고용 휴리스틱"이며 AN_TH에서 한 곳에 모아 두었다.
-const AN_TH = { roicGood: 0.10, roicLow: 0.06, roeGood: 0.15, growthHigh: 0.10, growthVeryHigh: 0.15, growthLow: 0.05, fcfNiGood: 0.7, accrualMax: 0.05, perLow: 10, pbrLow: 1, taxRate: 0.24, defaultR: 0.09, omega: 0.62, minDIC: 0.10, perGraham: 15, pbrGraham: 1.5, grahamProd: 22.5, roicSpread: 0.03, pioLow: 3, shareTol: 0.01 };
+const AN_TH = { roicGood: 0.10, roicLow: 0.06, roeGood: 0.15, growthHigh: 0.10, growthVeryHigh: 0.15, growthLow: 0.05, fcfNiGood: 0.7, accrualMax: 0.05, perLow: 10, pbrLow: 1, taxRate: 0.24, defaultR: 0.09, omega: 0.62, minDIC: 0.10, perGraham: 15, pbrGraham: 1.5, grahamProd: 22.5, roicSpread: 0.03, pioLow: 3, shareTol: 0.01, rdcfN: 10, rdcfGT: 0.02 };
 const AN_STATE = { r: AN_TH.defaultR, payout: null, ov: {}, key: null, mom: null, momFor: null, momErr: null };
 let AN_CTX = null;
 
@@ -2983,6 +2983,31 @@ function anImpliedGEarnings(price, eps0, roe, r) {
 // (2) 현금흐름 기준(Gordon): P = F0(1+g)/(r−g) → g = (P·r − F0)/(P + F0)
 function anImpliedGFcf(price, f0, r) { return (price > 0 && f0 > 0) ? (price * r - f0) / (price + f0) : null; }
 
+// (3) N년 역DCF: 시장가격이 "앞으로 N년간 연 g로 FCF가 늘고, 그 뒤 영구성장 gT"를 가정해야 나오는 g를 푼다(기대투자 접근: Rappaport-Mauboussin 2001).
+//   P = Σ_{t=1..N} F0(1+g)^t/(1+r)^t + [F0(1+g)^N(1+gT)/(r−gT)]/(1+r)^N   (F0 = 주당 FCF, r = 요구수익률(자기자본비용))
+//   목표가가 아니라 "가격에 이미 담긴 성장 기대"를 읽는 도구. 현금흐름 기준이 음수·0이면 계산하지 않는다.
+function anRdcfValue(f0, g, r, gT, N) {
+  let pv = 0, f = f0;
+  for (let t = 1; t <= N; t++) { f *= (1 + g); pv += f / Math.pow(1 + r, t); }
+  return pv + (f * (1 + gT) / (r - gT)) / Math.pow(1 + r, N);
+}
+function anRdcfSolve(price, f0, r, gT, N) {
+  if (!(price > 0) || !(f0 > 0) || !(r > gT) || !(N >= 1)) return null;
+  let lo = -0.5, hi = 1.0;
+  if (anRdcfValue(f0, lo, r, gT, N) > price || anRdcfValue(f0, hi, r, gT, N) < price) return null; // 범위 밖: 해 없음
+  for (let i = 0; i < 80; i++) { const mid = (lo + hi) / 2; if (anRdcfValue(f0, mid, r, gT, N) < price) lo = mid; else hi = mid; }
+  return (lo + hi) / 2;
+}
+function anRdcfBuild(price, fps, r) {
+  if (!(price > 0) || !anFin(fps) || !(fps > 0)) return null;
+  const N = AN_TH.rdcfN, gT = Math.min(AN_TH.rdcfGT, r - 0.01);
+  const rs = [-0.02, -0.01, 0, 0.01, 0.02].map((d) => r + d).filter((x) => x > 0.02);
+  const gts = [0, 0.01, 0.02, 0.03].filter((x) => x < Math.min.apply(null, rs) - 0.005);
+  return { N, gT, r, fps, main: anRdcfSolve(price, fps, r, gT, N), rs, gts,
+    grid: rs.map((rr) => gts.map((gg) => anRdcfSolve(price, fps, rr, gg, N))),
+    byN: [5, 10, 15].map((n) => ({ n, g: anRdcfSolve(price, fps, r, gT, n) })) };
+}
+
 // ---------- 분류 / 판단 ----------
 function anValuationLevel(vs, expG, impG, scen, price) {
   const sig = [];
@@ -3194,6 +3219,7 @@ function anBuildContext(rows, price, m) {
   const impE = anImpliedGEarnings(price, m.eps, roeBase, r);
   const f3 = anMean(anWin(list, 'fcf', 3)); const fps = anFin(f3) && anFin(last.shares) ? f3 / last.shares : null;
   const impF = (price && anFin(fps)) ? anImpliedGFcf(price, fps, r) : null;
+  const rdcf = anRdcfBuild(price, fps, r);
   const expG = gRoe;
   const mom = anMomentum(rows, price);
   const pio = anPiotroski(list);
@@ -3207,7 +3233,7 @@ function anBuildContext(rows, price, m) {
   const fm3 = anMean(anWin(list, 'fcfm', 3)), fm5 = anMean(anWin(list, 'fcfm', 5));
   const valL = anValuationLevel(vs, expG, impE, scen, price);
   const ctx = {
-    list, pio, last, vs, r, roe3, roe5, roic3, roic5, payoutAvg, reinv3, gRoe, gRoic, def, scen, impE, impF, expG, mom, growth, epsG, growthRev, growthEbit, growthEpsIsNi, growthN: growthParts.length,
+    list, pio, last, vs, r, roe3, roe5, roic3, roic5, payoutAvg, reinv3, gRoe, gRoic, def, scen, impE, impF, rdcf, expG, mom, growth, epsG, growthRev, growthEbit, growthEpsIsNi, growthN: growthParts.length,
     qualityOk, qPts: q, valLevel: valL.level, valN: valL.n, momLevel: mom ? mom.level : null, base0: roeBase,
     perLow: anFin(vs.per) ? vs.per <= 10 : null, pbrLow: anFin(vs.pbr) ? vs.pbr <= 1 : null,
     roicDown: (roic3 != null && roic5 != null) ? (roic3 < roic5 || roic3 < r) : null,
@@ -3297,6 +3323,13 @@ function anRenderExplain(c) {
     rule: '위 평균값으로 5단계. 신호가 2개 미만이면 N/A.',
     evidence: 'Graham 기준(방어적 투자자: PER 15 이하, PBR 1.5 이하, PER×PBR 22.5 이하 — Graham 1949/1973)은 오랜 실무 고전입니다. RIM은 Ohlson(1995)·Edwards-Bell(1961)의 회계 기반 가치평가 이론입니다. 하지만 4개 신호를 같은 비중으로 평균하고 25/75% 분위·±2%p를 쓰는 것은 임의 선택입니다.',
     limit: '과거 분위는 자기 역사에 비교한 값이라 구조적으로 달라진 회사엔 부적절합니다. r(자본비용)과 시나리오 ROE가 가정이라 결과가 크게 달라집니다.' });
+  items.push({ name: '역DCF (시장 내재 FCF 성장률)', badge: 'practice', bl: '정의는 표준·해석은 참고',
+    concept: '현재 주가를 "앞으로 N년 동안 FCF가 연 g로 늘고, 그 뒤 영구성장 gT"라는 가정으로 설명하려면 g가 얼마여야 하는지 거꾸로 푼 값입니다. 가격에 이미 들어 있는 기대를 읽는 도구입니다.',
+    formula: 'P = Σ F₀(1+g)^t/(1+r)^t (t=1..N) + [F₀(1+g)^N(1+gT)/(r−gT)]/(1+r)^N 를 만족하는 g (이분법). F₀=최근 3년 평균 FCF÷주식수, r=설정한 요구수익률, N=' + AN_TH.rdcfN + '년, gT=' + anPct(AN_TH.rdcfGT, 0) + '(r−1%p를 넘지 않게 제한).',
+    inputs: c.rdcf ? ('가격 ' + anWon(c.price) + ' · F₀ ' + anWon(c.rdcf.fps) + ' · r ' + anPct(c.rdcf.r, 1) + ' → g ' + anPct(c.rdcf.main)) : 'N/A (FCF 기준 값이 0 이하)',
+    rule: '판정 기준 없음. 과거 FCF 성장률·지속가능성장률과 나란히 보여주기만 합니다. F₀≤0, r≤gT, 해가 −50%~100% 밖이면 N/A.',
+    evidence: 'Rappaport·Mauboussin의 기대투자(Expectations Investing, 2001)와 Damodaran의 역DCF 설명이 출처입니다. 방법의 수학은 표준이지만, 이를 이용한 매매가 초과수익을 낸다는 검증은 이 앱에서 하지 않았습니다.',
+    limit: 'F₀ 선택(3년 평균)에 민감하고, 영구성장 구간 비중이 커서 r·gT 가정에 크게 흔들립니다(표로 확인). 주식수·부채는 단순화했고, 금융업·적자 성장기업에는 부적합합니다.' });
   items.push({ name: 'Momentum (모멘텀)', badge: 'proof', bl: '해외 검증·한국 약함', now: lv(G.mom),
     concept: '최근 주가가 오르는 추세인지 보는 지표. 오른 종목이 한동안 더 오르는 경향(관성)을 이용합니다.',
     formula: '6개월·12개월 수익률에서 최근 1개월을 뺀 값(6-1, 12-1)의 부호와 6개월 코스피 대비 초과 여부.',
@@ -4506,6 +4539,25 @@ function anR4Draw() {
   }).join('');
 }
 
+function anRdcfHtml(c) {
+  const R = c.rdcf;
+  const head = '<div style="font-weight:700; margin:12px 0 4px;">🔄 역DCF — 지금 가격이 담고 있는 성장 기대 ' + anBadge('practice', '실무 관행') + '</div>';
+  if (!R) {
+    return head + '<div style="font-size:12.5px; color:var(--text-muted); line-height:1.5;">N/A — 최근 3년 평균 FCF(주당)가 0 이하이거나 자료가 부족해 계산하지 않습니다. 현금흐름이 아직 음수인 성장 기업은 이 방식으로 가격을 읽을 수 없으므로, 위 이익 기준 내재성장률이나 시나리오를 참고하세요.</div>';
+  }
+  const hist = [['FCF 5년 CAGR', anCagr(c.list.map((d) => ({ year: d.year, fcf: d.fcf })), 'fcf', 5)], ['FCF 3년 CAGR', anCagr(c.list.map((d) => ({ year: d.year, fcf: d.fcf })), 'fcf', 3)], ['지속가능성장률(ROE×유보율)', c.gRoe], ['ROIC×재투자율', c.gRoic]];
+  const histTxt = hist.map((h) => h[0] + ' <b>' + anPct(h[1]) + '</b>').join(' · ');
+  const hl = (g) => { const base = c.rdcf.main; return (g != null && base != null && Math.abs(g - base) < 0.0005) ? 'background:#dbeafe; font-weight:700;' : ''; };
+  const tbl = '<div style="overflow-x:auto;"><table class="an-tbl"><thead><tr><th>요구수익률 r ↓ / 영구성장 gT →</th>' + R.gts.map((g) => '<th>' + anPct(g, 0) + '</th>').join('') + '</tr></thead><tbody>' +
+    R.rs.map((rr, i) => '<tr><td>' + anPct(rr, 1) + (Math.abs(rr - R.r) < 1e-9 ? ' (기준)' : '') + '</td>' + R.grid[i].map((g, j) => '<td style="' + (Math.abs(rr - R.r) < 1e-9 && Math.abs(R.gts[j] - R.gT) < 1e-9 ? 'background:#dbeafe; font-weight:700;' : '') + '">' + (g == null ? '해 없음' : anPct(g)) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>';
+  return head +
+    anGrid([anTile('시장이 요구하는 향후 ' + R.N + '년 연평균 FCF 성장률', anPct(R.main), 'r ' + anPct(R.r, 1) + ' · 이후 영구성장 ' + anPct(R.gT, 0) + ' · 기준 FCF/주 ' + anWon(R.fps) + '(최근 3년 평균)'),
+      anTile('기간을 바꾸면 (r·gT 고정)', R.byN.map((x) => x.n + '년 ' + anPct(x.g)).join(' · '), '기간이 길수록 요구 성장률은 낮아집니다')]) +
+    '<div style="font-size:12.5px; line-height:1.55; margin:4px 0;">비교 기준(과거 실적·이론): ' + histTxt + '</div>' +
+    '<div style="font-size:11.5px; color:var(--text-muted); margin:6px 0 2px;">아래 표: r과 gT를 바꿨을 때 요구 성장률(칸마다 같은 가격을 맞추는 값). 가정이 조금만 변해도 크게 움직이면 그 숫자는 불안정하다는 뜻입니다.</div>' + tbl +
+    '<div style="font-size:11.5px; color:var(--text-muted); margin-top:6px; line-height:1.5;">읽는 법: 요구 성장률이 과거 실적·지속가능성장률보다 훨씬 높으면 가격에 낙관이 많이 담겨 있고, 훨씬 낮으면 비관이 담겨 있다는 <b>해석의 출발점</b>입니다. 목표주가가 아니며 저평가·고평가를 단정하지 않습니다. FCF는 순환적이고 자본배분·일회성에 민감하며, 영구성장 구간이 가치의 큰 부분을 차지합니다.</div>';
+}
+
 function anRenderValuation(c) {
   const v = c.vs, rg = (x) => x ? ('최저 ' + anFmt(x.k, x.lo) + ' / 중앙 ' + anFmt(x.k, x.med) + ' / 최고 ' + anFmt(x.k, x.hi)) : 'N/A';
   const rows = [['PER', 'x', v.rangePer, v.per], ['PBR', 'x', v.rangePbr, v.pbr], ['FCF Yield', 'pct', v.rangeFcfy, v.fcfYield]];
@@ -4526,7 +4578,7 @@ function anRenderValuation(c) {
   ]);
   return anSection('💹 Valuation (배수 · 과거 범위 · 내재/기대 성장)', '#2563eb',
     '※ Industry valuation(업종 비교)은 업종 분류·동종 비교 데이터가 DB에 없어 <b>제외</b>했습니다. 5Y/10Y 범위는 저장된 "연간 공시시점 PER·PBR·FCF Yield"의 분포이며 "분위"는 과거 값 중 현재 값 이하인 비율입니다(0%=역대 최저, 100%=역대 최고 — PER·PBR은 낮을수록, FCF Yield는 높을수록 저렴). Implied &gt; Expected이면 시장이 펀더멘털보다 큰 성장을 가격에 넣은 것입니다. <br>※ 정의 차이 안내: 이 앱의 EPS·BPS·PER은 <b>지배주주 기준 · 자사주 차감 유통주식수(우선주 포함)</b>이며, 포털(발행주식수 기준 EPS 등)·DART(가중평균주식수 EPS)와 값이 다를 수 있습니다(오류가 아닌 정의 차이). CAPEX는 유형자산(+무형자산) 취득액이라 포털의 CAPEX 정의와 다를 수 있습니다. 주식수 출처가 &quot;이월&quot;인 분기는 직전 공시값이라 다소 부정확하며, 연간은 이월하지 않고 &quot;미확인&quot;으로 표시합니다.',
-    tiles + imp + rtab, true);
+    tiles + imp + anRdcfHtml(c) + rtab, true);
 }
 
 function anRenderAreas(c) {
