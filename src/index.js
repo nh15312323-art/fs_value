@@ -185,6 +185,9 @@ const HTML_PAGE = `<!doctype html>
     .topbar .brand { font-size: 19px; font-weight: 800; letter-spacing: -.01em; }
     .topbar .tagline { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
     .nav { display: flex; gap: 6px; position: sticky; top: 0; z-index: 20; background: var(--bg); padding: 6px 0 8px; margin-bottom: 8px; border-bottom: 1px solid var(--border); }
+    #freshBar { font-size: 12px; line-height: 1.5; padding: 5px 10px; margin: 0 0 8px; border-radius: 8px; border: 1px solid var(--border); background: #f8fafc; color: var(--text-muted); cursor: pointer; }
+    #freshBar.warn { background: #fffbeb; border-color: #fcd34d; color: #92400e; }
+    #freshBar.err { background: #f1f5f9; }
     .grpnav { display: flex; gap: 6px; position: sticky; top: var(--navh); z-index: 19; background: var(--bg); padding: 2px 0 8px; margin: -4px 0 8px; overflow-x: auto; flex-wrap: nowrap; border-bottom: 1px solid var(--border); }
     .grpnav button { flex: 0 0 auto; padding: 7px 14px; font-size: 13px; font-weight: 600; border-radius: 999px; white-space: nowrap; }
     @media (max-width: 760px) { .grpnav button { min-height: 40px; } }
@@ -520,6 +523,7 @@ const HTML_PAGE = `<!doctype html>
     <div class="tagline">DART 공시 · 공공데이터포털 시세 · 한국은행(ECOS)/FRED 거시지표</div>
   </div>
 
+  <div id="freshBar" role="status" onclick="switchTab('data')" title="누르면 데이터 관리 화면이 열립니다" style="display:none;"></div>
   <div id="dbBanner" role="alert"><span id="dbBannerTxt"></span> <button onclick="switchTab('db')">DB 용량 열기</button> <button onclick="dbBannerHide()" title="이번 접속 동안 숨기기">✕</button></div>
   <div class="nav" id="mainNav">
     <button id="grpBtn_find" onclick="switchGroup('find')">🔎 발굴</button>
@@ -1297,7 +1301,45 @@ const HTML_PAGE = `<!doctype html>
       try { if (mode === 'replace') history.replaceState({ tab: tab }, '', '#' + tab); else if (mode !== 'none') history.pushState({ tab: tab }, '', '#' + tab); } catch (e) {}
       try { localStorage.setItem('lastTab', tab); } catch (e) {}
     }
+    // ===== 데이터 기준일 줄 =====
+    // 시세는 평일 한국시간 18:01부터 갱신된다. 마지막으로 갱신됐어야 할 평일 날짜와 실제 저장된 마지막 날짜의 평일 차이를 보여준다.
+    // 한국 공휴일은 알 수 없어(휴장일이면 정상) 경고 문구에 그 가능성을 적는다.
+    function freshExpected(nowMs) {
+      const k = new Date(nowMs + 9 * 3600000); // UTC 필드를 한국 시각으로 읽기 위해 +9시간
+      let d = Date.UTC(k.getUTCFullYear(), k.getUTCMonth(), k.getUTCDate());
+      const afterUpdate = k.getUTCHours() * 60 + k.getUTCMinutes() >= 18 * 60 + 30;
+      if (!afterUpdate) d -= 86400000;
+      while (new Date(d).getUTCDay() % 6 === 0) d -= 86400000; // 토·일 건너뛰기
+      return d;
+    }
+    function freshLag(marketLast, nowMs) {
+      const m = String(marketLast || '');
+      if (!/^\\d{8}$/.test(m)) return null;
+      let a = Date.UTC(Number(m.slice(0, 4)), Number(m.slice(4, 6)) - 1, Number(m.slice(6, 8)));
+      const b = freshExpected(nowMs); let n = 0;
+      while (a < b) { a += 86400000; if (new Date(a).getUTCDay() % 6 !== 0) n++; }
+      return n;
+    }
+    const fmtYmd = (s) => /^\\d{8}$/.test(String(s || '')) ? s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6) : (s || '없음');
+    let freshAt = 0;
+    function freshRender(d, nowMs) {
+      const el = document.getElementById('freshBar'); if (!el) return;
+      el.style.display = 'block';
+      if (!d) { el.className = 'err'; el.textContent = '데이터 기준일을 불러오지 못했습니다. 표시된 시세·순위가 최신이 아닐 수 있습니다 (눌러서 데이터 관리 열기)'; return; }
+      const lag = freshLag(d.market_last, nowMs);
+      const sc = d.screen_last ? ' · 저장된 주간 스크리닝 ' + fmtYmd(d.screen_last) : '';
+      if (lag == null) { el.className = 'warn'; el.textContent = '⚠ 시세가 아직 저장되지 않았습니다' + sc + ' (눌러서 데이터 관리 열기)'; return; }
+      if (lag >= 1) { el.className = 'warn'; el.textContent = '⚠ 시세 기준일 ' + fmtYmd(d.market_last) + ' — 평일 기준 ' + lag + '일 늦음(공휴일·휴장이면 정상)' + sc + '. 늦은 시세로 계산한 순위·수익률은 최신이 아닙니다 (눌러서 데이터 관리 열기)'; return; }
+      el.className = ''; el.textContent = '📅 시세 기준일 ' + fmtYmd(d.market_last) + ' (최신)' + sc;
+    }
+    async function freshLoad(force) {
+      const now = Date.now(); if (!force && now - freshAt < 600000) return; freshAt = now;
+      try { const r = await fetch('/api/data/fresh', { cache: 'no-store' }); const d = await r.json(); if (!r.ok) throw new Error(d.error || ''); freshRender(d, Date.now()); }
+      catch (e) { freshAt = 0; freshRender(null, Date.now()); }
+    }
+    // ===== /데이터 기준일 줄 =====
     function bootRoute() {
+      freshLoad(true);
       let t = (location.hash || '').replace('#', '');
       if (TAB_IDS.indexOf(t) < 0) { t = ''; try { t = localStorage.getItem('lastTab') || ''; } catch (e) {} }
       if (TAB_IDS.indexOf(t) < 0) t = 'financial';
@@ -5830,7 +5872,7 @@ async function pfuExport() {
       if (tab === 'pf') { pfuInit(); }
       if (tab === 'macro' && macroCorrDirty && rawRows.length) computeMacroCorrelation();
       if (tab === 'financial' && subTab === 'table' && chartSel.length) renderChartPanel(false);
-      if (tab !== prevTab) window.scrollTo(0, 0);
+      if (tab !== prevTab) { window.scrollTo(0, 0); freshLoad(false); }
       setTimeout(setNavVars, 30); tuneInputs();
       const fab = document.getElementById('pfuFab'); if (fab) fab.style.display = (tab === 'pf' && PFU.key) ? 'block' : 'none';
     }
@@ -6113,7 +6155,7 @@ async function pfuExport() {
         const hot = r.hot ? ' <span class="sc-warn" title="최근 1개월 수익률이 후보 중 상위 5%: 단기 과열·반전 위험">⚠</span>' : '';
         const comp = newFmt ? sCell(r.rw == null ? 'N/A' : (r.rw * 100).toFixed(1), kc('rw')) : ret(r.rw, 'rw');
         return '<tr><td class="f f1">' + (i + 1) + '</td>' +
-          '<td class="f f2"><a href="javascript:void(0)" onclick="goAnalyzeCode(&quot;' + r.stock_code + '&quot;)" title="클릭하면 종목분석으로 이동" style="color:var(--primary-dark); font-weight:700; text-decoration:none;">' + escHtml(r.corp_name) + '</a>' + hot + '<br /><span style="color:var(--text-muted); font-size:11px;">' + r.stock_code + '</span>' + (r.corp_name !== r.stock_code ? '<div class="sc-ctl"><label class="sc-fin-s" title="재무데이터 받기 선택(최대 20개)"><input type="checkbox" data-finsel="' + escHtml(r.corp_name) + '"' + (finSel.indexOf(r.corp_name) >= 0 ? ' checked' : '') + ' /><span>재무</span></label><button class="sc-cmp-s" data-cmp="' + escHtml(r.corp_name) + '" title="비교에 담기">⚖</button></div>' : '') + '<div class="mini"><b>' + sN(r.c0) + '원</b><br />시총 ' + sN(r.mcapEok) + '억 · 대금 ' + sN(r.tvEok) + '억<br />영업이익 ' + (r.op ? sN(r.op.v) + '억' : (opFillRunning ? '조회 중…' : 'N/A')) + '</div></td>' +
+          '<td class="f f2"><a href="javascript:void(0)" onclick="goAnalyzeCode(&quot;' + r.stock_code + '&quot;)" title="클릭하면 종목분석으로 이동" style="color:var(--primary-dark); font-weight:700; text-decoration:none;">' + escHtml(r.corp_name) + '</a>' + hot + '<br /><span style="color:var(--text-muted); font-size:11px;">' + r.stock_code + '</span>' + (r.corp_name !== r.stock_code ? '<div class="sc-ctl"><label class="sc-fin-s" title="재무데이터 받기 선택(최대 20개)"><input type="checkbox" data-finsel="' + escHtml(r.corp_name) + '"' + (finSel.indexOf(r.corp_name) >= 0 ? ' checked' : '') + ' /><span>재무</span></label><button class="sc-cmp-s" onclick="goAnalyzeCode(&quot;' + r.stock_code + '&quot;)" title="종목분석으로 이동">분석 ›</button><button class="sc-cmp-s" data-cmp="' + escHtml(r.corp_name) + '" title="비교에 담기">⚖</button></div>' : '') + '<div class="mini"><b>' + sN(r.c0) + '원</b><br />시총 ' + sN(r.mcapEok) + '억 · 대금 ' + sN(r.tvEok) + '억<br />영업이익 ' + (r.op ? sN(r.op.v) + '억' : (opFillRunning ? '조회 중…' : 'N/A')) + '</div></td>' +
           '<td class="f f3">' + sN(r.c0) + '</td><td class="f f4">' + sN(r.mcapEok) + '</td><td class="f f5">' + sN(r.tvEok) + '</td>' + opCell +
           ret(r.r21, 'r21') + ret(r.r20, 'r20') + ret(r.r60, 'r60') + ret(r.r120, 'r120') + comp + ret(r.m16, 'm16') + rs(r.rs1, 'rs1') + rs(r.rs3, 'rs3') + rs(r.rs6, 'rs6') + sCell(r.z10 == null ? 'N/A' : sX(r.z10, 1), kc('z10')) + sCell(r.z20 == null ? 'N/A' : sX(r.z20, 1), kc('z20')) + extraCells(r) +
           sCell((overlap[r.stock_code] || 0) + '/' + SCREEN_LISTS.filter((L) => !L.attn).length, overlap[r.stock_code] >= 4 ? 'sc-good' : '') + '</tr>';
@@ -9589,6 +9631,17 @@ async function handleRequest(request, env) {
     }
 
     // 데이터 관리 화면의 현황판: 가벼운 집계만(각 쿼리는 PK 인덱스로 처리되는 작은 표).
+    // 화면 맨 위 "데이터 기준일" 줄용 아주 가벼운 조회: 기본키 앞 열의 MAX 두 개만 읽는다(행 몇 건).
+    if (pathname === "/api/data/fresh") {
+      await ensureScreenTables(env.DB);
+      const one = async (sql) => { try { return await env.DB.prepare(sql).first(); } catch (e) { return null; } };
+      const [mk, snap] = await Promise.all([
+        one("SELECT MAX(market_date) AS d FROM market_raw_daily"),
+        one("SELECT MAX(snap_date) AS d FROM screen_lists"),
+      ]);
+      return new Response(JSON.stringify({ market_last: mk ? mk.d : null, screen_last: snap ? snap.d : null }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
+    }
+
     if (pathname === "/api/data/summary") {
       await ensureScreenTables(env.DB);
       const one = async (sql) => { try { return await env.DB.prepare(sql).first(); } catch (e) { return null; } };

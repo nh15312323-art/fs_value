@@ -7,6 +7,7 @@ const tmp = path.join(os.tmpdir(), 'fs_value_uidb_' + process.pid + '.mjs');
 fs.writeFileSync(tmp, fs.readFileSync(src, 'utf8') + '\nexport { HTML_PAGE };\n');
 const { HTML_PAGE } = await import(pathToFileURL(tmp).href); fs.unlinkSync(tmp);
 const require = createRequire('/opt/npm-tools/node_modules/'); const { chromium } = require('playwright');
+// 참고: fullPage 스크린샷은 화면이 뷰포트보다 길면 터치(pointer: coarse) 에뮬레이션을 풀어 버려 이후 측정이 달라지므로 쓰지 않는다.
 const SHOT = process.env.SHOT_DIR || os.tmpdir();
 const dates = []; { let d = new Date(Date.UTC(2024, 9, 2)); while (dates.length < 400) { if (d.getUTCDay() % 6) dates.push(d.toISOString().slice(0, 10).replace(/-/g, '')); d = new Date(d.getTime() + 86400000); } }
 const close = dates.map((_, i) => Math.round(50000 + i * 40 + 3000 * Math.sin(i / 20)));
@@ -57,7 +58,7 @@ for (const dev of [{ name: '아이폰', w: 390, h: 844, mobile: true }, { name: 
   const gt = await pg.innerText('#dbGauge');
   ok(T + '현황 표시: 92% · 460MB / 500MB', gt.includes('92') && /460/.test(gt) && /500/.test(gt), gt.replace(/\n/g, ' ').slice(0, 80));
   ok(T + '테이블별 사용량 표', (await pg.innerText('#dbTables')).includes('market_raw_daily'));
-  await pg.screenshot({ path: path.join(SHOT, 'db_' + dev.w + '_status.png'), fullPage: true });
+  await pg.screenshot({ path: path.join(SHOT, 'db_' + dev.w + '_status.png') });
   // 설정 저장
   await pg.click('#tabDb details.adv > summary'); await pg.waitForTimeout(100);
   await pg.fill('#dbLimitMb', '1000'); await pg.fill('#dbWarnPct', '80');
@@ -73,7 +74,7 @@ for (const dev of [{ name: '아이폰', w: 390, h: 844, mobile: true }, { name: 
   const rb = await pg.innerText('#dbRunBox');
   ok(T + '삭제 완료 결과·용량 감소 안내', calls.filter((c) => c[0] === 'purge' && !JSON.parse(c[1]).preview).length === 3 && /4,500|완료/.test(rb), rb.replace(/\n/g, ' ').slice(0, 120));
   ok(T + '삭제 후 배너 사라짐(70%)', !(await pg.isVisible('#dbBanner')));
-  await pg.screenshot({ path: path.join(SHOT, 'db_' + dev.w + '_purge.png'), fullPage: true });
+  await pg.screenshot({ path: path.join(SHOT, 'db_' + dev.w + '_purge.png') });
   const m = await pg.evaluate(() => {
     const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; }, root = document.getElementById('tabDb'), small = [], btn = [];
     root.querySelectorAll('input:not([type=checkbox]), select').forEach((e) => { if (vis(e) && parseFloat(getComputedStyle(e).fontSize) < 16) small.push(e.id); });
@@ -87,7 +88,7 @@ for (const dev of [{ name: '아이폰', w: 390, h: 844, mobile: true }, { name: 
   const paint = () => pg.evaluate(() => { const c = document.getElementById('priceCanvas'); const x = c.getContext('2d').getImageData(0, Math.round(c.height * 0.62), c.width, Math.round(c.height * 0.15)).data; let n = 0; for (let i = 3; i < x.length; i += 4) if (x[i] > 0) n++; return n; });
   ok(T + '주가 차트 아래 거래대금 막대가 그려짐(기본 거래대금)', await pg.evaluate(() => PRICE.vm) !== 'off' && (await paint()) > 500);
   ok(T + '거래대금/거래량/끄기 버튼 높이 ≥ 40px', await pg.$$eval('#volBtn_tv, #volBtn_vol, #volBtn_off', (bs) => bs.length === 3 && bs.every((x) => x.getBoundingClientRect().height >= 39.5)));
-  await pg.screenshot({ path: path.join(SHOT, 'px_' + dev.w + '_tv.png'), fullPage: true });
+  await pg.screenshot({ path: path.join(SHOT, 'px_' + dev.w + '_tv.png') });
   await pg.click('#volBtn_vol'); await pg.waitForTimeout(150);
   ok(T + '거래량으로 전환', await pg.evaluate(() => PRICE.vm) === 'vol' && (await paint()) > 500);
   const shot = () => pg.evaluate(() => document.getElementById('priceCanvas').toDataURL().length + ':' + document.getElementById('priceCanvas').toDataURL().slice(-200));
