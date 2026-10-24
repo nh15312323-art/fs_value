@@ -2707,7 +2707,7 @@ const anX = (v, d) => anFin(v) ? v.toFixed(d == null ? 2 : d) + '배' : 'N/A';
 const anEok = (v) => anFin(v) ? Math.round(v / 1e8).toLocaleString() + '억' : 'N/A';
 const anWon = (v) => anFin(v) ? Math.round(v).toLocaleString() + '원' : 'N/A';
 const anNum = (v, d) => anFin(v) ? v.toFixed(d == null ? 2 : d) : 'N/A';
-const anFmt = (kind, v) => kind === 'eok' ? anEok(v) : kind === 'pct' ? anPct(v) : kind === 'x' ? anX(v) : kind === 'won' ? anWon(v) : anNum(v);
+const anFmt = (kind, v) => kind === 'days' ? (anFin(v) ? Math.round(v) + '일' : 'N/A') : kind === 'eok' ? anEok(v) : kind === 'pct' ? anPct(v) : kind === 'x' ? anX(v) : kind === 'won' ? anWon(v) : anNum(v);
 const anMean = (a) => { const x = a.filter(anFin); return x.length ? x.reduce((s, v) => s + v, 0) / x.length : null; };
 const anStd = (a) => { const x = a.filter(anFin); if (x.length < 2) return null; const m = anMean(x); return Math.sqrt(x.reduce((s, v) => s + (v - m) * (v - m), 0) / (x.length - 1)); };
 const anMedian = (a) => { const x = a.filter(anFin).sort((p, q) => p - q); if (!x.length) return null; const h = x.length >> 1; return x.length % 2 ? x[h] : (x[h - 1] + x[h]) / 2; };
@@ -2751,6 +2751,16 @@ function anMakePoint(r, pv) {
     const wcA = (r.receivables != null || r.inventory != null) ? (r.receivables || 0) + (r.other_receivables || 0) + (r.inventory || 0) : null;
     const wcL = r.payables != null ? (r.payables || 0) + (r.other_payables || 0) : null;
     d.wc = (wcA != null && wcL != null) ? wcA - wcL : null; d.wcRev = anDiv(d.wc, d.revenue);
+    // 현금전환주기(CCC) = 매출채권회전일(DSO) + 재고회전일(DIO) − 매입채무지급일(DPO). 연말 잔액 ÷ 연간 흐름 × 365.
+    // 매출원가가 신뢰할 수 없는 회사(grossProfitOf가 null)는 DIO·DPO·CCC를 만들지 않는다. 기타채권·기타채무는 제외(영업 외 항목이 섞이지 않게).
+    {
+      const cg = (anFin(d.gp) && anFin(d.revenue)) ? d.revenue - d.gp : null;
+      d.dso = (anRefetched(r) && anFin(r.receivables) && d.revenue > 0) ? r.receivables / d.revenue * 365 : null;
+      const inv = anFlow0(r, 'inventory');
+      d.dio = (anFin(inv) && anFin(cg) && cg > 0) ? inv / cg * 365 : null;
+      d.dpo = (anRefetched(r) && anFin(r.payables) && anFin(cg) && cg > 0) ? r.payables / cg * 365 : null;
+      d.ccc = (anFin(d.dso) && anFin(d.dio) && anFin(d.dpo)) ? d.dso + d.dio - d.dpo : null;
+    }
     d.borrow = anBorrow(r); d.liquid = anLiquid(r);
     d.netDebt = anFin(d.borrow) && anFin(d.liquid) ? d.borrow - d.liquid : null;
     d.de = anDiv(r.total_liabilities, r.total_equity); d.ibde = anDiv(d.borrow, r.total_equity);
@@ -3330,6 +3340,13 @@ function anRenderExplain(c) {
     rule: '판정 기준 없음. 과거 FCF 성장률·지속가능성장률과 나란히 보여주기만 합니다. F₀≤0, r≤gT, 해가 −50%~100% 밖이면 N/A.',
     evidence: 'Rappaport·Mauboussin의 기대투자(Expectations Investing, 2001)와 Damodaran의 역DCF 설명이 출처입니다. 방법의 수학은 표준이지만, 이를 이용한 매매가 초과수익을 낸다는 검증은 이 앱에서 하지 않았습니다.',
     limit: 'F₀ 선택(3년 평균)에 민감하고, 영구성장 구간 비중이 커서 r·gT 가정에 크게 흔들립니다(표로 확인). 주식수·부채는 단순화했고, 금융업·적자 성장기업에는 부적합합니다.' });
+  items.push({ name: '현금전환주기 CCC (DSO·DIO·DPO)', badge: 'practice', bl: '정의는 표준·해석은 참고', now: anFin(c.last.ccc) ? Math.round(c.last.ccc) + '일' : 'N/A',
+    concept: '물건을 만들거나 사 와서 현금으로 돌려받기까지 자금이 묶이는 평균 일수. 짧아지면 같은 매출에 필요한 운전자본이 줄고, 길어지면 이익이 나도 현금이 덜 남을 수 있습니다.',
+    formula: 'DSO = 매출채권 ÷ 매출 × 365 · DIO = 재고자산 ÷ 매출원가 × 365 · DPO = 매입채무 ÷ 매출원가 × 365 · CCC = DSO + DIO − DPO (연말 잔액 기준)',
+    inputs: 'DSO ' + anNum(c.last.dso, 0) + '일 · DIO ' + anNum(c.last.dio, 0) + '일 · DPO ' + anNum(c.last.dpo, 0) + '일 → CCC ' + anNum(c.last.ccc, 0) + '일 (' + (c.last.year || 'N/A') + '년)',
+    rule: '판정 기준 없음(참고 지표). 같은 회사의 과거 추세와 같은 업종 회사끼리 비교할 때 의미가 있습니다.',
+    evidence: 'CCC 개념은 Richards & Laughlin(1980)이 유동성 분석에 소개했고, Deloof(2003, 벨기에 기업)는 CCC가 긴 기업일수록 수익성이 낮은 경향을 보고했습니다. 다만 상관관계이며 한국 시장·업종별 효과는 이 앱에서 검증하지 않았습니다. 「교섭력이 강하다」 같은 해석은 증거 없이 단정하지 않습니다.',
+    limit: '연말 잔액만 쓰므로 계절성·연말 일회성 거래에 민감합니다. 매출원가가 공시되지 않는 업종(서비스·금융 등)은 DIO·DPO·CCC가 N/A입니다. 별도 계정(기타채권·기타채무)은 제외했지만, 회사가 「매출채권 및 기타채권」처럼 묶어 공시하면 그 합계가 쓰여 실제보다 길게 나올 수 있습니다.' });
   items.push({ name: 'Momentum (모멘텀)', badge: 'proof', bl: '해외 검증·한국 약함', now: lv(G.mom),
     concept: '최근 주가가 오르는 추세인지 보는 지표. 오른 종목이 한동안 더 오르는 경향(관성)을 이용합니다.',
     formula: '6개월·12개월 수익률에서 최근 1개월을 뺀 값(6-1, 12-1)의 부호와 6개월 코스피 대비 초과 여부.',
@@ -3432,6 +3449,39 @@ function anRenderFcfType(c) {
     '<div style="font-size:16px; font-weight:800; color:' + col + '; margin:6px 0;">' + anEsc(f.head.text) + '</div>' + tiles + cards + counters, false);
 }
 
+// ===== 종목분석 ↔ 내 투자 가설 메모 =====
+// 가설·무효화 조건은 내 투자(pf)의 계획서에 이미 저장됩니다. 여기서는 읽어서 보여주고, 쓰러 가는 길만 만듭니다(새 테이블·서버 경로 없음).
+function anThesisName() { return (rawRows && rawRows[0] && rawRows[0].corp_name) || (document.getElementById('corpName') ? document.getElementById('corpName').value.trim() : ''); }
+function anThesisHtml() {
+  const nm = anThesisName(); if (!nm) return '';
+  const head = '<div style="font-weight:700; margin-bottom:4px;">📝 내 투자 가설 메모</div>';
+  const note = '<div style="font-size:11.5px; color:var(--text-muted); margin-top:6px; line-height:1.45;">매수 전에 "왜 사는지"와 "무엇이 틀리면 접는지"를 글로 남기는 <b>습관 도구</b>입니다. 편향을 막는다고 입증된 것은 아니며, 사전부검(Klein 2007)의 아이디어를 쓴 실무 관행입니다. 손절 기준이 아니라 <b>가설이 깨졌는지 판단하는 조건</b>입니다.</div>';
+  if (!PFU.st) {
+    return head + '<div style="font-size:12.5px;">내 투자 탭에서 잠금을 풀면 이 종목의 가설·무효화 조건이 여기에 표시됩니다.</div>' +
+      '<button onclick="anThesisGo(0)" style="margin-top:6px;">내 투자 열기</button>' + note;
+  }
+  const plans = (PFU.st.plans || []).filter(function (p) { return p.corp_name === nm; });
+  const p = plans.length ? plans[0] : null;
+  if (!p) {
+    return head + '<div style="font-size:12.5px;">이 종목에 대한 가설 메모가 아직 없습니다.</div>' +
+      '<button class="primary" onclick="anThesisGo(1)" style="margin-top:6px;">이 종목 투자 가설 쓰기</button>' + note;
+  }
+  const e = escHtml;
+  return head + '<div style="font-size:12.5px; line-height:1.55;">상태 <b>' + e(p.status || '') + '</b> · 버전 v' + e(String(p.version)) + (p.review_date ? ' · 재검토 ' + e(p.review_date) : '') +
+    '<div style="margin-top:4px;"><b>가설</b>: ' + (p.thesis ? e(p.thesis) : '<span style="color:var(--text-muted);">(비어 있음)</span>') + '</div>' +
+    '<div style="margin-top:4px;"><b>가설 무효화 조건</b>: ' + (p.disproof ? e(p.disproof) : '<span style="color:var(--text-muted);">(비어 있음)</span>') + '</div></div>' +
+    '<button onclick="anThesisGo(2)" style="margin-top:6px;">계획서 열어 수정</button>' + note;
+}
+function anThesisUpdate() { const el = document.getElementById('anThesisBox'); if (el) el.innerHTML = anThesisHtml(); }
+function anThesisGo(mode) {
+  const nm = anThesisName();
+  switchTab('pf');
+  if (mode === 0 || !PFU.st) return;
+  pfuPanel('plan');
+  const p = (PFU.st.plans || []).filter(function (x) { return x.corp_name === nm; })[0];
+  if (mode === 2 && p) pfuEditPlan(p.plan_key);
+  else { pfuClearPlan(); document.getElementById('pfpName').value = nm; window.scrollTo(0, 0); }
+}
 function anRenderJudge(c) {
   const L = c.list, last = c.last, vs = c.vs, r = c.r, scen = c.scen;
   const items = [];
@@ -4610,9 +4660,10 @@ function anRenderAreas(c) {
     anTable(L, [{ label: 'NOPAT', key: 'nopat', fmt: 'eok' }, { label: '투하자본(IC)', key: 'ic', fmt: 'eok' }, { label: 'ΔIC (전년 대비)', key: 'dIC', fmt: 'eok' }, { label: '재투자율 (ΔIC/NOPAT)', key: 'reinv', fmt: 'pct' },
       { label: '증분 ROIC (3Y)', key: 'incRoic', fmt: 'pct' }, { label: '증분 ROE (3Y, ΔNI/Δ자본)', key: 'incRoe', fmt: 'pct' }, { label: 'ROIC', key: 'roic', fmt: 'pct' }], 10), false));
   // Cash quality
-  out.cash = (anSection('💵 Cash Quality (현금흐름의 질)', '#0891b2', 'FCF = 영업CF − CAPEX(유형+무형 취득). 운전자본 = (매출채권+기타채권+재고) − (매입채무+기타채무).',
+  out.cash = (anSection('💵 Cash Quality (현금흐름의 질)', '#0891b2', 'FCF = 영업CF − CAPEX(유형+무형 취득). 운전자본 = (매출채권+기타채권+재고) − (매입채무+기타채무). 현금전환주기(CCC)는 외상 대금을 받고, 재고를 팔고, 매입 대금을 치르는 데 걸리는 일수의 합입니다(짧을수록 자금이 덜 묶임, 업종마다 크게 다름).',
     anTable(L, [{ label: 'CFO (영업CF)', key: 'ocf', fmt: 'eok' }, { label: 'FCF', key: 'fcf', fmt: 'eok' }, { label: 'FCF 마진', key: 'fcfm', fmt: 'pct' }, { label: 'FCF/순이익', key: 'fcfni', fmt: 'x' }, { label: 'CFO/순이익', key: 'cfoni', fmt: 'x' },
-      { label: '발생액(Accrual)', key: 'accrual', fmt: 'pct' }, { label: 'CAPEX', key: 'capex', fmt: 'eok' }, { label: 'CAPEX/매출', key: 'capexRev', fmt: 'pct' }, { label: '운전자본', key: 'wc', fmt: 'eok' }, { label: '운전자본/매출', key: 'wcRev', fmt: 'pct' }], 10), false));
+      { label: '발생액(Accrual)', key: 'accrual', fmt: 'pct' }, { label: 'CAPEX', key: 'capex', fmt: 'eok' }, { label: 'CAPEX/매출', key: 'capexRev', fmt: 'pct' }, { label: '운전자본', key: 'wc', fmt: 'eok' }, { label: '운전자본/매출', key: 'wcRev', fmt: 'pct' },
+      { label: '매출채권회전일 DSO', key: 'dso', fmt: 'days' }, { label: '재고회전일 DIO', key: 'dio', fmt: 'days' }, { label: '매입채무지급일 DPO', key: 'dpo', fmt: 'days' }, { label: '현금전환주기 CCC (DSO+DIO−DPO)', key: 'ccc', fmt: 'days' }], 10), false));
   // BS
   out.bs = (anSection('🛡 Balance Sheet (재무 안정성)', '#475569', '차입금 = 단기차입금 + 유동성장기부채 + 장기차입금 + 사채(리스부채 제외). 순차입금 = 차입금 − (현금 + 단기금융상품). 차입금·EBITDA 항목은 <b>재조회 후</b>에 채워집니다.',
     anTable(L, [{ label: '부채비율 (부채/자본)', key: 'de', fmt: 'pct' }, { label: '차입금/자본', key: 'ibde', fmt: 'pct' }, { label: '차입금', key: 'borrow', fmt: 'eok' }, { label: '순차입금', key: 'netDebt', fmt: 'eok' },
@@ -5348,6 +5399,7 @@ function renderAnalysis() {
     anChapter('⑥', '지금 가격은 합당한가?', '좋은 회사라도 비싸게 사면 나쁜 투자입니다. 배수 → 시장이 요구하는 성장 → 시나리오 순으로 확인', '그레이엄의 안전마진, 오너어닝스·잔여이익·PEG 등 여러 방법으로 가치의 범위를 보고, 한 숫자에 의존하지 않습니다.') + anRenderValuation(c) + anRenderMethods(c) + anRenderScenario(c) +
     anChapter('⑦', '시장은 지금 이 주식을 어떻게 보고 있는가?', '가격 추세와 상대강도가 펀더멘털 판단과 어긋나지 않는가', '가치투자자에게는 참고 신호이고, 미너비니·오닐에게는 핵심 조건. 모멘텀 효과는 제가디시·티트먼(1993) 등 학술 근거가 있습니다.') + anRenderMomentum() + anRenderTrend(c) +
     anChapter('⑧', '종합 결론', '위 질문들의 결과를 한곳에 모아 정리', '자동 생성 문장입니다. 점수가 아니라 숫자가 가리키는 방향의 요약입니다.') + anRenderJudge(c) +
+    '<div id="anThesisBox" class="card">' + anThesisHtml() + '</div>' +
     anChapter('⑨', '시그널과 판단 점검', '실적과 기대감을 나눠 보고, 변화(없다가 생김·있다가 사라짐)와 내 판단 과정을 점검', '주가수익률 분해는 항등식, 시그널은 연구별 근거 수준을 표시합니다. 결론을 대신 내리지 않고 판단 과정을 기록하게 돕습니다.') + sigRenderSections(c) +
     anChapter('참고', '설명서 · 용어 · 설정', '계산식·실제 입력값·근거와 판정 기준 변경', '숫자의 출처를 확인하거나 기준선을 바꾸고 싶을 때 펼쳐 보세요.') + anRenderExplain(c) + anRenderSettings();
   anFoldApply(el);
@@ -5622,7 +5674,7 @@ async function pfuLoad() {
   try {
     const r = await pfuApi('/api/pf/state');
     if (!r.ok) { pfuMsg(r.data.error || '불러오기 실패', true); return false; }
-    PFU.prev = PFU.st; PFU.st = r.data; pfuRender(); pfuPanel(PFU.panel); pfuMsg(''); return true;
+    PFU.prev = PFU.st; PFU.st = r.data; try { anThesisUpdate(); } catch (e) {} pfuRender(); pfuPanel(PFU.panel); pfuMsg(''); return true;
   } catch (e) { pfuMsg('오류: ' + e.message, true); return false; }
 }
 function pfuPlanOf(code) { return (PFU.st.plans || []).filter(function (p) { return p.stock_code === code; })[0] || null; }
