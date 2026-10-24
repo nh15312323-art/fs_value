@@ -533,6 +533,7 @@ const HTML_PAGE = `<!doctype html>
   </div>
   <div class="grpnav" id="grpNav" style="display:none;">
     <button id="tabBtnMomentum" data-grp="find" onclick="switchTab('momentum')">스크리닝</button>
+    <button id="tabBtnFscr" data-grp="find" onclick="switchTab('fscr')">재무 스크리닝</button>
     <button id="tabBtnMacro" data-grp="find" onclick="switchTab('macro')">거시·상관</button>
     <button id="tabBtnFinancial" data-grp="stock" class="toggle-active" onclick="switchTab('financial')">종목분석</button>
     <button id="tabBtnPf" data-grp="my" onclick="switchTab('pf')">내 계좌</button>
@@ -762,6 +763,24 @@ const HTML_PAGE = `<!doctype html>
   </div><!-- /tabMomentum -->
 
   <!-- ===================== 거시·상관 ===================== -->
+  <div id="tabFscr" style="display:none;">
+    <div class="card">
+      <div class="card-title">재무 스크리닝 — 재무가 저장된 종목 안에서 거르기</div>
+      <div style="font-size:12.5px; line-height:1.5;">ROIC·성장·FCF·가치 조건을 직접 켜서 거릅니다. 합산 점수는 만들지 않고, 조건마다 몇 종목이 남는지와 자료가 없어 빠진 수를 보여줍니다. 아래 기준값은 <b>참고용 출발값</b>이며 이 값으로 초과수익이 난다는 검증은 하지 않았습니다(백테스트 탭에서 방법별로 따로 확인).</div>
+      <div class="row" style="margin-top:8px;">
+        <button class="primary" onclick="fscLoad()">저장된 종목 불러오기·계산</button>
+        <select id="fscBasis" onchange="fscRun()"><option value="ttm">최신값: TTM 우선(분기 포함)</option><option value="annual">최신값: 사업보고서(연간)만</option></select>
+      </div>
+      <div id="fscMsg" class="meta-line"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">조건 <span id="fscPresets" style="font-weight:400; font-size:12px;"></span></div>
+      <div id="fscFilters"></div>
+      <div class="meta-line">값이 없는(N/A) 종목은 그 조건을 켜면 제외됩니다. ROIC 3Y평균·성장률·F-Score는 연간(사업보고서) 기준, 나머지는 위에서 고른 최신값 기준입니다.</div>
+    </div>
+    <div class="card" id="fscOut"><div class="meta-line">「저장된 종목 불러오기·계산」을 누르면 결과가 여기에 표시됩니다.</div></div>
+  </div><!-- /tabFscr -->
+
   <div id="tabMacro" style="display:none;">
     <div class="card">
       <div class="card-title">거시경제 변화와 실적·주가수익률의 상관관계</div>
@@ -1276,12 +1295,12 @@ const HTML_PAGE = `<!doctype html>
     window.addEventListener('pageshow', function () { const cv = document.getElementById('privCover'); if (cv) cv.style.display = 'none'; });
 
     // ===== 메뉴 이동: 하단 메뉴바 · 더보기 · 뒤로가기/링크(#탭) · 마지막 탭 기억 =====
-    const TAB_IDS = ['momentum', 'financial', 'macro', 'data', 'bt', 'pf', 'db'];
+    const TAB_IDS = ['momentum', 'fscr', 'financial', 'macro', 'data', 'bt', 'pf', 'db'];
     let curTab = 'financial';
     function toggleMore() { const e = document.getElementById('moreSheet'); e.style.display = e.style.display === 'block' ? 'none' : 'block'; }
     function closeMore() { const e = document.getElementById('moreSheet'); if (e) e.style.display = 'none'; }
     // 메뉴는 4개 묶음(발굴·종목·내 투자·검증/관리). 묶음 안의 화면은 위쪽 보조 메뉴(#grpNav)로 옮긴다. 화면(탭) 자체와 switchTab은 그대로다.
-    const TAB_GROUP = { momentum: 'find', macro: 'find', financial: 'stock', pf: 'my', bt: 'admin', data: 'admin', db: 'admin' };
+    const TAB_GROUP = { momentum: 'find', fscr: 'find', macro: 'find', financial: 'stock', pf: 'my', bt: 'admin', data: 'admin', db: 'admin' };
     const GROUP_FIRST = { find: 'momentum', stock: 'financial', my: 'pf', admin: 'bt' };
     const grpLast = {};
     function switchGroup(g) { switchTab(grpLast[g] || GROUP_FIRST[g]); }
@@ -4464,6 +4483,182 @@ function anChapter(no, title, ask, lens) {
     '<div style="font-size:12.5px; margin-top:2px;">' + ask + '</div>' +
     '<details style="margin-top:2px;"><summary style="cursor:pointer; font-size:11.5px; color:var(--text-muted);">이 질문의 근거</summary><div style="font-size:11.5px; color:var(--text-muted); margin-top:2px; line-height:1.5;">' + lens + '</div></details></div>';
 }
+    // ===== 재무 스크리닝 (재무가 저장된 종목 안에서 ROIC·성장·FCF·가치로 거르기) =====
+    // 자료: 저장된 재무(financial_raw) + 시장 DB의 최신 종가. 점수를 합산하지 않고 조건별 통과 수와 지표를 그대로 보여준다.
+    // 시세가 없는 종목은 PER·PBR·FCF수익률이 N/A이며, 그 조건을 켜면 제외된다(대체값을 만들지 않는다).
+    const FSC = { stocks: null, rows: null, priceDate: null, nPrice: 0, sortKey: 'roic3', sortDir: -1, shown: 100, open: null, loading: false };
+    const FSC_FILTERS = [
+      { k: 'roic3', g: '품질', label: 'ROIC(최근 3년 평균) ≥', unit: '%', def: 10, fmt: 'pct', op: '>=', tip: '투하자본 대비 세후영업이익. 업종·회계기준에 따라 수준이 크게 다름' },
+      { k: 'opm', g: '품질', label: '영업이익률 ≥', unit: '%', def: 8, fmt: 'pct', op: '>=' },
+      { k: 'fscore', g: '품질', label: 'F-Score(9점) ≥', unit: '점', def: 7, fmt: 'num0', op: '>=', tip: 'Piotroski(2000). 판정 가능한 신호가 8개 미만이면 N/A' },
+      { k: 'revG3', g: '성장', label: '매출 3년 CAGR ≥', unit: '%', def: 10, fmt: 'pct', op: '>=' },
+      { k: 'ebitG3', g: '성장', label: '영업이익 3년 CAGR ≥', unit: '%', def: 10, fmt: 'pct', op: '>=', tip: '시작·끝 값이 모두 양수일 때만 계산' },
+      { k: 'fcfm', g: 'FCF', label: 'FCF 마진 ≥', unit: '%', def: 0, fmt: 'pct', op: '>=', tip: '0%면 FCF가 흑자인 종목' },
+      { k: 'fcfni', g: 'FCF', label: 'FCF/순이익 ≥', unit: '배', def: 0.7, fmt: 'x2', op: '>=', tip: '순이익이 양수일 때만 계산' },
+      { k: 'fcfPos', g: 'FCF', label: '최근 5년 중 FCF 흑자 연수 ≥', unit: '년', def: 4, fmt: 'num0', op: '>=' },
+      { k: 'fcfy', g: '가치', label: 'FCF 수익률 ≥', unit: '%', def: 5, fmt: 'pct', op: '>=', tip: 'FCF ÷ (최신 종가 × 주식수). 시세가 있는 종목만' },
+      { k: 'per', g: '가치', label: 'PER ≤', unit: '배', def: 15, fmt: 'x1', op: '<=', tip: '순이익이 양수일 때만 계산' },
+      { k: 'pbr', g: '가치', label: 'PBR ≤', unit: '배', def: 1.5, fmt: 'x2', op: '<=' },
+    ];
+    const FSC_PRESETS = {
+      none: { label: '전부 해제', on: {} },
+      quality: { label: '품질+현금', on: { roic3: AN_TH.roicGood * 100, fcfm: 0, fcfni: AN_TH.fcfNiGood } },
+      growth: { label: '성장+재투자', on: { revG3: AN_TH.growthHigh * 100, roic3: AN_TH.roicLow * 100 } },
+      value: { label: '가치', on: { fcfy: 5, per: AN_TH.perGraham, roic3: AN_TH.roicLow * 100 } },
+    };
+    function fscFmt(kind, v) {
+      if (!anFin(v)) return 'N/A';
+      return kind === 'pct' ? (v * 100).toFixed(1) + '%' : kind === 'x1' ? v.toFixed(1) + '배' : kind === 'x2' ? v.toFixed(2) + '배' : kind === 'num0' ? String(Math.round(v)) : String(v);
+    }
+    function fscMsg(t) { const e = document.getElementById('fscMsg'); if (e) e.textContent = t || ''; }
+    function fscInit() {
+      const el = document.getElementById('fscFilters'); if (!el || el.getAttribute('data-ready')) return;
+      el.setAttribute('data-ready', '1');
+      let h = '', g = '';
+      FSC_FILTERS.forEach(function (f) {
+        if (f.g !== g) { g = f.g; h += '<div style="font-weight:700; font-size:12.5px; margin:10px 0 2px;">' + g + '</div>'; }
+        h += '<label style="display:flex; align-items:center; gap:6px; font-size:13px; margin:3px 0;"' + (f.tip ? ' title="' + f.tip + '"' : '') + '><input type="checkbox" id="fscOn_' + f.k + '" onchange="fscRun()"> <span style="flex:1;">' + f.label + '</span>' +
+          '<input type="number" id="fscV_' + f.k + '" value="' + f.def + '" step="any" style="width:76px;" onchange="fscRun()"> <span style="width:22px; color:var(--text-muted);">' + f.unit + '</span></label>';
+      });
+      el.innerHTML = h;
+      document.getElementById('fscPresets').innerHTML = Object.keys(FSC_PRESETS).map(function (k) { return '<button onclick="fscPreset(\\'' + k + '\\')">' + FSC_PRESETS[k].label + '</button>'; }).join(' ');
+    }
+    function fscPreset(k) {
+      const p = FSC_PRESETS[k]; if (!p) return;
+      FSC_FILTERS.forEach(function (f) {
+        const on = Object.prototype.hasOwnProperty.call(p.on, f.k);
+        document.getElementById('fscOn_' + f.k).checked = on;
+        document.getElementById('fscV_' + f.k).value = on ? p.on[f.k] : f.def;
+      });
+      fscRun();
+    }
+    // 한 종목의 지표를 계산한다. basis: 'ttm'이면 사업보고서보다 새로운 분기가 있을 때 최근 4분기 합산(TTM)을 최신 값으로 쓴다.
+    function fscCompute(s, price, basis) {
+      const list = anBuildSeries(s.rows);
+      if (!list.length) return null;
+      let ttm = null; try { ttm = anBuildTtmPoint(s.rows); } catch (e) { ttm = null; }
+      const P = (basis === 'ttm' && ttm) ? ttm : list[list.length - 1];
+      const out = { code: s.code, name: s.name, stock: s.stock || '', accMt: s.accMt, list: list, ttm: ttm, P: P, basisTxt: (P.isTTM ? 'TTM ' + P.year + '년 ' + P.q + 'Q' : P.year + '년 연간') };
+      out.roic3 = anMean(anWin(list, 'roic', 3)); out.roicL = P.roic;
+      out.opm = P.opm; out.fcfm = P.fcfm; out.fcfni = P.fcfni;
+      out.revG3 = anCagr(list, 'revenue', 3); out.ebitG3 = anCagr(list, 'ebit', 3);
+      const w5 = list.filter(function (d) { return d.year > list[list.length - 1].year - 5 && anFin(d.fcf); });
+      out.fcfPos = w5.length >= 3 ? w5.filter(function (d) { return d.fcf > 0; }).length : null; out.fcfN = w5.length;
+      const pio = anPiotroski(list); out.fscore = (pio && pio.known >= 8) ? pio.score : null;
+      out.price = price; out.mcap = (price > 0 && anFin(P.shares) && P.shares > 0) ? price * P.shares : null;
+      out.per = (out.mcap && P.ni > 0) ? out.mcap / P.ni : null;
+      out.pbr = (out.mcap && P.equity > 0) ? out.mcap / P.equity : null;
+      out.fcfy = (out.mcap && anFin(P.fcf)) ? P.fcf / out.mcap : null;
+      return out;
+    }
+    async function fscLoad() {
+      if (FSC.loading) return;
+      FSC.loading = true;
+      try {
+        fscMsg('저장된 종목 목록을 확인하는 중...');
+        const d0 = await (await fetch('/api/db/companies')).json();
+        const comps = (d0.companies || []).filter(function (c) { return c.corp_code; });
+        if (!comps.length) { fscMsg('저장된 재무 데이터가 없습니다.'); return; }
+        const by = {};
+        for (let i = 0; i < comps.length; i += 8) {
+          fscMsg('재무 데이터 불러오는 중... ' + Math.min(i + 8, comps.length) + ' / ' + comps.length + '개 종목');
+          const res = await fetch('/api/backtest/fin-batch?codes=' + encodeURIComponent(comps.slice(i, i + 8).map(function (c) { return c.corp_code; }).join(',')));
+          const d = await res.json(); if (!res.ok) throw new Error(d.error || '불러오기 실패');
+          (d.rows || []).forEach(function (r) { (by[r.corp_code] = by[r.corp_code] || []).push(r); });
+        }
+        FSC.stocks = comps.map(function (c) { return { code: c.corp_code, name: c.corp_name, stock: c.stock_code || '', accMt: c.acc_mt, rows: by[c.corp_code] || [] }; }).filter(function (s) { return s.rows.length; });
+        fscMsg('최신 시세를 확인하는 중...');
+        const px = {}; FSC.priceDate = null;
+        const codes = FSC.stocks.map(function (s) { return s.stock; }).filter(Boolean);
+        for (let i = 0; i < codes.length; i += 100) {
+          const res = await fetch('/api/fin/last-price?codes=' + encodeURIComponent(codes.slice(i, i + 100).join(',')));
+          const d = await res.json(); if (!res.ok) throw new Error(d.error || '시세 조회 실패');
+          if (d.date) FSC.priceDate = d.date; Object.keys(d.prices || {}).forEach(function (k) { px[k] = d.prices[k]; });
+        }
+        FSC.px = px; fscRun(true);
+      } catch (e) { fscMsg('오류: ' + (e.message || e)); } finally { FSC.loading = false; }
+    }
+    function fscRun(recompute) {
+      if (!FSC.stocks) return;
+      const basis = document.getElementById('fscBasis').value;
+      if (recompute || FSC.basisUsed !== basis) {
+        FSC.rows = FSC.stocks.map(function (s) { try { return fscCompute(s, FSC.px[s.stock] || null, basis); } catch (e) { return null; } }).filter(Boolean);
+        FSC.basisUsed = basis; FSC.nPrice = FSC.rows.filter(function (r) { return r.price > 0; }).length;
+      }
+      FSC.shown = 100; FSC.open = null; fscRender();
+    }
+    function fscActive() {
+      return FSC_FILTERS.filter(function (f) { return document.getElementById('fscOn_' + f.k).checked; }).map(function (f) {
+        const raw = Number(document.getElementById('fscV_' + f.k).value); const th = f.unit === '%' ? raw / 100 : raw;
+        return { f: f, th: th, raw: raw };
+      });
+    }
+    function fscPass(r, a) { const v = r[a.f.k]; if (!anFin(v)) return null; return a.f.op === '>=' ? v >= a.th : v <= a.th; }
+    function fscRender() {
+      const out = document.getElementById('fscOut'); if (!FSC.rows) return;
+      const act = fscActive();
+      // 필터를 하나씩 순서대로 적용하며 남는 종목 수와 자료 없음으로 빠진 수를 센다.
+      let cur = FSC.rows.slice(); const funnel = [{ t: '재무가 저장된 종목', n: cur.length, miss: 0 }];
+      act.forEach(function (a) {
+        let miss = 0; const next = [];
+        cur.forEach(function (r) { const p = fscPass(r, a); if (p === null) miss++; else if (p) next.push(r); });
+        funnel.push({ t: a.f.label + ' ' + a.raw + a.f.unit, n: next.length, miss: miss }); cur = next;
+      });
+      const key = FSC.sortKey, dir = FSC.sortDir;
+      cur.sort(function (x, y) { const a = x[key], b = y[key]; const fa = anFin(a), fb = anFin(b); if (!fa && !fb) return 0; if (!fa) return 1; if (!fb) return -1; return dir * (a - b) || (x.name < y.name ? -1 : 1); });
+      FSC.result = cur;
+      let h = '<div class="meta-line">시세 기준일 ' + (FSC.priceDate ? fmtYmd(FSC.priceDate) : '없음') + ' · 시세가 있는 종목 ' + FSC.nPrice + ' / ' + FSC.rows.length + '개 (없는 종목은 PER·PBR·FCF수익률이 N/A)</div>';
+      h += '<div class="tscroll"><table class="an-tbl"><thead><tr><th class="an-first">단계</th><th>남은 종목</th><th>자료 없어 제외</th></tr></thead><tbody>' +
+        funnel.map(function (s) { return '<tr><td class="an-first">' + s.t + '</td><td>' + s.n + '</td><td>' + (s.miss || '') + '</td></tr>'; }).join('') + '</tbody></table></div>';
+      if (!act.length) h += '<div class="meta-line">조건을 하나도 켜지 않아 저장된 종목 전체를 보여줍니다.</div>';
+      const cols = [['name', '종목', null], ['basisTxt', '최신 기준', null], ['roic3', 'ROIC 3Y평균', 'pct'], ['roicL', 'ROIC 최신', 'pct'], ['opm', '영업이익률', 'pct'], ['revG3', '매출 3Y CAGR', 'pct'], ['ebitG3', '영업이익 3Y CAGR', 'pct'],
+        ['fcfm', 'FCF 마진', 'pct'], ['fcfni', 'FCF/순이익', 'x2'], ['fcfPos', 'FCF 흑자(5년)', 'num0'], ['fscore', 'F-Score', 'num0'], ['fcfy', 'FCF 수익률', 'pct'], ['per', 'PER', 'x1'], ['pbr', 'PBR', 'x2']];
+      h += '<div class="row" style="margin:8px 0;"><span class="meta-line">조건을 통과한 종목 <b>' + cur.length + '</b>개 · 열 제목을 누르면 정렬 · 종목을 누르면 아래에 모든 항목(연도별+TTM)</span> <button onclick="fscCsv()">CSV 저장</button></div>';
+      h += '<div class="tscroll" style="max-height:70vh;"><table class="an-tbl" id="fscTbl"><thead><tr>' + cols.map(function (c) {
+        return '<th' + (c[2] === null && c[0] === 'name' ? ' class="an-first"' : '') + ' style="cursor:pointer;" onclick="fscSort(\\'' + c[0] + '\\')">' + c[1] + (FSC.sortKey === c[0] ? (FSC.sortDir < 0 ? ' ▼' : ' ▲') : '') + '</th>'; }).join('') + '</tr></thead><tbody>';
+      cur.slice(0, FSC.shown).forEach(function (r) {
+        h += '<tr data-code="' + r.code + '" style="cursor:pointer;" onclick="fscToggle(\\'' + r.code + '\\')">' + cols.map(function (c, i) {
+          if (i === 0) return '<td class="an-first">' + escHtml(r.name) + (r.accMt && r.accMt !== 12 ? ' <span title="12월 결산이 아님">⚠</span>' : '') + '</td>';
+          if (c[0] === 'basisTxt') return '<td>' + r.basisTxt + '</td>';
+          return '<td>' + fscFmt(c[2], r[c[0]]) + '</td>'; }).join('') + '</tr>';
+        if (FSC.open === r.code) h += '<tr><td colspan="' + cols.length + '" style="background:var(--card-bg, #fff); padding:8px 4px;">' + fscDetailHtml(r) + '</td></tr>';
+      });
+      h += '</tbody></table></div>';
+      if (cur.length > FSC.shown) h += '<button onclick="FSC.shown += 100; fscRender();" style="margin-top:6px;">더 보기 (' + (cur.length - FSC.shown) + '개 남음)</button>';
+      out.innerHTML = h;
+      fscMsg('');
+    }
+    function fscSort(k) { if (FSC.sortKey === k) FSC.sortDir = -FSC.sortDir; else { FSC.sortKey = k; FSC.sortDir = (k === 'per' || k === 'pbr' || k === 'name') ? 1 : -1; } fscRender(); }
+    function fscToggle(code) { FSC.open = FSC.open === code ? null : code; fscRender(); }
+    const FSC_DETAIL = [
+      ['revenue', '매출액', 'eok'], ['ebit', '영업이익', 'eok'], ['ni', '순이익', 'eok'], ['opm', '영업이익률', 'pct'], ['gm', '매출총이익률', 'pct'],
+      ['ocf', '영업현금흐름(CFO)', 'eok'], ['capex', 'CAPEX', 'eok'], ['fcf', 'FCF', 'eok'], ['fcfm', 'FCF 마진', 'pct'], ['fcfni', 'FCF/순이익', 'x'],
+      ['roic', 'ROIC', 'pct'], ['roe', 'ROE', 'pct'], ['revenueYoy', '매출 증가율', 'pct'], ['ebitYoy', '영업이익 증가율', 'pct'], ['fcfYoy', 'FCF 증가율', 'pct'],
+      ['de', '부채비율', 'x'], ['nde', '순차입금/EBITDA', 'x'], ['ccc', '현금전환주기(일)', 'days'],
+    ];
+    function fscDetailHtml(r) {
+      const cols = r.list.slice(-8).concat(r.ttm ? [r.ttm] : []);
+      const th = function (d) { return d.isTTM ? '<th style="background:#b45309;" title="최근 4개 분기 합산(손익·현금흐름), 재무상태표는 해당 분기말">' + d.label + '</th>' : '<th>' + d.year + '</th>'; };
+      const body = FSC_DETAIL.map(function (df) { return '<tr><td class="an-first">' + df[1] + '</td>' + cols.map(function (d) { return '<td' + (d.isTTM ? ' style="background:#fffbeb;"' : '') + '>' + anFmt(df[2], d[df[0]]) + '</td>'; }).join('') + '</tr>'; }).join('');
+      return '<div class="row" style="margin-bottom:6px;"><b>' + escHtml(r.name) + '</b> <span class="meta-line">' + r.stock + ' · 최신 기준 ' + r.basisTxt + (r.price ? ' · 종가 ' + anWon(r.price) : ' · 시세 없음') + '</span> ' +
+        '<button class="primary" onclick="fscGoAnalyze(\\'' + r.code + '\\')">종목분석 ›</button></div>' +
+        '<div class="tscroll" style="max-height:55vh;"><table class="an-tbl"><thead><tr><th class="an-first">항목 (금액 단위 억원)</th>' + cols.map(th).join('') + '</tr></thead><tbody>' + body + '</tbody></table></div>' +
+        '<div class="meta-line">연결/별도 기준은 저장된 값 그대로입니다. TTM 열은 사업보고서보다 새로운 분기가 저장돼 있고 4개 분기가 모두 있을 때만 나옵니다.</div>';
+    }
+    function fscGoAnalyze(code) {
+      const s = (FSC.stocks || []).filter(function (x) { return x.code === code; })[0]; if (!s) return;
+      document.getElementById('corpName').value = s.name; try { updateWatchButtonState(); } catch (e) {}
+      switchTab('financial'); analyzeStock();
+    }
+    function fscCsv() {
+      if (!FSC.result) return;
+      const cols = ['name', 'stock', 'basisTxt', 'roic3', 'roicL', 'opm', 'revG3', 'ebitG3', 'fcfm', 'fcfni', 'fcfPos', 'fscore', 'fcfy', 'per', 'pbr'];
+      const lines = [cols.join(',')];
+      FSC.result.forEach(function (r) { lines.push(cols.map(function (k) { const v = r[k]; return '"' + (anFin(v) ? String(Math.round(v * 10000) / 10000) : v == null ? '' : String(v).split('"').join('""')) + '"'; }).join(',')); });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\\n')], { type: 'text/csv;charset=utf-8' })); a.download = 'fin_screening.csv'; a.click();
+    }
+    // ===== /재무 스크리닝 =====
+
 // ===== 종목분석 접기·펼치기 =====
 // 장(章) 머리글을 누르면 그 장에 속한 항목(details)을 모두 펼치거나 접는다. 처음에는 요약·분류·투자 판단 요약만 펼치고 나머지는 접어,
 // 첫 화면이 길지 않게 한다. 사용자가 연 항목은 같은 종목을 다시 그릴 때(가격 입력 등) 그대로 유지한다.
@@ -5963,8 +6158,8 @@ async function pfuExport() {
     function switchTab(tab, navMode) {
       const prevTab = curTab; curTab = tab; try { tblFullClose(); } catch (e) {}
       navRecord(tab, navMode || (tab === prevTab ? 'replace' : 'push')); updateBnav(tab); closeMore();
-      const tabs = { financial: 'tabFinancial', momentum: 'tabMomentum', macro: 'tabMacro', data: 'tabData', bt: 'tabBt', pf: 'tabPf', db: 'tabDb' };
-      const btns = { financial: 'tabBtnFinancial', momentum: 'tabBtnMomentum', macro: 'tabBtnMacro', data: 'tabBtnData', bt: 'tabBtnBt', pf: 'tabBtnPf', db: 'tabBtnDb' };
+      const tabs = { financial: 'tabFinancial', momentum: 'tabMomentum', fscr: 'tabFscr', macro: 'tabMacro', data: 'tabData', bt: 'tabBt', pf: 'tabPf', db: 'tabDb' };
+      const btns = { financial: 'tabBtnFinancial', momentum: 'tabBtnMomentum', fscr: 'tabBtnFscr', macro: 'tabBtnMacro', data: 'tabBtnData', bt: 'tabBtnBt', pf: 'tabBtnPf', db: 'tabBtnDb' };
       Object.keys(tabs).forEach(function (k) {
         document.getElementById(tabs[k]).style.display = k === tab ? '' : 'none';
         document.getElementById(btns[k]).className = k === tab ? 'toggle-active' : '';
@@ -5972,6 +6167,7 @@ async function pfuExport() {
       if (tab === 'momentum' && !screenAutoLoaded) { screenAutoLoaded = true; loadScreen('top', true); }
       if (tab === 'data') { loadDataSummary(); checkMarketStatus(); loadMarketCfg(); rangeStatusShow(); }
       if (tab === 'bt') { btInitUi(); }
+      if (tab === 'fscr') { fscInit(); }
       if (tab === 'db') { dbLoad(false); }
       if (tab === 'pf') { pfuInit(); }
       if (tab === 'macro' && macroCorrDirty && rawRows.length) computeMacroCorrelation();
@@ -9736,6 +9932,19 @@ async function handleRequest(request, env) {
 
     // 데이터 관리 화면의 현황판: 가벼운 집계만(각 쿼리는 PK 인덱스로 처리되는 작은 표).
     // 화면 맨 위 "데이터 기준일" 줄용 아주 가벼운 조회: 기본키 앞 열의 MAX 두 개만 읽는다(행 몇 건).
+    // 재무 스크리닝용: 종목코드 목록의 최신 종가. 시장 DB(market_raw_daily)의 가장 최근 날짜 한 줄씩만 읽는다(기본키 조회라 가볍다).
+    if (pathname === "/api/fin/last-price") {
+      const codes = (searchParams.get("codes") || "").split(",").map((x) => x.trim()).filter((x) => /^[0-9A-Za-z]{6}$/.test(x)).slice(0, 100);
+      if (!codes.length) return Response.json({ date: null, prices: {} });
+      const dRow = await env.DB.prepare("SELECT MAX(market_date) AS d FROM market_raw_daily").first();
+      const date = dRow ? dRow.d : null;
+      const prices = {};
+      if (date) {
+        const { results } = await env.DB.prepare("SELECT stock_code, close_price FROM market_raw_daily WHERE market_date = ? AND stock_code IN (" + codes.map(() => "?").join(",") + ")").bind(date, ...codes).all();
+        results.forEach((r) => { if (r.close_price > 0) prices[r.stock_code] = r.close_price; });
+      }
+      return new Response(JSON.stringify({ date, prices }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "private, max-age=60" } });
+    }
     if (pathname === "/api/data/fresh") {
       await ensureScreenTables(env.DB);
       const one = async (sql) => { try { return await env.DB.prepare(sql).first(); } catch (e) { return null; } };
