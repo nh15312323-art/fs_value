@@ -2707,7 +2707,7 @@ const anX = (v, d) => anFin(v) ? v.toFixed(d == null ? 2 : d) + '배' : 'N/A';
 const anEok = (v) => anFin(v) ? Math.round(v / 1e8).toLocaleString() + '억' : 'N/A';
 const anWon = (v) => anFin(v) ? Math.round(v).toLocaleString() + '원' : 'N/A';
 const anNum = (v, d) => anFin(v) ? v.toFixed(d == null ? 2 : d) : 'N/A';
-const anFmt = (kind, v) => kind === 'eok' ? anEok(v) : kind === 'pct' ? anPct(v) : kind === 'x' ? anX(v) : kind === 'won' ? anWon(v) : anNum(v);
+const anFmt = (kind, v) => kind === 'days' ? (anFin(v) ? Math.round(v) + '일' : 'N/A') : kind === 'eok' ? anEok(v) : kind === 'pct' ? anPct(v) : kind === 'x' ? anX(v) : kind === 'won' ? anWon(v) : anNum(v);
 const anMean = (a) => { const x = a.filter(anFin); return x.length ? x.reduce((s, v) => s + v, 0) / x.length : null; };
 const anStd = (a) => { const x = a.filter(anFin); if (x.length < 2) return null; const m = anMean(x); return Math.sqrt(x.reduce((s, v) => s + (v - m) * (v - m), 0) / (x.length - 1)); };
 const anMedian = (a) => { const x = a.filter(anFin).sort((p, q) => p - q); if (!x.length) return null; const h = x.length >> 1; return x.length % 2 ? x[h] : (x[h - 1] + x[h]) / 2; };
@@ -2751,6 +2751,16 @@ function anMakePoint(r, pv) {
     const wcA = (r.receivables != null || r.inventory != null) ? (r.receivables || 0) + (r.other_receivables || 0) + (r.inventory || 0) : null;
     const wcL = r.payables != null ? (r.payables || 0) + (r.other_payables || 0) : null;
     d.wc = (wcA != null && wcL != null) ? wcA - wcL : null; d.wcRev = anDiv(d.wc, d.revenue);
+    // 현금전환주기(CCC) = 매출채권회전일(DSO) + 재고회전일(DIO) − 매입채무지급일(DPO). 연말 잔액 ÷ 연간 흐름 × 365.
+    // 매출원가가 신뢰할 수 없는 회사(grossProfitOf가 null)는 DIO·DPO·CCC를 만들지 않는다. 기타채권·기타채무는 제외(영업 외 항목이 섞이지 않게).
+    {
+      const cg = (anFin(d.gp) && anFin(d.revenue)) ? d.revenue - d.gp : null;
+      d.dso = (anRefetched(r) && anFin(r.receivables) && d.revenue > 0) ? r.receivables / d.revenue * 365 : null;
+      const inv = anFlow0(r, 'inventory');
+      d.dio = (anFin(inv) && anFin(cg) && cg > 0) ? inv / cg * 365 : null;
+      d.dpo = (anRefetched(r) && anFin(r.payables) && anFin(cg) && cg > 0) ? r.payables / cg * 365 : null;
+      d.ccc = (anFin(d.dso) && anFin(d.dio) && anFin(d.dpo)) ? d.dso + d.dio - d.dpo : null;
+    }
     d.borrow = anBorrow(r); d.liquid = anLiquid(r);
     d.netDebt = anFin(d.borrow) && anFin(d.liquid) ? d.borrow - d.liquid : null;
     d.de = anDiv(r.total_liabilities, r.total_equity); d.ibde = anDiv(d.borrow, r.total_equity);
@@ -3297,6 +3307,13 @@ function anRenderExplain(c) {
     rule: '위 평균값으로 5단계. 신호가 2개 미만이면 N/A.',
     evidence: 'Graham 기준(방어적 투자자: PER 15 이하, PBR 1.5 이하, PER×PBR 22.5 이하 — Graham 1949/1973)은 오랜 실무 고전입니다. RIM은 Ohlson(1995)·Edwards-Bell(1961)의 회계 기반 가치평가 이론입니다. 하지만 4개 신호를 같은 비중으로 평균하고 25/75% 분위·±2%p를 쓰는 것은 임의 선택입니다.',
     limit: '과거 분위는 자기 역사에 비교한 값이라 구조적으로 달라진 회사엔 부적절합니다. r(자본비용)과 시나리오 ROE가 가정이라 결과가 크게 달라집니다.' });
+  items.push({ name: '현금전환주기 CCC (DSO·DIO·DPO)', badge: 'practice', bl: '정의는 표준·해석은 참고', now: anFin(c.last.ccc) ? Math.round(c.last.ccc) + '일' : 'N/A',
+    concept: '물건을 만들거나 사 와서 현금으로 돌려받기까지 자금이 묶이는 평균 일수. 짧아지면 같은 매출에 필요한 운전자본이 줄고, 길어지면 이익이 나도 현금이 덜 남을 수 있습니다.',
+    formula: 'DSO = 매출채권 ÷ 매출 × 365 · DIO = 재고자산 ÷ 매출원가 × 365 · DPO = 매입채무 ÷ 매출원가 × 365 · CCC = DSO + DIO − DPO (연말 잔액 기준)',
+    inputs: 'DSO ' + anNum(c.last.dso, 0) + '일 · DIO ' + anNum(c.last.dio, 0) + '일 · DPO ' + anNum(c.last.dpo, 0) + '일 → CCC ' + anNum(c.last.ccc, 0) + '일 (' + (c.last.year || 'N/A') + '년)',
+    rule: '판정 기준 없음(참고 지표). 같은 회사의 과거 추세와 같은 업종 회사끼리 비교할 때 의미가 있습니다.',
+    evidence: 'CCC 개념은 Richards & Laughlin(1980)이 유동성 분석에 소개했고, Deloof(2003, 벨기에 기업)는 CCC가 긴 기업일수록 수익성이 낮은 경향을 보고했습니다. 다만 상관관계이며 한국 시장·업종별 효과는 이 앱에서 검증하지 않았습니다. 「교섭력이 강하다」 같은 해석은 증거 없이 단정하지 않습니다.',
+    limit: '연말 잔액만 쓰므로 계절성·연말 일회성 거래에 민감합니다. 매출원가가 공시되지 않는 업종(서비스·금융 등)은 DIO·DPO·CCC가 N/A입니다. 별도 계정(기타채권·기타채무)은 제외했지만, 회사가 「매출채권 및 기타채권」처럼 묶어 공시하면 그 합계가 쓰여 실제보다 길게 나올 수 있습니다.' });
   items.push({ name: 'Momentum (모멘텀)', badge: 'proof', bl: '해외 검증·한국 약함', now: lv(G.mom),
     concept: '최근 주가가 오르는 추세인지 보는 지표. 오른 종목이 한동안 더 오르는 경향(관성)을 이용합니다.',
     formula: '6개월·12개월 수익률에서 최근 1개월을 뺀 값(6-1, 12-1)의 부호와 6개월 코스피 대비 초과 여부.',
@@ -4558,9 +4575,10 @@ function anRenderAreas(c) {
     anTable(L, [{ label: 'NOPAT', key: 'nopat', fmt: 'eok' }, { label: '투하자본(IC)', key: 'ic', fmt: 'eok' }, { label: 'ΔIC (전년 대비)', key: 'dIC', fmt: 'eok' }, { label: '재투자율 (ΔIC/NOPAT)', key: 'reinv', fmt: 'pct' },
       { label: '증분 ROIC (3Y)', key: 'incRoic', fmt: 'pct' }, { label: '증분 ROE (3Y, ΔNI/Δ자본)', key: 'incRoe', fmt: 'pct' }, { label: 'ROIC', key: 'roic', fmt: 'pct' }], 10), false));
   // Cash quality
-  out.cash = (anSection('💵 Cash Quality (현금흐름의 질)', '#0891b2', 'FCF = 영업CF − CAPEX(유형+무형 취득). 운전자본 = (매출채권+기타채권+재고) − (매입채무+기타채무).',
+  out.cash = (anSection('💵 Cash Quality (현금흐름의 질)', '#0891b2', 'FCF = 영업CF − CAPEX(유형+무형 취득). 운전자본 = (매출채권+기타채권+재고) − (매입채무+기타채무). 현금전환주기(CCC)는 외상 대금을 받고, 재고를 팔고, 매입 대금을 치르는 데 걸리는 일수의 합입니다(짧을수록 자금이 덜 묶임, 업종마다 크게 다름).',
     anTable(L, [{ label: 'CFO (영업CF)', key: 'ocf', fmt: 'eok' }, { label: 'FCF', key: 'fcf', fmt: 'eok' }, { label: 'FCF 마진', key: 'fcfm', fmt: 'pct' }, { label: 'FCF/순이익', key: 'fcfni', fmt: 'x' }, { label: 'CFO/순이익', key: 'cfoni', fmt: 'x' },
-      { label: '발생액(Accrual)', key: 'accrual', fmt: 'pct' }, { label: 'CAPEX', key: 'capex', fmt: 'eok' }, { label: 'CAPEX/매출', key: 'capexRev', fmt: 'pct' }, { label: '운전자본', key: 'wc', fmt: 'eok' }, { label: '운전자본/매출', key: 'wcRev', fmt: 'pct' }], 10), false));
+      { label: '발생액(Accrual)', key: 'accrual', fmt: 'pct' }, { label: 'CAPEX', key: 'capex', fmt: 'eok' }, { label: 'CAPEX/매출', key: 'capexRev', fmt: 'pct' }, { label: '운전자본', key: 'wc', fmt: 'eok' }, { label: '운전자본/매출', key: 'wcRev', fmt: 'pct' },
+      { label: '매출채권회전일 DSO', key: 'dso', fmt: 'days' }, { label: '재고회전일 DIO', key: 'dio', fmt: 'days' }, { label: '매입채무지급일 DPO', key: 'dpo', fmt: 'days' }, { label: '현금전환주기 CCC (DSO+DIO−DPO)', key: 'ccc', fmt: 'days' }], 10), false));
   // BS
   out.bs = (anSection('🛡 Balance Sheet (재무 안정성)', '#475569', '차입금 = 단기차입금 + 유동성장기부채 + 장기차입금 + 사채(리스부채 제외). 순차입금 = 차입금 − (현금 + 단기금융상품). 차입금·EBITDA 항목은 <b>재조회 후</b>에 채워집니다.',
     anTable(L, [{ label: '부채비율 (부채/자본)', key: 'de', fmt: 'pct' }, { label: '차입금/자본', key: 'ibde', fmt: 'pct' }, { label: '차입금', key: 'borrow', fmt: 'eok' }, { label: '순차입금', key: 'netDebt', fmt: 'eok' },
