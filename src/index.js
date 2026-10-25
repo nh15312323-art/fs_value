@@ -1081,6 +1081,17 @@ const HTML_PAGE = `<!doctype html>
     </div>
 
     <div class="card">
+      <div class="card-title">새 공시 자동 반영 (재무가 저장된 종목)</div>
+      <div id="finAutoBox" style="font-size:13px; line-height:1.6;">불러오는 중...</div>
+      <div class="row" style="margin-top:8px;">
+        <button onclick="finAutoRun(true)">미리보기(등록 안 함)</button>
+        <button class="primary" onclick="finAutoRun(false)">지금 확인해서 큐에 등록</button>
+        <button onclick="finAutoLoad()">새로고침</button>
+      </div>
+      <div class="meta-line">매일 한국시간 20:31에 자동 실행됩니다. 보고기간이 끝난 지 30일이 지났고 값이 비어 있는 기간만 큐에 올리고, 같은 기간은 3일에 한 번·최대 10번만 다시 확인합니다. 12월 결산이 아닌 종목은 제외하며, 값이 이미 있는 기간은 덮어쓰지 않습니다. 실제 수집은 짝수 분마다 2건씩 처리되어 종목이 많으면 몇 시간 걸립니다.</div>
+    </div>
+
+    <div class="card">
       <div class="card-title">1. 시장 시세 데이터 (스크리닝용)</div>
       <div class="row">
         <button class="primary" onclick="refreshMarketUniverse()">오늘자 시세 받기(유니버스 갱신)</button>
@@ -6165,7 +6176,7 @@ async function pfuExport() {
         document.getElementById(btns[k]).className = k === tab ? 'toggle-active' : '';
       });
       if (tab === 'momentum' && !screenAutoLoaded) { screenAutoLoaded = true; loadScreen('top', true); }
-      if (tab === 'data') { loadDataSummary(); checkMarketStatus(); loadMarketCfg(); rangeStatusShow(); }
+      if (tab === 'data') { finAutoLoad(); loadDataSummary(); checkMarketStatus(); loadMarketCfg(); rangeStatusShow(); }
       if (tab === 'bt') { btInitUi(); }
       if (tab === 'fscr') { fscInit(); }
       if (tab === 'db') { dbLoad(false); }
@@ -6177,6 +6188,25 @@ async function pfuExport() {
       const fab = document.getElementById('pfuFab'); if (fab) fab.style.display = (tab === 'pf' && PFU.key) ? 'block' : 'none';
     }
 
+    async function finAutoLoad() {
+      const el = document.getElementById('finAutoBox'); if (!el) return;
+      try {
+        const res = await fetch('/api/fin/auto-status', { cache: 'no-store' }); const d = await res.json(); if (!res.ok) throw new Error(d.error || '조회 실패');
+        let h = '현재 자동 확인 대상 기간: <b>' + (d.periods.length ? d.periods.join(' · ') : '없음(공시 시즌이 아님)') + '</b> · 수집 대기 ' + d.queue + '건<br>';
+        if (d.last) h += '마지막 실행 ' + escHtml(d.last.at.slice(0, 16).replace('T', ' ')) + ' UTC: 저장 종목 ' + d.last.companies + '개 중 빈 기간 ' + d.last.missing + '건 확인 → 큐 등록 ' + d.last.queued + '건' + (d.last.dry ? ' (미리보기)' : '');
+        else h += '아직 자동 실행 기록이 없습니다.';
+        el.innerHTML = h;
+      } catch (e) { el.textContent = '오류: ' + e.message; }
+    }
+    async function finAutoRun(dry) {
+      const el = document.getElementById('finAutoBox'); el.textContent = dry ? '확인 중...' : '등록 중...';
+      try {
+        const res = await adminFetch('/api/fin/auto-run' + (dry ? '?dry=1' : ''), {}); if (!res.ok) throw new Error(res.data.error || '실패');
+        const d = res.data; const nm = { '11013': '1Q', '11012': '반기', '11014': '3Q', '11011': '사업' };
+        const per = Object.keys(d.byPeriod).map(function (k) { const x = k.split(' '); return x[0] + ' ' + nm[x[1]] + ' ' + d.byPeriod[k] + '건'; });
+        el.innerHTML = (dry ? '[미리보기] ' : '') + '대상 기간 ' + (d.periods.join(', ') || '없음') + ' · 저장 종목 ' + d.companies + '개 · 비어 있는 기간 ' + d.missing + '건' + (dry ? '(등록하지 않음)' : ' → 큐에 ' + d.queued + '건 등록') + (per.length ? '<br>기간별: ' + per.join(', ') : '');
+      } catch (e) { el.textContent = '오류: ' + e.message; }
+    }
     async function loadDataSummary() {
       const el = document.getElementById('dataSummary');
       try {
@@ -9932,6 +9962,19 @@ async function handleRequest(request, env) {
 
     // 데이터 관리 화면의 현황판: 가벼운 집계만(각 쿼리는 PK 인덱스로 처리되는 작은 표).
     // 화면 맨 위 "데이터 기준일" 줄용 아주 가벼운 조회: 기본키 앞 열의 MAX 두 개만 읽는다(행 몇 건).
+    if (pathname === "/api/fin/auto-status") {
+      await ensureFinAutoTable(env.DB);
+      const [lg, q] = await Promise.all([
+        env.DB.prepare("SELECT v FROM market_job WHERE k = 'fin_auto_log'").first(),
+        env.DB.prepare("SELECT COUNT(*) AS n FROM fetch_queue").first(),
+      ]);
+      let last = null; try { last = lg ? JSON.parse(lg.v) : null; } catch (e) { last = null; }
+      return new Response(JSON.stringify({ last, queue: q ? q.n : 0, today: kstTodayStr(), periods: filingPeriodsFor(kstTodayStr()).map((p) => p.label) }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
+    }
+    if (pathname === "/api/fin/auto-run" && request.method === "POST") {
+      const log = await runFilingAutoUpdate(env, { dry: searchParams.get("dry") === "1" });
+      return Response.json(log);
+    }
     // 재무 스크리닝용: 종목코드 목록의 최신 종가. 시장 DB(market_raw_daily)의 가장 최근 날짜 한 줄씩만 읽는다(기본키 조회라 가볍다).
     if (pathname === "/api/fin/last-price") {
       const codes = (searchParams.get("codes") || "").split(",").map((x) => x.trim()).filter((x) => /^[0-9A-Za-z]{6}$/.test(x)).slice(0, 100);
@@ -10897,6 +10940,105 @@ async function runDailyCatchUp(env, hourUtc) {
 }
 // ===== /일일 갱신 보완 =====
 
+// ===== 새 공시 자동 반영 =====
+// 재무가 저장된 종목(12월 결산)에 대해, 이미 공시됐을 법한 최근 보고서 중 값이 비어 있는 기간을 fetch_queue에 등록한다.
+// 실제 DART 조회·저장은 기존 짝수 분 큐 처리가 그대로 한다. 값이 있는 기간은 건드리지 않는다(덮어쓰기 없음).
+// 시도 횟수는 fin_auto_try에 남겨 같은 기간을 3일에 한 번, 최대 10번만 다시 시도한다(공시 전 빈 행이 반복 조회되는 것을 막는다).
+const FILING_PERIODS = [ // 12월 결산 기준. end = 보고기간 끝, due = 법정 제출기한(사업보고서는 다음 해 3/31)
+  { code: "11013", order: 1, endMD: "0331", dueMD: "0515", dueNext: 0 },
+  { code: "11012", order: 2, endMD: "0630", dueMD: "0814", dueNext: 0 },
+  { code: "11014", order: 3, endMD: "0930", dueMD: "1114", dueNext: 0 },
+  { code: "11011", order: 4, endMD: "1231", dueMD: "0331", dueNext: 1 },
+];
+const FILING_EARLIEST_DAYS = 30;   // 보고기간 끝난 뒤 이 일수가 지나야 조회 시작(그 전에 공시하는 회사는 드뭄)
+const FILING_GIVEUP_DAYS = 60;     // 법정 기한 + 이 일수가 지나면 자동 시도 종료(이후는 수동 「최신 공시 업데이트」)
+const FILING_RETRY_GAP_DAYS = 3;
+const FILING_MAX_TRIES = 10;
+const FILING_DAILY_CAP = 300;
+function ymdDiffDays(a, b) { // b - a (일)
+  const f = (x) => Date.UTC(Number(x.slice(0, 4)), Number(x.slice(4, 6)) - 1, Number(x.slice(6, 8)));
+  return Math.round((f(b) - f(a)) / 86400000);
+}
+function kstTodayStr() { const d = new Date(Date.now() + 9 * 3600000); return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}`; }
+// 오늘 기준으로 자동 시도 대상이 되는 보고 기간 목록
+function filingPeriodsFor(today) {
+  const Y = Number(today.slice(0, 4)), out = [];
+  for (const y of [Y - 1, Y]) {
+    for (const f of FILING_PERIODS) {
+      const end = `${y}${f.endMD}`, due = `${y + f.dueNext}${f.dueMD}`;
+      if (ymdDiffDays(end, today) >= FILING_EARLIEST_DAYS && ymdDiffDays(due, today) <= FILING_GIVEUP_DAYS) {
+        out.push({ year: y, code: f.code, order: f.order, period_order: y * 10 + f.order, label: `${y} ${REPRT_CODES.find((r) => r.code === f.code).label}`, due });
+      }
+    }
+  }
+  return out;
+}
+// 순수 함수: 어느 종목의 어느 기간을 큐에 올릴지 고른다.
+//  companies [{corp_code, first_year, last_year, acc_mt}], have: Set("corp|year|code") 값이 있는 기간, tries: Map("corp|year|code" → {tries, last_try}), queued: Set
+function pickFilingTargets(o) {
+  const out = [];
+  for (const p of o.periods.slice().sort((a, b) => b.period_order - a.period_order)) {
+    for (const c of o.companies) {
+      if (c.acc_mt != null && c.acc_mt !== 12) continue;                 // 12월 결산이 아닌 회사는 기한이 달라 자동 대상에서 제외
+      if (Number(c.last_year) < p.year - 1) continue;                    // 최근 2년 안에 자료가 없는 종목(상장폐지 등)은 제외
+      if (Number(c.first_year) > p.year) continue;                       // 이 종목의 저장 시작 연도보다 이전 기간은 대상 아님
+      const key = `${c.corp_code}|${p.year}|${p.code}`;
+      if (o.have.has(key) || (o.queued && o.queued.has(key))) continue;
+      const t = o.tries.get(key);
+      if (t && (t.tries >= FILING_MAX_TRIES || (t.last_try && ymdDiffDays(t.last_try, o.today) < FILING_RETRY_GAP_DAYS))) continue;
+      out.push({ corp_code: c.corp_code, corp_name: c.corp_name, stock_code: c.stock_code, year: p.year, code: p.code, period_order: p.period_order, tries: t ? t.tries : 0 });
+      if (out.length >= o.cap) return out;
+    }
+  }
+  return out;
+}
+let finAutoReady = false;
+async function ensureFinAutoTable(db) {
+  if (finAutoReady) return;
+  await db.prepare("CREATE TABLE IF NOT EXISTS fin_auto_try (corp_code TEXT NOT NULL, bsns_year TEXT NOT NULL, reprt_code TEXT NOT NULL, tries INTEGER NOT NULL DEFAULT 0, last_try TEXT, PRIMARY KEY (corp_code, bsns_year, reprt_code))").run();
+  await db.prepare("CREATE TABLE IF NOT EXISTS market_job (k TEXT PRIMARY KEY, v TEXT)").run();
+  finAutoReady = true;
+}
+async function runFilingAutoUpdate(env, o) {
+  const dry = !!(o && o.dry), today = (o && o.today) || kstTodayStr();
+  await ensureFinAutoTable(env.DB); await ensureFiscalTable(env.DB);
+  const periods = filingPeriodsFor(today);
+  const log = { at: new Date().toISOString(), today, dry, periods: periods.map((p) => p.label), companies: 0, missing: 0, queued: 0, byPeriod: {} };
+  if (periods.length) {
+    const years = Array.from(new Set(periods.map((p) => String(p.year))));
+    const yq = years.map(() => "?").join(",");
+    const { results: comps } = await env.DB.prepare(
+      "SELECT f.corp_code AS corp_code, m.corp_name AS corp_name, m.stock_code AS stock_code, x.acc_mt AS acc_mt, MIN(f.bsns_year) AS first_year, MAX(f.bsns_year) AS last_year " +
+      "FROM financial_raw f JOIN corp_master m ON m.corp_code = f.corp_code LEFT JOIN corp_fiscal x ON x.corp_code = f.corp_code WHERE m.stock_code IS NOT NULL GROUP BY f.corp_code"
+    ).all();
+    const { results: haveRows } = await env.DB.prepare(
+      "SELECT corp_code, bsns_year, reprt_code FROM financial_raw WHERE bsns_year IN (" + yq + ") AND (revenue IS NOT NULL OR net_income IS NOT NULL OR operating_income IS NOT NULL)"
+    ).bind(...years).all();
+    const { results: tryRows } = await env.DB.prepare("SELECT corp_code, bsns_year, reprt_code, tries, last_try FROM fin_auto_try WHERE bsns_year IN (" + yq + ")").bind(...years).all();
+    const { results: qRows } = await env.DB.prepare("SELECT corp_code, bsns_year, reprt_code FROM fetch_queue WHERE bsns_year IN (" + yq + ")").bind(...years).all();
+    const have = new Set(haveRows.map((r) => `${r.corp_code}|${r.bsns_year}|${r.reprt_code}`));
+    const tries = new Map(tryRows.map((r) => [`${r.corp_code}|${r.bsns_year}|${r.reprt_code}`, { tries: r.tries, last_try: r.last_try }]));
+    const queued = new Set(qRows.map((r) => `${r.corp_code}|${r.bsns_year}|${r.reprt_code}`));
+    log.companies = comps.length;
+    const targets = pickFilingTargets({ companies: comps, periods, have, tries, queued, today, cap: FILING_DAILY_CAP });
+    log.missing = targets.length;
+    targets.forEach((t) => { const k = `${t.year} ${t.code}`; log.byPeriod[k] = (log.byPeriod[k] || 0) + 1; });
+    if (!dry && targets.length) {
+      const now = new Date().toISOString();
+      const stmts = [];
+      for (const t of targets) {
+        stmts.push(env.DB.prepare("INSERT OR IGNORE INTO fetch_queue (corp_code, corp_name, stock_code, bsns_year, reprt_code, period_order, queued_at) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(t.corp_code, t.corp_name, t.stock_code, String(t.year), t.code, t.period_order, now));
+        stmts.push(env.DB.prepare("INSERT INTO fin_auto_try (corp_code, bsns_year, reprt_code, tries, last_try) VALUES (?, ?, ?, 1, ?) ON CONFLICT(corp_code, bsns_year, reprt_code) DO UPDATE SET tries = tries + 1, last_try = excluded.last_try").bind(t.corp_code, String(t.year), t.code, today));
+      }
+      for (let i = 0; i < stmts.length; i += 60) await env.DB.batch(stmts.slice(i, i + 60));
+      log.queued = targets.length;
+    }
+  }
+  if (!dry) { try { await env.DB.prepare("INSERT OR REPLACE INTO market_job (k, v) VALUES ('fin_auto_log', ?)").bind(JSON.stringify(log)).run(); } catch (e) { /* 기록 실패는 무시 */ } }
+  return log;
+}
+// ===== /새 공시 자동 반영 =====
+
 async function handleScheduled(event, env, ctx) {
     const minute = new Date(event.scheduledTime).getUTCMinutes();
     const hour = new Date(event.scheduledTime).getUTCHours();
@@ -10928,6 +11070,12 @@ async function handleScheduled(event, env, ctx) {
       } catch (e) {
         console.error("거시경제 지표 자동 갱신 실패:", (e && e.message) || e);
       }
+      return;
+    }
+
+    // 매일 20:31(한국) 재무가 저장된 종목의 새 공시 후보를 fetch_queue에 등록한다(처리는 짝수 분 큐가 함). 실패해도 다른 작업에 영향 없음.
+    if (hour === 11 && minute === 31) {
+      try { await runFilingAutoUpdate(env, {}); } catch (e) { console.error("새 공시 자동 반영 실패:", (e && e.message) || e); }
       return;
     }
 
