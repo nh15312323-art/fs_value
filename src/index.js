@@ -4581,8 +4581,8 @@ function anChapter(no, title, ask, lens) {
         fscMsg('최신 시세를 확인하는 중...');
         const px = {}; FSC.priceDate = null;
         const codes = FSC.stocks.map(function (s) { return s.stock; }).filter(Boolean);
-        for (let i = 0; i < codes.length; i += 100) {
-          const res = await fetch('/api/fin/last-price?codes=' + encodeURIComponent(codes.slice(i, i + 100).join(',')));
+        for (let i = 0; i < codes.length; i += 80) {
+          const res = await fetch('/api/fin/last-price?codes=' + encodeURIComponent(codes.slice(i, i + 80).join(',')));
           const d = await res.json(); if (!res.ok) throw new Error(d.error || '시세 조회 실패');
           if (d.date) FSC.priceDate = d.date; Object.keys(d.prices || {}).forEach(function (k) { px[k] = d.prices[k]; });
         }
@@ -9977,7 +9977,7 @@ async function handleRequest(request, env) {
     }
     // 재무 스크리닝용: 종목코드 목록의 최신 종가. 시장 DB(market_raw_daily)의 가장 최근 날짜 한 줄씩만 읽는다(기본키 조회라 가볍다).
     if (pathname === "/api/fin/last-price") {
-      const codes = (searchParams.get("codes") || "").split(",").map((x) => x.trim()).filter((x) => /^[0-9A-Za-z]{6}$/.test(x)).slice(0, 100);
+      const codes = (searchParams.get("codes") || "").split(",").map((x) => x.trim()).filter((x) => /^[0-9A-Za-z]{6}$/.test(x)).slice(0, 80);
       if (!codes.length) return Response.json({ date: null, prices: {} });
       const dRow = await env.DB.prepare("SELECT MAX(market_date) AS d FROM market_raw_daily").first();
       const date = dRow ? dRow.d : null;

@@ -9,7 +9,8 @@ const db = new DatabaseSync(':memory:');
 db.exec('CREATE TABLE market_raw_daily (market_date TEXT, stock_code TEXT, close_price REAL, PRIMARY KEY (market_date, stock_code))');
 const ins = db.prepare('INSERT INTO market_raw_daily VALUES (?,?,?)');
 ins.run('20261022', '000001', 100); ins.run('20261023', '000001', 110); ins.run('20261023', '000002', 0); ins.run('20261023', '000004', 400); ins.run('20261022', '000003', 300);
-const DB = { prepare: (sql) => { const st = db.prepare(sql); return { bind: (...b) => ({ first: async () => st.get(...b) || null, all: async () => ({ results: st.all(...b) }) }), first: async () => st.get() || null }; } };
+let maxBinds = 0;
+const DB = { prepare: (sql) => { const st = db.prepare(sql); return { bind: (...b) => (maxBinds = Math.max(maxBinds, b.length), { first: async () => st.get(...b) || null, all: async () => ({ results: st.all(...b) }) }), first: async () => st.get() || null }; } };
 let fail = 0; const check = (n, ok, d) => { if (!ok) fail++; console.log((ok ? 'PASS' : 'FAIL') + '  ' + n + (d !== undefined ? '  ' + d : '')); };
 (async () => {
   const run = async (codes) => { const r = await handler({ DB }, new URLSearchParams({ codes }), '/api/fin/last-price'); return r.json(); };
@@ -17,6 +18,9 @@ let fail = 0; const check = (n, ok, d) => { if (!ok) fail++; console.log((ok ? '
   check('가장 최근 날짜 반환', a.date === '20261023', JSON.stringify(a));
   check('최신 날짜에 있는 종목만, 종가 0은 제외', JSON.stringify(a.prices) === JSON.stringify({ '000001': 110, '000004': 400 }), JSON.stringify(a.prices));
   check('전날에만 있는 종목(000003)은 빠짐', a.prices['000003'] === undefined);
+  const many = Array.from({ length: 150 }, (_, k) => String(100000 + k)).join(',');
+  await run(many);
+  check('D1 한도(바인딩 변수 100개) 안: 코드를 아무리 많이 보내도 요청당 변수 ≤ 100', maxBinds <= 100 && maxBinds > 1, 'max=' + maxBinds);
   const b = await run('zz,!!'); check('유효한 코드가 없으면 빈 결과', b.date === null && Object.keys(b.prices).length === 0);
   console.log(fail ? 'FAILED ' + fail : 'ALL PASS'); process.exit(fail ? 1 : 0);
 })();
