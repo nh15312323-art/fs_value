@@ -28,7 +28,7 @@ const SHOT = process.env.SHOT;
   ok('종목 묶음은 화면이 하나라 보조 메뉴 숨김', !(await pg.isVisible('#grpNav')));
   await pg.click('#grpBtn_find'); await pg.waitForTimeout(250);
   const find = await pg.$$eval('#grpNav button', (bs) => bs.filter((x) => x.offsetParent).map((x) => x.innerText.trim()));
-  ok('발굴: 보조 메뉴 = 스크리닝 · 거시·상관, 스크리닝 화면', find.join('|') === '스크리닝|거시·상관' && await pg.isVisible('#tabMomentum'), find.join('|'));
+  ok('발굴: 보조 메뉴 = 스크리닝 · 재무 스크리닝 · 거시·상관, 스크리닝 화면', find.join('|') === '스크리닝|재무 스크리닝|거시·상관' && await pg.isVisible('#tabMomentum'), find.join('|'));
   await pg.click('#tabBtnMacro'); await pg.waitForTimeout(200);
   await pg.click('#grpBtn_stock'); await pg.waitForTimeout(200); await pg.click('#grpBtn_find'); await pg.waitForTimeout(200);
   ok('묶음을 다시 누르면 그 묶음에서 마지막에 보던 화면(거시·상관)', await pg.isVisible('#tabMacro') && !(await pg.isVisible('#tabMomentum')));
