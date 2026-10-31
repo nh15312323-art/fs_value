@@ -835,6 +835,22 @@ const HTML_PAGE = `<!doctype html>
     </div>
 
     <div class="card">
+      <div class="card-title">A-2. 조합 탐색 — 어떤 재무·가치 조합이 우연이 아닌가 (역방향)</div>
+      <div style="font-size:12.5px; line-height:1.5;">위 A는 내가 고른 방법이 유의한지 보지만, 여기서는 반대로 <b>요인 1~5개의 모든 조합을 한꺼번에 시험</b>해 어떤 조합이 유의한지 보여줍니다. 조합을 많이 뒤질수록 우연히 좋아 보이는 것이 생기므로, 수익률을 무작위로 섞은 가짜 세계를 여러 번 만들어 <b>우연으로 나올 수 있는 최고치</b>를 기준선으로 삼아 보정합니다. 또 기간을 나눠 앞 구간에서 고른 것이 뒤 구간에서도 같은 방향인지 확인합니다.</div>
+      <div class="row" style="margin-top:8px; gap:10px; flex-wrap:wrap; font-size:12.5px;">
+        <label>방식 <select id="cmbMode"><option value="annual">연간(기간 수 적음)</option><option value="qttm" selected>분기 TTM(기간 수 많음, 권장)</option></select></label>
+        <label>최대 조합 크기 <select id="cmbK"><option>1</option><option>2</option><option>3</option><option>4</option><option selected>5</option></select></label>
+        <label>그룹 수 <select id="cmbG"><option value="3">3</option><option value="5" selected>5</option><option value="10">10</option></select></label>
+        <label>가짜 세계 <select id="cmbB"><option value="200">200회</option><option value="500" selected>500회</option><option value="1000">1000회</option></select></label>
+        <label>씨앗 <input id="cmbSeed" type="number" value="1" style="width:60px;" /></label>
+        <label><input id="cmbSplit" type="checkbox" checked /> 기간 나누기(앞 2/3 탐색 → 뒤 1/3 확인)</label>
+      </div>
+      <div id="cmbPool" style="margin:6px 0; font-size:12.5px;"></div>
+      <div class="row"><button class="primary" onclick="cmbRun()">조합 탐색 실행</button> <span id="cmbMsg" class="meta-line"></span></div>
+      <div id="cmbOut"></div>
+    </div>
+
+    <div class="card">
       <div class="card-title">C. 종목별 보기 — 재무 값 · 주가 · 주가수익률 한 번에</div>
       <div style="font-size:12px; color:var(--text-muted); line-height:1.55; margin-bottom:6px;">위 A의 연간 재무 백테스트가 종목마다 실제로 쓰는 값을 결산연도별로 모아 보여 줍니다. <b>매수가</b> = 사업보고서 공시 다음 거래일 종가, <b>매도가</b> = 다음 해 사업보고서 공시 다음 거래일 종가, <b>12개월 수익률</b> = 매도가 ÷ 매수가 − 1(배당 제외). 재무 팩터 값은 공시 시점에 알 수 있었던 자료와 매수가로만 계산합니다.</div>
       <div class="row" style="gap:8px; flex-wrap:wrap; align-items:center;">
@@ -5572,11 +5588,149 @@ function btFinModeChange() {
   document.getElementById('btFinFactors').style.display = (m === 'annual' || m === 'qttm') ? '' : 'none';
   document.getElementById('btMomBox').style.display = m === 'momq' ? '' : 'none';
 }
+// ===== 조합 탐색 (역방향 백테스트): 재무·가치 요인 1~5개 조합 중 무엇이 우연이 아닌지 =====
+// 아이디어: 조합을 수백 개 시험하면 우연히 좋아 보이는 것이 반드시 나온다(다중검정). 그래서 "수익률을 종목 사이에서 무작위로 섞은 가짜 세계"를
+// 수백 번 만들어 같은 탐색을 반복하고, 가짜 세계에서 나온 '가장 좋은 조합의 |t|'가 얼마나 큰지를 기준선으로 삼는다(Westfall-Young maxT 방식).
+// 진짜 데이터에서 그 기준선을 넘는 조합만 "보정 후에도 유의"로 본다. 추가로 기간을 나눠 앞 구간에서 고른 조합이 뒤 구간에서도 같은 방향인지 확인한다.
+// 한계: 종목 사이에서만 섞으므로 업종·시장 동조(같은 해에 같이 오르내림)의 영향은 반영하지 못하고, 과거에 한 번 본 데이터이며 거래비용·생존편향은 별도다.
+const CMB = { res: null, running: false };
+function cmbRng(seed) { let a = (seed >>> 0) || 1; return function () { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function cmbLnGamma(x) { const c = [76.18009172947146, -86.50532032941677, 24.01409824083091, -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5]; let y = x, t = x + 5.5; t -= (x + 0.5) * Math.log(t); let s = 1.000000000190015; for (let j = 0; j < 6; j++) { y += 1; s += c[j] / y; } return -t + Math.log(2.5066282746310005 * s / x); }
+function cmbBetacf(a, b, x) {
+  const FP = 1e-300; const qab = a + b, qap = a + 1, qam = a - 1; let c = 1, d = 1 - qab * x / qap; if (Math.abs(d) < FP) d = FP; d = 1 / d; let h = d;
+  for (let m = 1; m <= 300; m++) {
+    const m2 = 2 * m; let aa = m * (b - m) * x / ((qam + m2) * (a + m2));
+    d = 1 + aa * d; if (Math.abs(d) < FP) d = FP; c = 1 + aa / c; if (Math.abs(c) < FP) c = FP; d = 1 / d; h *= d * c;
+    aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2));
+    d = 1 + aa * d; if (Math.abs(d) < FP) d = FP; c = 1 + aa / c; if (Math.abs(c) < FP) c = FP; d = 1 / d; const del = d * c; h *= del; if (Math.abs(del - 1) < 3e-12) break;
+  }
+  return h;
+}
+function cmbBetai(a, b, x) { if (x <= 0) return 0; if (x >= 1) return 1; const bt = Math.exp(cmbLnGamma(a + b) - cmbLnGamma(a) - cmbLnGamma(b) + a * Math.log(x) + b * Math.log(1 - x)); return x < (a + 1) / (a + b + 2) ? bt * cmbBetacf(a, b, x) / a : 1 - bt * cmbBetacf(b, a, 1 - x) / b; }
+function cmbPTwo(t, df) { if (!(df > 0) || !isFinite(t)) return null; return cmbBetai(df / 2, 0.5, df / (df + t * t)); } // 양쪽 검정 p값(스튜던트 t)
+function cmbCombos(n, kmax) { const out = []; const rec = function (start, cur) { if (cur.length) out.push(cur.slice()); if (cur.length >= kmax) return; for (let i = start; i < n; i++) { cur.push(i); rec(i + 1, cur); cur.pop(); } }; rec(0, []); return out; }
+const cmbTick = function () { return new Promise(function (r) { setTimeout(r, 0); }); };
+function cmbTstat(sum, sum2, n) { if (n < 3) return null; const m = sum / n; const v = (sum2 - n * m * m) / (n - 1); return v > 0 ? m / Math.sqrt(v / n) : null; }
+// periods: [{label, items:[{id, f, v:{요인:값}}]}] (오래된 순). 모든 요인 값이 있는 종목만 들어 있어야 한다.
+async function cmbSearch(o) {
+  const keys = o.keys, G = o.G || 5, minN = Math.max(3 * G, 10), B = o.B == null ? 300 : o.B, seed = o.seed || 1;
+  const data = [];
+  o.periods.forEach(function (p) {
+    let it = p.items.filter(function (x) { return anFin(x.f) && keys.every(function (k) { return anFin(x.v[k]); }); });
+    if (o.trim) it = it.filter(function (x) { return x.f > -0.9 && x.f < 5; });
+    if (it.length < minN) return;
+    const ranks = {}; keys.forEach(function (k) { ranks[k] = btRankAvg(it.map(function (x) { return x.v[k]; })); });
+    data.push({ label: p.label, n: it.length, ids: it.map(function (x) { return x.id; }), f: Float64Array.from(it.map(function (x) { return x.f; })), ranks: ranks });
+  });
+  const T = data.length; if (T < 4) return { error: '계산에 쓸 수 있는 기간이 ' + T + '개뿐입니다(최소 4개 필요). 요인 수를 줄이거나 분기 방식을 쓰세요.', T: T };
+  const exN = (o.split && T >= 9) ? Math.ceil(T * o.split) : T;
+  const combos = cmbCombos(keys.length, o.kmax || 5);
+  const M = combos.length;
+  // 1) 조합마다 기간별 상위/하위 그룹 구성(수익률과 무관하므로 가짜 세계에서도 그대로 쓴다)
+  const grp = new Array(M);
+  for (let c = 0; c < M; c++) {
+    const ck = combos[c], per = new Array(T);
+    for (let t = 0; t < T; t++) {
+      const d = data[t], n = d.n, sc = new Float64Array(n);
+      for (let j = 0; j < ck.length; j++) { const r = d.ranks[keys[ck[j]]]; for (let i = 0; i < n; i++) sc[i] += r[i]; }
+      const ord = new Array(n); for (let i = 0; i < n; i++) ord[i] = i;
+      ord.sort(function (a, b) { return (sc[a] - sc[b]) || (d.ids[a] < d.ids[b] ? -1 : d.ids[a] > d.ids[b] ? 1 : 0); });
+      const top = [], bot = [];
+      for (let pos = 0; pos < n; pos++) { const g = Math.min(G - 1, Math.floor(pos * G / n)); if (g === G - 1) top.push(ord[pos]); else if (g === 0) bot.push(ord[pos]); }
+      per[t] = { top: Int32Array.from(top), bot: Int32Array.from(bot) };
+    }
+    grp[c] = per;
+    if (c % 40 === 39) { if (o.onProgress) o.onProgress('조합 구성 ' + (c + 1) + ' / ' + M); await cmbTick(); }
+  }
+  const spreadOf = function (c, t, f) { const g = grp[c][t]; let a = 0, b = 0; for (let i = 0; i < g.top.length; i++) a += f[g.top[i]]; for (let i = 0; i < g.bot.length; i++) b += f[g.bot[i]]; return a / g.top.length - b / g.bot.length; };
+  // 2) 진짜 데이터의 통계(탐색 구간) + 확인 구간
+  const obs = new Array(M);
+  for (let c = 0; c < M; c++) {
+    const sp = []; for (let t = 0; t < T; t++) sp.push(spreadOf(c, t, data[t].f));
+    const ex = sp.slice(0, exN), co = sp.slice(exN);
+    const sx = btStat(ex, o.ppy || 1), sc2 = co.length >= 3 ? btStat(co, o.ppy || 1) : null;
+    obs[c] = { idx: combos[c], keys: combos[c].map(function (i) { return keys[i]; }), mean: sx.mean, t: sx.t, tNW: sx.tNW, hit: sx.hit, n: sx.n, pRaw: sx.t == null ? null : cmbPTwo(sx.t, sx.n - 1),
+      conf: co.length ? { n: co.length, mean: btMean(co), t: sc2 ? sc2.t : null, same: sx.mean !== 0 && btMean(co) * sx.mean > 0 } : null };
+  }
+  // 3) 가짜 세계: 기간마다 수익률을 종목 사이에서 무작위로 섞고 같은 탐색을 반복 → 그 안에서 가장 컸던 |t|를 모은다
+  const rng = cmbRng(seed), maxT = [];
+  for (let b = 0; b < B; b++) {
+    const fs = data.slice(0, exN).map(function (d) { const f = Float64Array.from(d.f); for (let i = f.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); const x = f[i]; f[i] = f[j]; f[j] = x; } return f; });
+    let mx = 0;
+    for (let c = 0; c < M; c++) {
+      let s = 0, s2 = 0; for (let t = 0; t < exN; t++) { const v = spreadOf(c, t, fs[t]); s += v; s2 += v * v; }
+      const tt = cmbTstat(s, s2, exN); if (tt != null && Math.abs(tt) > mx) mx = Math.abs(tt);
+    }
+    maxT.push(mx);
+    if (b % 10 === 9) { if (o.onProgress) o.onProgress('가짜 세계 시뮬레이션 ' + (b + 1) + ' / ' + B); await cmbTick(); }
+  }
+  maxT.sort(function (a, b) { return a - b; });
+  obs.forEach(function (r) { if (r.t == null) { r.pAdj = null; return; } let ge = 0; for (let i = maxT.length - 1; i >= 0 && maxT[i] >= Math.abs(r.t); i--) ge++; r.pAdj = (ge + 1) / (B + 1); });
+  obs.sort(function (a, b) { return Math.abs(b.t || 0) - Math.abs(a.t || 0); });
+  const q = function (p) { return maxT.length ? maxT[Math.min(maxT.length - 1, Math.floor(p * maxT.length))] : null; };
+  return { combos: obs, M: M, T: T, exN: exN, coN: T - exN, avgN: btMean(data.map(function (d) { return d.n; })), B: B, seed: seed, nullMed: q(0.5), null95: q(0.95), null99: q(0.99), keys: keys, labels: data.map(function (d) { return d.label; }), G: G };
+}
+function cmbRender(R) {
+  const out = document.getElementById('cmbOut');
+  if (R.error) { out.innerHTML = '<div class="meta-line" style="color:var(--danger);">' + R.error + '</div>'; return; }
+  const sig05 = R.combos.filter(function (r) { return r.pAdj != null && r.pAdj <= 0.05; }), sig10 = R.combos.filter(function (r) { return r.pAdj != null && r.pAdj <= 0.10; });
+  const rawSig = R.combos.filter(function (r) { return r.pRaw != null && r.pRaw <= 0.05; }).length;
+  const nm = function (k) { return (BT_FAC_SHORT[k] || k); };
+  const pc = function (v) { return anFin(v) ? (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%' : 'N/A'; };
+  let h = '<div class="meta-line" style="line-height:1.6;">시험한 조합 <b>' + R.M + '</b>개 · 기간 <b>' + R.T + '</b>개(탐색 ' + R.exN + (R.coN ? ' + 확인 ' + R.coN : '') + ') · 기간당 평균 종목 ' + R.avgN.toFixed(0) + '개 · 상·하위 ' + (100 / R.G).toFixed(0) + '% 그룹 · 가짜 세계 ' + R.B + '회(씨앗 ' + R.seed + ')</div>';
+  h += '<div class="card" style="background:var(--bg); margin:8px 0; font-size:13px; line-height:1.6;">' +
+    '<b>우연의 기준선</b>: 수익률을 무작위로 섞은 가짜 세계에서도 ' + R.M + '개 조합을 뒤지면 가장 좋은 |t|가 중앙값 <b>' + anNum(R.nullMed, 2) + '</b>, 95% 상한 <b>' + anNum(R.null95, 2) + '</b>까지 나옵니다. 진짜 조합이 이 값을 넘어야 "많이 뒤져서 우연히 나온 것"이 아니라고 말할 수 있습니다.<br>' +
+    '원시 p≤0.05인 조합 ' + rawSig + '개(보정 안 하면 우연만으로도 약 ' + Math.round(R.M * 0.05) + '개 나옴) → 시뮬레이션 보정 후 p≤0.05 <b>' + sig05.length + '개</b>, p≤0.10 <b>' + sig10.length + '개</b>.<br>' +
+    (sig05.length ? '<b>판정:</b> 보정 후에도 남은 조합이 있습니다. 아래 확인 구간 열에서 같은 방향이 유지되는지 꼭 보세요.' : '<b>판정:</b> 보정 후 유의한 조합이 없습니다. 이 데이터(' + R.T + '개 기간·평균 ' + R.avgN.toFixed(0) + '종목)로는 어떤 조합도 우연과 구별되지 않습니다. 이는 "효과가 없다"가 아니라 "이 표본으로는 확인 불가"입니다.') + '</div>';
+  const show = R.combos.slice(0, 30);
+  h += '<div class="tscroll" style="max-height:70vh;"><table class="an-tbl"><thead><tr><th class="an-first">조합 (|t| 큰 순 상위 30)</th><th>개수</th><th>평균 스프레드/기간</th><th>t(NW)</th><th>원시 p</th><th>보정 p</th><th>이긴 기간</th>' + (R.coN ? '<th>확인 구간 스프레드</th><th>확인 t</th><th>방향 유지</th>' : '') + '<th></th></tr></thead><tbody>';
+  show.forEach(function (r, i) {
+    const good = r.pAdj != null && r.pAdj <= 0.05;
+    h += '<tr' + (good ? ' style="background:#ecfdf5;"' : '') + '><td class="an-first">' + r.keys.map(nm).join(' + ') + '</td><td>' + r.keys.length + '</td><td>' + pc(r.mean) + '</td><td>' + anNum(r.tNW != null ? r.tNW : r.t, 2) + '</td><td>' + (r.pRaw == null ? 'N/A' : r.pRaw.toFixed(3)) + '</td><td>' + (r.pAdj == null ? 'N/A' : r.pAdj.toFixed(3)) + '</td><td>' + (r.hit * 100).toFixed(0) + '%</td>' +
+      (R.coN ? '<td>' + (r.conf ? pc(r.conf.mean) : 'N/A') + '</td><td>' + (r.conf ? anNum(r.conf.t, 2) : 'N/A') + '</td><td>' + (r.conf ? (r.conf.same ? '✓' : '✗') : '') + '</td>' : '') +
+      '<td><button onclick="cmbOpen(' + i + ')" title="이 조합을 위 A의 정식 백테스트로 실행">열기</button></td></tr>';
+  });
+  h += '</tbody></table></div>';
+  const bySize = [1, 2, 3, 4, 5].map(function (k) { const a = R.combos.filter(function (r) { return r.keys.length === k; }); return a.length ? k + '개: ' + a.length + '조합 중 보정 유의 ' + a.filter(function (r) { return r.pAdj != null && r.pAdj <= 0.05; }).length : null; }).filter(Boolean);
+  h += '<div class="meta-line" style="margin-top:6px;">크기별: ' + bySize.join(' · ') + '</div>';
+  if (R.coN) {
+    const pool = (sig10.length ? sig10 : R.combos.slice(0, 10)).filter(function (r) { return r.conf; });
+    const kept = pool.filter(function (r) { return r.conf.same; }).length;
+    h += '<div class="meta-line" style="margin-top:4px;">확인 구간 점검: ' + (sig10.length ? '보정 p≤0.10' : '|t| 상위 10개') + ' 조합 ' + pool.length + '개 중 ' + kept + '개가 같은 방향 유지(효과가 전혀 없다면 약 절반이 유지). 확인 구간이 ' + R.coN + '개 기간뿐이라 검정력이 낮습니다.</div>';
+  }
+  h += '<div class="meta-line" style="line-height:1.55; margin-top:6px;"><b>읽는 법·한계</b> ① 모든 요인 값이 있는 종목만 쓰므로(조합 간 공정 비교) 각 요인을 따로 돌린 A의 백테스트와 종목 수가 다릅니다. ② 스프레드 = 상위 그룹 − 하위 그룹의 기간 평균 수익률(거래비용 미반영). ③ 가짜 세계는 종목 사이에서만 섞으므로 같은 해에 같이 움직이는 시장·업종 효과는 반영하지 못합니다. ④ 요인끼리 서로 비슷해서 조합 결과들은 독립이 아닙니다(그래서 단순 곱셈 보정 대신 시뮬레이션을 썼습니다). ⑤ 같은 데이터를 다시 탐색하면 앞선 선택의 영향이 남으므로, 유의 조합은 새 데이터가 쌓였을 때 다시 확인해야 합니다. 근거: 다중검정 문제는 Harvey·Liu·Zhu(2016)가 팩터 연구 전반에 지적했고, 방법은 Westfall·Young(1993)의 maxT 재표집입니다. 한국 시장에서의 성과를 보장하지 않습니다.</div>';
+  out.innerHTML = h;
+}
+async function cmbRun() {
+  if (CMB.running) return;
+  if (!BT.stocks) { document.getElementById('cmbMsg').textContent = '먼저 위 A의 「① 저장된 종목 불러오기」를 눌러 주세요.'; return; }
+  const keys = [].slice.call(document.querySelectorAll('.cmbFac')).filter(function (c) { return c.checked; }).map(function (c) { return c.value; });
+  if (keys.length < 2) { document.getElementById('cmbMsg').textContent = '요인을 2개 이상 고르세요.'; return; }
+  const mode = document.getElementById('cmbMode').value;
+  CMB.running = true; const msg = document.getElementById('cmbMsg');
+  try {
+    msg.textContent = '기간별 요인 값을 만드는 중...'; await cmbTick();
+    const periods = mode === 'qttm' ? btBuildQuarterly(keys) : btBuildAnnual(keys, {});
+    const R = await cmbSearch({ periods: periods, keys: keys, kmax: Number(document.getElementById('cmbK').value) || 3, G: Number(document.getElementById('cmbG').value) || 5,
+      B: Number(document.getElementById('cmbB').value) || 300, seed: Number(document.getElementById('cmbSeed').value) || 1, split: document.getElementById('cmbSplit').checked ? 2 / 3 : null,
+      trim: true, ppy: mode === 'qttm' ? 4 : 1, onProgress: function (t) { msg.textContent = t; } });
+    R.mode = mode; CMB.res = R; msg.textContent = ''; cmbRender(R);
+  } catch (e) { msg.textContent = '오류: ' + (e.message || e); } finally { CMB.running = false; }
+}
+function cmbOpen(i) {
+  const R = CMB.res; if (!R || !R.combos[i]) return;
+  [].slice.call(document.querySelectorAll('.btFac')).forEach(function (c) { c.checked = R.combos[i].keys.indexOf(c.value) >= 0; });
+  document.getElementById('btFinMode').value = R.mode === 'qttm' ? 'qttm' : 'annual'; btFinModeChange();
+  btRunFin(); const el = document.getElementById('btFinOut'); if (el && el.scrollIntoView) el.scrollIntoView();
+}
+// ===== /조합 탐색 =====
+
 let btUiReady = false;
 function btInitUi() {
   if (btUiReady) return; btUiReady = true;
   try { btStkLoadList(); } catch (e) { /* 목록은 입력 시 다시 시도 */ }
   const keys = Object.keys(BT_FACTORS);
+  document.getElementById('cmbPool').innerHTML = '<b>조합에 쓸 요인</b> ' + keys.map(function (k) { return '<label style="margin-right:10px; white-space:nowrap;"><input type="checkbox" class="cmbFac" value="' + k + '"' + (k === 'legacy4' ? '' : ' checked') + ' /> ' + (BT_FAC_SHORT[k] || k) + '</label>'; }).join('');
   document.getElementById('btFinFactors').innerHTML = '<div style="font-size:12.5px; font-weight:600; margin-bottom:4px;">검증할 방법 (여러 개 고르면 순위를 평균한 복합 점수)</div>' +
     keys.map((k) => '<label style="display:block; font-size:12.5px; margin:2px 0;"><input type="checkbox" class="btFac" value="' + k + '"' + (k === 'fscore' ? ' checked' : '') + ' /> ' + BT_FACTORS[k].name + ' ' + anBadge(BT_FACTORS[k].badge) + ' <span style="color:var(--text-muted); font-size:11px;">' + BT_FACTORS[k].ev + '</span></label>').join('');
 }
