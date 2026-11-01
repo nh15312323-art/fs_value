@@ -540,6 +540,7 @@ const HTML_PAGE = `<!doctype html>
     <button id="tabBtnBt" data-grp="admin" onclick="switchTab('bt')">백테스트</button>
     <button id="tabBtnData" data-grp="admin" onclick="switchTab('data')">데이터 관리</button>
     <button id="tabBtnDb" data-grp="admin" onclick="switchTab('db')">DB 용량</button>
+    <button id="tabBtnGuide" data-grp="admin" onclick="switchTab('guide')">쉬운 설명</button>
   </div>
 
   <!-- ===================== 종목분석 ===================== -->
@@ -558,6 +559,7 @@ const HTML_PAGE = `<!doctype html>
         <summary id="savedSummary">📁 DB에 저장된 종목 (불러오는 중…)</summary>
         <div id="savedRecent" style="margin-top:8px;"></div>
         <input id="savedFilter" placeholder="저장된 종목 안에서 찾기" autocomplete="off" style="width:100%; box-sizing:border-box; margin:6px 0;" />
+        <div class="row" style="gap:6px; align-items:center; margin-bottom:6px;"><select id="savedInd" onchange="renderSavedBox()"><option value="">업종: 전체</option></select><label style="font-size:12.5px;"><input type="checkbox" id="savedGrp" onchange="renderSavedBox()"> 업종별로 묶기</label><button type="button" onclick="indFillList('saved')" style="padding:4px 8px; font-size:12px;" title="업종을 아직 모르는 종목을 DART에서 받아 저장합니다(종목당 1회)">업종 받기</button><span id="savedIndMsg" class="meta-line"></span></div>
         <div id="savedChips"></div>
       </details>
       <div id="stockMeta" class="meta-line"></div>
@@ -689,7 +691,7 @@ const HTML_PAGE = `<!doctype html>
   <!-- ===================== 스크리닝 ===================== -->
   <div id="tabMomentum" style="display:none;">
     <div class="card">
-      <div class="card-title">조건 설정</div>
+      <div class="card-title">조건 설정 <a href="#" onclick="guideOpen('rs'); return false;" style="font-size:12px; font-weight:400; margin-left:6px;">ⓘ 쉬운 설명</a></div>
       <div class="row" style="margin-bottom:8px;">
         <span style="font-size:13px; color:var(--text-muted);">프리셋</span>
         <button onclick="setScreenPreset('std')" id="presetStd" class="toggle-active" style="padding:6px 10px; font-size:13px;">표준(권장)</button>
@@ -765,7 +767,7 @@ const HTML_PAGE = `<!doctype html>
   <!-- ===================== 거시·상관 ===================== -->
   <div id="tabFscr" style="display:none;">
     <div class="card">
-      <div class="card-title">재무 스크리닝 — 재무가 저장된 종목 안에서 거르기</div>
+      <div class="card-title">재무 스크리닝 — 재무가 저장된 종목 안에서 거르기 <a href="#" onclick="guideOpen('funnel'); return false;" style="font-size:12px; font-weight:400; margin-left:6px;">ⓘ 쉬운 설명</a></div>
       <div style="font-size:12.5px; line-height:1.5;">ROIC·성장·FCF·가치 조건을 직접 켜서 거릅니다. 합산 점수는 만들지 않고, 조건마다 몇 종목이 남는지와 자료가 없어 빠진 수를 보여줍니다. 아래 기준값은 <b>참고용 출발값</b>이며 이 값으로 초과수익이 난다는 검증은 하지 않았습니다(백테스트 탭에서 방법별로 따로 확인).</div>
       <div class="row" style="margin-top:8px;">
         <button class="primary" onclick="fscLoad()">저장된 종목 불러오기·계산</button>
@@ -796,7 +798,7 @@ const HTML_PAGE = `<!doctype html>
   <!-- ===================== 백테스트 ===================== -->
   <div id="tabBt" style="display:none;">
     <div class="card">
-      <div class="card-title">🧪 백테스트 — 과거에 이 방법을 썼다면 어땠을까?</div>
+      <div class="card-title">🧪 백테스트 — 과거에 이 방법을 썼다면 어땠을까? <a href="#" onclick="guideOpen('bt-what'); return false;" style="font-size:12px; font-weight:400; margin-left:6px;">ⓘ 쉬운 설명</a></div>
       <div style="font-size:12.5px; line-height:1.65;">
         <b>어떻게 검증하나요?</b> 매 기간마다 종목을 점수(예: F-Score)로 줄 세워 5개 그룹으로 나누고, 그 뒤 실제 수익률이 점수 순서대로 높았는지 봅니다.
         상위 그룹이 하위 그룹보다 일관되게 높으면 그 방법에 정보가 있다는 뜻입니다. 이는 Fama-French 이후 학계가 쓰는 표준 방식(분위 포트폴리오 정렬)입니다.
@@ -810,7 +812,7 @@ const HTML_PAGE = `<!doctype html>
     </div>
 
     <div class="card">
-      <div class="card-title">A. 재무분석 방법 백테스트 (DART 저장 데이터)</div>
+      <div class="card-title">A. 재무분석 방법 백테스트 (DART 저장 데이터) <a href="#" onclick="guideOpen('bt-groups'); return false;" style="font-size:12px; font-weight:400; margin-left:6px;">ⓘ 쉬운 설명</a></div>
       <div class="row"><button onclick="btLoadStocks()">① 저장된 종목 불러오기</button><button onclick="btBackfillNextDay()" title="연간 백테스트가 매매가로 쓰는 '공시 다음 거래일 종가'를 기존 저장 행에 채웁니다(처음 한 번, 이후 새로 받는 행은 자동 저장)">공시 다음 거래일 가격 채우기</button><span id="btFinInfo" style="font-size:12px; color:var(--text-muted);"></span></div>
       <div style="margin:8px 0; font-size:12.5px;">
         <label>방식 <select id="btFinMode" onchange="btFinModeChange()"><option value="annual">연간 재무 방법 (공시 다음 거래일 종가 매수 → 다음 해 공시 다음 거래일 종가 매도)</option><option value="qttm">분기 TTM 재무 방법 (분기보고서 공시 다음 거래일 종가 매수 → 다음 분기보고서 공시 다음 거래일 종가 매도)</option><option value="momq">분기 모멘텀 (분기말 주가)</option></select></label>
@@ -835,7 +837,7 @@ const HTML_PAGE = `<!doctype html>
     </div>
 
     <div class="card">
-      <div class="card-title">A-2. 조합 탐색 — 어떤 재무·가치 조합이 우연이 아닌가 (역방향)</div>
+      <div class="card-title">A-2. 조합 탐색 — 어떤 재무·가치 조합이 우연이 아닌가 (역방향) <a href="#" onclick="guideOpen('bt-multi'); return false;" style="font-size:12px; font-weight:400; margin-left:6px;">ⓘ 쉬운 설명</a></div>
       <div style="font-size:12.5px; line-height:1.5;">위 A는 내가 고른 방법이 유의한지 보지만, 여기서는 반대로 <b>요인 1~5개의 모든 조합을 한꺼번에 시험</b>해 어떤 조합이 유의한지 보여줍니다. 조합을 많이 뒤질수록 우연히 좋아 보이는 것이 생기므로, 수익률을 무작위로 섞은 가짜 세계를 여러 번 만들어 <b>우연으로 나올 수 있는 최고치</b>를 기준선으로 삼아 보정합니다. 또 기간을 나눠 앞 구간에서 고른 것이 뒤 구간에서도 같은 방향인지 확인합니다.</div>
       <div class="row" style="margin-top:8px; gap:10px; flex-wrap:wrap; font-size:12.5px;">
         <label>방식 <select id="cmbMode"><option value="annual">연간(기간 수 적음)</option><option value="qttm" selected>분기 TTM(기간 수 많음, 권장)</option></select></label>
@@ -851,7 +853,7 @@ const HTML_PAGE = `<!doctype html>
     </div>
 
     <div class="card">
-      <div class="card-title">C. 종목별 보기 — 재무 값 · 주가 · 주가수익률 한 번에</div>
+      <div class="card-title">C. 종목별 보기 — 재무 값 · 주가 · 주가수익률 한 번에 <a href="#" onclick="guideOpen('bt-lookahead'); return false;" style="font-size:12px; font-weight:400; margin-left:6px;">ⓘ 쉬운 설명</a></div>
       <div style="font-size:12px; color:var(--text-muted); line-height:1.55; margin-bottom:6px;">위 A의 연간 재무 백테스트가 종목마다 실제로 쓰는 값을 결산연도별로 모아 보여 줍니다. <b>매수가</b> = 사업보고서 공시 다음 거래일 종가, <b>매도가</b> = 다음 해 사업보고서 공시 다음 거래일 종가, <b>12개월 수익률</b> = 매도가 ÷ 매수가 − 1(배당 제외). 재무 팩터 값은 공시 시점에 알 수 있었던 자료와 매수가로만 계산합니다.</div>
       <div class="row" style="gap:8px; flex-wrap:wrap; align-items:center;">
         <input id="btStkIn" list="btStkList" placeholder="종목명 입력 또는 선택 (재무 데이터가 저장된 종목)" style="flex:1; min-width:200px;" onchange="btStkPick(this.value)" onkeydown="if(event.key==='Enter'){btStkPick(this.value);}" />
@@ -865,7 +867,7 @@ const HTML_PAGE = `<!doctype html>
     </div>
 
     <div class="card">
-      <div class="card-title">B. 스크리닝 조건 백테스트 (일별 시세)</div>
+      <div class="card-title">B. 스크리닝 조건 백테스트 (일별 시세) <a href="#" onclick="guideOpen('bt-t'); return false;" style="font-size:12px; font-weight:400; margin-left:6px;">ⓘ 쉬운 설명</a></div>
       <div style="font-size:12px; color:var(--text-muted); line-height:1.55; margin-bottom:6px;">스크리닝과 같은 방식(최근 1개월을 뺀 수익률 순위 + 시총·거래대금 하위 제외)으로 과거 기준일마다 종목을 줄 세우고, 이후 보유기간 수익률을 비교합니다. 저장된 시세 이력이 짧아 기준일이 매우 적을 수 있습니다.</div>
       <div class="row" style="font-size:12.5px; gap:10px; flex-wrap:wrap;">
         <label>2~3개월 가중치 <input id="btScW3" type="number" value="0.5" step="0.1" min="0" style="width:60px;" /></label>
@@ -904,6 +906,19 @@ const HTML_PAGE = `<!doctype html>
 
 
   <!-- ===================== DB 용량 ===================== -->
+  <div id="tabGuide" style="display:none;">
+    <div class="card">
+      <div class="card-title">📖 쉬운 설명 — 백테스트·지표 용어집</div>
+      <div style="font-size:12.5px; line-height:1.6;">화면에 나오는 말을 비전공자도 알 수 있게 풀어 쓴 설명집입니다. 항목마다 <b>한마디로 · 쉬운 예 · 이 앱에서 어디 · 조심할 점</b>을 적었습니다. 단어(예: 현금, 우연, ROIC)로 찾아보세요. 투자 권유가 아니라 계산과 용어의 설명입니다.</div>
+      <div class="row" style="margin-top:8px;">
+        <input id="guideQ" oninput="guideRender()" placeholder="찾을 말 (예: FCF, 우연, 업종)" style="flex:1; min-width:160px;" />
+        <select id="guideCat" onchange="guideRender()"><option value="">전체 분야</option></select>
+      </div>
+      <div id="guideCount" class="meta-line"></div>
+      <div id="guideOut"></div>
+    </div>
+  </div><!-- /tabGuide -->
+
   <div id="tabDb" style="display:none;">
     <div class="card">
       <div class="card-title">DB 용량 현황</div>
@@ -1169,6 +1184,7 @@ const HTML_PAGE = `<!doctype html>
           <input id="dbListFilter" oninput="renderDbList()" placeholder="종목명/종목코드로 거르기" style="flex:1; min-width:140px;" />
           <button onclick="toggleDbList(true)" style="padding:6px 10px; font-size:13px;">새로고침</button>
         </div>
+        <div class="row" style="gap:6px; align-items:center; margin-top:6px;"><select id="dbListInd" onchange="renderDbList()"><option value="">업종: 전체</option></select><label style="font-size:12.5px;"><input type="checkbox" id="dbListGrp" onchange="renderDbList()"> 업종별로 묶기</label><button type="button" onclick="indFillList('dbList')" style="padding:4px 8px; font-size:12px;" title="업종을 아직 모르는 종목을 DART에서 받아 저장합니다(종목당 1회)">업종 받기</button><span id="dbListIndMsg" class="meta-line"></span></div>
         <div id="dbListCount" style="font-size:12px; color:var(--text-muted); margin:6px 0;"></div>
         <div id="dbListBody" style="display:flex; flex-wrap:wrap; gap:6px; max-height:220px; overflow:auto;"></div>
       </div>
@@ -1322,12 +1338,12 @@ const HTML_PAGE = `<!doctype html>
     window.addEventListener('pageshow', function () { const cv = document.getElementById('privCover'); if (cv) cv.style.display = 'none'; });
 
     // ===== 메뉴 이동: 하단 메뉴바 · 더보기 · 뒤로가기/링크(#탭) · 마지막 탭 기억 =====
-    const TAB_IDS = ['momentum', 'fscr', 'financial', 'macro', 'data', 'bt', 'pf', 'db'];
+    const TAB_IDS = ['momentum', 'fscr', 'financial', 'macro', 'data', 'bt', 'pf', 'db', 'guide'];
     let curTab = 'financial';
     function toggleMore() { const e = document.getElementById('moreSheet'); e.style.display = e.style.display === 'block' ? 'none' : 'block'; }
     function closeMore() { const e = document.getElementById('moreSheet'); if (e) e.style.display = 'none'; }
     // 메뉴는 4개 묶음(발굴·종목·내 투자·검증/관리). 묶음 안의 화면은 위쪽 보조 메뉴(#grpNav)로 옮긴다. 화면(탭) 자체와 switchTab은 그대로다.
-    const TAB_GROUP = { momentum: 'find', fscr: 'find', macro: 'find', financial: 'stock', pf: 'my', bt: 'admin', data: 'admin', db: 'admin' };
+    const TAB_GROUP = { momentum: 'find', fscr: 'find', macro: 'find', financial: 'stock', pf: 'my', bt: 'admin', data: 'admin', db: 'admin', guide: 'admin' };
     const GROUP_FIRST = { find: 'momentum', stock: 'financial', my: 'pf', admin: 'bt' };
     const grpLast = {};
     function switchGroup(g) { switchTab(grpLast[g] || GROUP_FIRST[g]); }
@@ -1738,9 +1754,11 @@ const HTML_PAGE = `<!doctype html>
       sum.textContent = '📁 DB에 저장된 종목 ' + list.length + '개 — 눌러서 펼치고 바로 분석';
       const f = (document.getElementById('savedFilter').value || '').trim().toLowerCase();
       const fc = /^[ㄱ-ㅎ]+$/.test(f);
-      const shown = list.filter((c) => !f || c.corp_name.toLowerCase().indexOf(f) >= 0 || (fc && choseongOf(c.corp_name).indexOf(f) >= 0) || String(c.stock_code || '').indexOf(f) === 0);
+      indSyncList(list); indFillSelect('savedInd', list.map((c) => c.stock_code));
+      const isel = document.getElementById('savedInd').value, grp = document.getElementById('savedGrp').checked;
+      const shown = list.filter((c) => (!f || c.corp_name.toLowerCase().indexOf(f) >= 0 || (fc && choseongOf(c.corp_name).indexOf(f) >= 0) || String(c.stock_code || '').indexOf(f) === 0) && indMatchSel(isel, c.stock_code));
       document.getElementById('savedChips').innerHTML = shown.length
-        ? shown.map((c) => '<button type="button" class="saved-chip" data-name="' + escHtml(c.corp_name) + '">' + escHtml(c.corp_name) + '<small>' + c.n + '기간' + (c.acc_mt && Number(c.acc_mt) !== 12 ? ' · ' + c.acc_mt + '월결산' : '') + '</small></button>').join('')
+        ? indJoin(shown, (c) => c.stock_code, (c) => '<button type="button" class="saved-chip" data-name="' + escHtml(c.corp_name) + '">' + escHtml(c.corp_name) + '<small>' + c.n + '기간' + indSmall(c.stock_code) + (c.acc_mt && Number(c.acc_mt) !== 12 ? ' · ' + c.acc_mt + '월결산' : '') + '</small></button>', grp)
         : '<span style="font-size:12.5px; color:var(--text-muted);">' + (list.length ? '일치하는 저장 종목이 없습니다.' : '아직 저장된 종목이 없습니다. 종목을 분석하면 자동으로 저장됩니다.') + '</span>';
       const rec = loadRecent().filter((n) => list.some((c) => c.corp_name === n));
       document.getElementById('savedRecent').innerHTML = rec.length ? '<span style="font-size:12px; color:var(--text-muted);">최근 본 종목 </span>' + rec.map((n) => '<button type="button" class="saved-chip recent" data-name="' + escHtml(n) + '">' + escHtml(n) + '</button>').join('') : '';
@@ -4552,7 +4570,272 @@ async function indEnsure(codes, onStep) {
   indPaint();
 }
 function indEnsureScreen() { const codes = []; Array.prototype.forEach.call(document.querySelectorAll('[data-ind]'), function (e) { const c = e.getAttribute('data-ind'); if (codes.indexOf(c) < 0) codes.push(c); }); if (codes.length) indEnsure(codes.slice(0, 60)); }
+// 저장 종목 목록(종목분석·데이터 관리)과 백테스트 표에서 쓰는 공통 도우미
+function indSyncList(list) { (list || []).forEach(function (c) { if (c && c.stock_code && c.ind) IND.map[c.stock_code] = c.ind; }); }
+function indKey(code) { return indGroup(IND.map[code]) || ''; }
+function indSmall(code) { const l = indLabel(IND.map[code]); return l ? ' · ' + escHtml(l) : ''; }
+function indFillSelect(id, codes) {
+  const sel = document.getElementById(id); if (!sel) return;
+  const cur = sel.value, cnt = {}; let un = 0;
+  codes.forEach(function (c) { const g = indKey(c); if (g) cnt[g] = (cnt[g] || 0) + 1; else un++; });
+  sel.innerHTML = '<option value="">업종: 전체</option>' + Object.keys(cnt).sort(function (a, b) { return cnt[b] - cnt[a] || (a < b ? -1 : 1); }).map(function (g) { return '<option value="' + g + '">' + escHtml(IND_NAMES[g] || ('KSIC ' + g)) + ' (' + cnt[g] + ')</option>'; }).join('') + (un ? '<option value="none">업종 미확인 (' + un + ')</option>' : '');
+  sel.value = cur && Array.prototype.some.call(sel.options, function (o) { return o.value === cur; }) ? cur : '';
+}
+function indMatchSel(sel, code) { if (!sel) return true; const g = indKey(code); return sel === 'none' ? !g : g === sel; }
+// 업종 이름순(미확인은 맨 뒤)으로 묶어 정렬. 같은 업종 안에서는 원래 순서를 유지한다.
+function indSort(items, codeOf) {
+  return items.map(function (it, i) { return { it: it, i: i, k: indKey(codeOf(it)) }; }).sort(function (a, b) {
+    if (a.k === b.k) return a.i - b.i; if (!a.k) return 1; if (!b.k) return -1;
+    return (IND_NAMES[a.k] || a.k).localeCompare(IND_NAMES[b.k] || b.k, 'ko');
+  }).map(function (x) { return x.it; });
+}
+function indJoin(items, codeOf, chipOf, grouped) {
+  if (!grouped) return items.map(function (it, i) { return chipOf(it, i); }).join('');
+  const sorted = indSort(items, codeOf), cnt = {}; sorted.forEach(function (it) { const k = indKey(codeOf(it)); cnt[k] = (cnt[k] || 0) + 1; });
+  let h = '', last = null;
+  sorted.forEach(function (it, i) {
+    const k = indKey(codeOf(it));
+    if (k !== last) { last = k; h += '<div class="ind-h" style="flex-basis:100%; width:100%; font-weight:700; font-size:12.5px; margin:8px 0 2px;">' + escHtml(k === '' ? '업종 미확인' : (IND_NAMES[k] || ('KSIC ' + k))) + ' (' + cnt[k] + ')</div>'; }
+    h += chipOf(it, i);
+  });
+  return h;
+}
+// 목록에서 업종이 비어 있는 종목을 DART에서 받아 채운다(종목당 1회, 3개씩).
+async function indFillList(which) {
+  const msg = document.getElementById(which + 'IndMsg'); const list = dbCompanies || [];
+  const codes = list.map(function (c) { return c.stock_code; }).filter(function (c) { return c && !IND.map[c]; });
+  const again = function () { if (which === 'saved') renderSavedBox(); else renderDbList(); };
+  if (!codes.length) { if (msg) msg.textContent = '업종을 아직 못 받은 종목이 없습니다.'; return; }
+  if (msg) msg.textContent = '업종을 받는 중... 0 / ' + codes.length;
+  await indFill(codes, function (a, b) { if (msg) msg.textContent = '업종을 받는 중... ' + a + ' / ' + b; again(); });
+  const left = codes.filter(function (c) { return !IND.map[c]; }).length;
+  if (msg) msg.textContent = left ? ('완료. ' + left + '개 종목은 DART에서 업종을 받지 못했습니다.') : '완료';
+  again();
+}
 // ===== /업종 =====
+
+// ===== 쉬운 설명 (백테스트·지표 용어집) =====
+// 비전공자용 설명집. 항목마다 "한마디로 / 쉬운 비유·예 / 이 앱에서 어디 / 조심할 점"을 적는다. 숫자 기준(예: t값 2·3)은 이 앱이 쓰는 기준이며 절대 규칙이 아니다.
+const GUIDE_CATS = ["백테스트 기초", "결과 읽는 법", "속기 쉬운 함정", "수익성·효율", "현금흐름", "가치(싼지 비싼지)", "성장·재무 데이터", "안정성", "주가 흐름", "화면에서 자주 보는 말"];
+const GUIDE = [
+  { id: "bt-what", c: 0, t: "백테스트란?", k: "백테스트 과거 검증 시뮬레이션",
+    one: "과거 자료로 '이 방법을 그때 썼다면 어땠을까'를 미리 해보는 연습 시험입니다.",
+    ex: "예) '영업이익률이 높은 회사를 사면 이긴다'는 생각이 있다면, 2015년부터 매년 그 기준으로 종목을 골랐을 때 실제로 그 뒤 1년 수익이 좋았는지 확인합니다.",
+    app: "백테스트 탭 A·A-2·B. 점수로 종목을 줄 세우고 5개 그룹으로 나눠 그룹별 실제 수익률을 비교합니다.",
+    warn: "과거에 좋았다고 앞으로도 좋다는 보장은 없습니다. 이 앱의 결과는 '참고 증거'이지 수익 약속이 아닙니다." },
+  { id: "bt-groups", c: 0, t: "상위 그룹 · 하위 그룹 (5분위)", k: "분위 5분위 quintile 상위 하위 그룹",
+    one: "점수 순으로 종목을 5등분해, 가장 점수 높은 20%(상위)와 가장 낮은 20%(하위)의 성적을 비교합니다.",
+    ex: "예) 달리기 기록으로 반을 5조로 나눈 뒤, 1조와 5조의 이후 시험 성적을 비교하는 것과 같습니다. 1조 성적이 늘 더 좋다면 '기록'이 쓸모 있는 정보라는 뜻이죠.",
+    app: "백테스트 결과의 그룹별 수익률, 차트의 초록(상위)·빨강(하위)·회색(전체 평균) 선.",
+    warn: "상위 그룹이 이긴 해가 많아도, 몇몇 해에 크게 이긴 것뿐일 수 있습니다. 해마다 일관적인지 함께 보세요." },
+  { id: "bt-longshort", c: 1, t: "롱숏 (상위 − 하위)", k: "롱숏 long short 스프레드",
+    one: "상위 그룹 수익률에서 하위 그룹 수익률을 뺀 값. 클수록 점수가 수익을 잘 가려냈다는 뜻입니다.",
+    ex: "예) 상위 +12%, 하위 +2%면 롱숏은 +10%p. 시장 전체가 오르내린 영향은 서로 상쇄되어 '방법 자체의 힘'만 남습니다.",
+    app: "백테스트 요약 표.", warn: "실제로 하위 그룹을 공매도하는 것은 어렵습니다. '방법의 힘을 재는 자' 정도로 이해하세요." },
+  { id: "bt-ic", c: 1, t: "IC (정보계수, 순위 상관)", k: "IC 정보계수 rank ic 상관",
+    one: "점수 순위와 이후 수익률 순위가 얼마나 닮았는지(−1~+1). 0이면 상관없음, 1이면 점수 순서 그대로 수익이 나옴.",
+    ex: "예) 키 순서와 몸무게 순서가 비슷하면 상관이 높죠. 같은 방식으로 '점수 순서'와 '수익 순서'를 비교합니다.",
+    app: "백테스트 결과의 IC 열.", warn: "현실에서 좋은 지표의 IC도 0.02~0.1 정도로 작습니다. 0.5 같은 값이 나오면 오히려 오류나 편향을 의심하세요." },
+  { id: "bt-t", c: 1, t: "t 통계량 · p값 (우연일 가능성)", k: "t값 t통계량 p값 유의 우연 newey west 뉴이웨스트",
+    one: "결과가 운이 아닐 가능성을 숫자로 만든 것. t의 절댓값이 클수록 우연이기 어렵습니다.",
+    ex: "예) 동전을 던져 앞면이 6/10번 나온 건 우연일 수 있지만 600/1000번이면 우연이기 어렵죠. t값은 이런 '우연의 어려움'을 재는 눈금입니다.",
+    app: "백테스트 판정. 이 앱은 2 미만이면 '우연과 구분 안 됨', 여러 방법을 시험했다면 3 이상을 요구합니다. 연속된 기간끼리 결과가 닮는 점을 보정한 Newey-West 방식을 씁니다.",
+    warn: "t가 커도 편향이 있으면 소용없습니다. 또 많이 시험할수록 우연히 큰 값이 나옵니다(→ '많이 시험하면 생기는 착시')." },
+  { id: "bt-multi", c: 2, t: "많이 시험하면 생기는 착시 (다중검정 · 데이터 스누핑)", k: "다중검정 스누핑 데이터스누핑 westfall young 보정 p 조정 harvey",
+    one: "방법을 100개 시험하면 운이 좋은 몇 개는 반드시 '유의'하게 나옵니다. 그중 최고만 고르면 거짓 발견입니다.",
+    ex: "예) 로또 100장을 사서 가장 많이 맞은 한 장만 보고 '이 번호가 비결'이라고 하는 셈입니다.",
+    app: "백테스트의 '시도 횟수' 기록과 A-2 조합 탐색의 '보정 p값'(Westfall-Young maxT). 조합 탐색은 여러 조합을 한꺼번에 시험한 사실을 반영해 기준을 더 엄격하게 만듭니다.",
+    warn: "보정된 p값도 완벽한 보증은 아닙니다. 탐색 구간에서 찾은 조합이 따로 떼어둔 확인 구간에서도 통하는지가 더 중요합니다." },
+  { id: "bt-split", c: 2, t: "탐색 구간 vs 확인 구간", k: "탐색 확인 구간 분리 외표본 oos in-sample 검증",
+    one: "앞부분 기간(약 2/3)으로 좋은 조합을 찾고, 한 번도 안 본 뒷부분(약 1/3)으로 정말 통하는지 다시 확인합니다.",
+    ex: "예) 기출문제로 공부(탐색)하고, 처음 보는 시험지(확인)로 실력을 재는 것과 같습니다.",
+    app: "백테스트 A-2 조합 탐색.", warn: "확인 구간이 짧으면 결과가 흔들립니다. 통과 못 했다고 무가치한 것도, 통과했다고 확실한 것도 아닙니다." },
+  { id: "bt-lookahead", c: 2, t: "미래 정보 엿보기 (룩어헤드 편향)", k: "룩어헤드 look-ahead 공시일 미래 정보",
+    one: "그 시점엔 아직 공개되지 않은 정보를 써버리는 실수. 결과가 터무니없이 좋아집니다.",
+    ex: "예) 12월 결산 보고서는 이듬해 3월에야 공시됩니다. 1월에 이미 그 숫자를 안다고 가정하면 반칙입니다.",
+    app: "이 앱은 재무 숫자를 공시된 뒤에만 쓰도록 설계했습니다. 분기 백테스트는 '공시 다음 거래일 종가에 사고, 다음 공시 다음 거래일 종가에 파는' 규칙입니다(종목별 보기의 공시일·매수일·매도일 열 참고).",
+    warn: "정정 공시로 숫자가 나중에 바뀐 경우까지 완벽히 반영하지는 못할 수 있습니다." },
+  { id: "bt-survivor", c: 2, t: "살아남은 종목만 보는 착시 (생존편향)", k: "생존편향 survivorship 상장폐지",
+    one: "망해서 사라진 종목을 빼고 지금 남은 종목만 보면 과거 성적이 실제보다 좋아 보입니다.",
+    ex: "예) 졸업생 명단만 보고 '이 학원 출신은 다 합격한다'고 하는 것과 같습니다. 중퇴자도 세야 공정하죠.",
+    app: "저장된 종목이 지금 거래되는 회사 위주라면 이 착시가 남아 있을 수 있습니다. 결과 아래 '주의할 점'을 확인하세요.",
+    warn: "상위 그룹의 수익률이 높게 나왔다면 이 편향 때문에 부풀려졌을 수 있다고 생각하세요." },
+  { id: "bt-sample", c: 2, t: "표본이 적으면 믿기 어렵다", k: "표본 부족 샘플 개수 종목수",
+    one: "종목 수나 기간이 적으면 몇 종목 때문에 결과가 뒤집힙니다.",
+    ex: "예) 5명에게 물어본 설문과 5000명에게 물어본 설문의 신뢰도는 다르죠.",
+    app: "저장된 재무가 적으면 판정이 '표본 부족'으로 나옵니다. 데이터 관리에서 종목·기간을 늘리면 좋아집니다.",
+    warn: "표본 부족 결과를 '효과 없음'으로 읽지도, '효과 있음'으로 읽지도 마세요. 그냥 '모름'입니다." },
+  { id: "bt-cost", c: 2, t: "거래비용 · 배당 · 체결의 현실", k: "거래비용 수수료 슬리피지 세금 배당 체결 유동성",
+    one: "실제로는 수수료·세금·호가 차이가 들고, 거래가 적은 종목은 원하는 가격에 못 삽니다. 배당은 따로 받습니다.",
+    ex: "예) 백테스트 수익 10%가 거래비용 3%를 빼면 7%가 됩니다. 사고파는 횟수가 많을수록 차이가 커집니다.",
+    app: "백테스트 결과 아래 '주의할 점'에서 비용·배당 반영 여부를 확인하세요.",
+    warn: "비용을 반영하지 않은 결과는 현실보다 좋게 나옵니다." },
+  { id: "bt-rebal", c: 0, t: "리밸런싱(종목 다시 고르기)과 보유 기간", k: "리밸런싱 보유기간 12개월 연간 분기",
+    one: "정해진 주기마다 점수를 다시 매겨 종목을 바꾸는 일. 이 앱의 종목별 보기는 공시 후 12개월 수익률을 봅니다.",
+    ex: "예) 해마다 사업보고서가 나온 뒤 점수를 다시 계산해 상위 종목으로 갈아타는 규칙입니다.",
+    app: "백테스트 A(연간/분기), 종목별 보기의 매수가·매도가.", warn: "주기를 바꾸면 결과도 바뀝니다. 한 가지 주기에서만 좋은 방법은 우연일 수 있습니다." },
+
+  { id: "roic", c: 3, t: "ROIC (투하자본이익률)", k: "ROIC 투하자본 이익률 nopat",
+    one: "회사가 사업에 넣은 돈 100원으로 세금 낸 뒤 영업으로 몇 원을 버는가.",
+    ex: "예) 가게에 10억을 넣어 연 1.5억을 벌면 ROIC는 15%. 은행 이자보다 훨씬 높으면 돈을 잘 굴리는 사업입니다.",
+    app: "종목분석 수익성 장, 재무 스크리닝(ROIC 3년 평균·최신).",
+    warn: "계산 방식(투하자본에 뭘 넣는지)에 따라 값이 달라 회사끼리 비교할 때 조심하세요. 은행·보험 같은 금융업은 일반 기업과 구조가 달라 해석이 어렵습니다." },
+  { id: "roe", c: 3, t: "ROE (자기자본이익률)", k: "ROE 자기자본 이익률",
+    one: "주주 몫의 돈 100원으로 순이익을 몇 원 벌었는가.",
+    ex: "예) 내 돈 1억으로 가게를 차려 1천만 원을 남기면 ROE 10%.",
+    app: "종목분석, 백테스트 기존 Quality 점수.", warn: "빚을 많이 쓰면 ROE가 부풀려집니다. 부채비율을 같이 보세요." },
+  { id: "opm", c: 3, t: "영업이익률", k: "영업이익률 마진 operating margin",
+    one: "매출 100원 중 본업으로 남는 돈이 몇 원인가.",
+    ex: "예) 매출 1,000억에 영업이익 100억이면 10%. 같은 업종에서 높을수록 가격 결정력이나 원가 경쟁력이 좋을 가능성이 있습니다.",
+    app: "재무 스크리닝 '영업이익률 ≥' 조건.", warn: "업종마다 보통 수준이 크게 다릅니다(유통 3%, 소프트웨어 20% 등). 같은 업종끼리 비교하세요." },
+  { id: "gm", c: 3, t: "매출총이익률 · GP/A", k: "매출총이익 gpa gross profitability 총자산",
+    one: "매출에서 원가만 뺀 이익이 얼마나 남는지. GP/A는 그 이익을 회사 전체 자산 대비로 본 값.",
+    ex: "예) 같은 자산으로 원가를 빼고도 많이 남기는 회사가 '장사 기본기'가 좋습니다.",
+    app: "백테스트 요인 '매출총이익/총자산(Novy-Marx 2013)'.", warn: "판관비·연구개발비를 아직 안 뺀 값이라 최종 수익성은 영업이익률로 따로 확인하세요." },
+  { id: "accrual", c: 3, t: "발생액 (이익의 질)", k: "발생액 accrual 이익의 질 sloan",
+    one: "장부상 이익과 실제 현금 사이의 차이. 장부 이익만 크고 현금이 안 들어오면 이익의 질이 낮다고 봅니다.",
+    ex: "예) 외상 매출만 늘어난 회사는 이익은 늘어도 통장엔 돈이 없습니다.",
+    app: "백테스트 요인 '낮은 발생액(Sloan 1996)', 종목분석 현금전환.", warn: "큰 투자나 성장 중인 회사는 발생액이 일시적으로 클 수 있습니다." },
+
+  { id: "cfo", c: 4, t: "영업현금흐름 (CFO)", k: "CFO 영업현금흐름 현금",
+    one: "본업을 하면서 실제로 통장에 들어온 현금.",
+    ex: "예) 장부 이익이 100억이어도 외상값을 못 받으면 현금은 0일 수 있습니다. CFO가 진짜 '벌어온 돈'에 가깝습니다.",
+    app: "종목분석 현금흐름 장, 재무 스크리닝 상세표.", warn: "분기 보고서의 현금흐름은 연초부터의 누적값이라, 이 앱은 차감해 '단독 분기'로 바꿔 씁니다(→ 누적값과 단독 분기)." },
+  { id: "capex", c: 4, t: "CAPEX (설비·시설 투자)", k: "CAPEX 설비투자 유형자산 취득",
+    one: "공장·기계·건물처럼 오래 쓰는 것을 사는 데 쓴 돈.",
+    ex: "예) 빵집이 오븐을 새로 사는 돈. 성장을 위한 투자일 수도, 낡은 설비를 유지하는 비용일 수도 있습니다.",
+    app: "FCF 계산에 사용. 이 앱의 CAPEX는 보고서의 유형·무형자산 취득액 기준입니다.",
+    warn: "'유지용'과 '성장용'을 나누는 것은 관측할 수 없는 추정이라 이 앱은 임의로 나누지 않고 전체를 뺍니다." },
+  { id: "fcf", c: 4, t: "FCF (잉여현금흐름)", k: "FCF 잉여현금흐름 free cash flow",
+    one: "본업에서 번 현금(CFO)에서 투자(CAPEX)를 빼고 남는, 주주나 채권자에게 돌려줄 수 있는 돈.",
+    ex: "예) 월급(CFO)에서 꼭 필요한 집수리비(CAPEX)를 뺀 뒤 자유롭게 쓸 수 있는 돈과 같습니다.",
+    app: "FCF = CFO − CAPEX. 종목분석·재무 스크리닝·백테스트 요인(FCF 수익률).",
+    warn: "FCF가 음수라고 나쁜 회사만은 아닙니다. 성장 투자를 크게 하는 시기일 수 있으니 CFO·매출 추세를 함께 보세요. 이 값은 엄밀한 학술 정의(FCFF)와는 조금 다른 실무형 지표입니다." },
+  { id: "fcfm", c: 4, t: "FCF 마진", k: "FCF 마진 fcf margin",
+    one: "매출 100원 중 최종적으로 남는 자유 현금이 몇 원인가.", ex: "예) 매출 1,000억, FCF 80억이면 8%.",
+    app: "재무 스크리닝 'FCF 마진 ≥' (0%면 FCF 흑자인 종목).", warn: "한 해 값은 들쭉날쭉합니다. 3~5년 흐름을 보세요." },
+  { id: "fcfni", c: 4, t: "FCF / 순이익 (현금 전환)", k: "fcf 순이익 현금전환 cash conversion",
+    one: "장부상 순이익이 실제 자유 현금으로 얼마나 바뀌는가. 1에 가까우면 이익이 현금으로 잘 이어집니다.",
+    ex: "예) 순이익 100억에 FCF 90억이면 0.9배 — 이익의 질이 좋은 편입니다.",
+    app: "재무 스크리닝 'FCF/순이익 ≥'.", warn: "순이익이 0이거나 음수면 계산하지 않습니다(N/A)." },
+  { id: "fcfpos", c: 4, t: "FCF 흑자 연수", k: "fcf 흑자 연수 꾸준 5년",
+    one: "최근 5년 중 FCF가 플러스였던 해의 수. 꾸준함을 봅니다.", ex: "예) 5년 중 4년 흑자면 대체로 꾸준한 편.",
+    app: "재무 스크리닝 '최근 5년 중 FCF 흑자 연수 ≥'.", warn: "경기 사이클 업종은 불황기에 일시적으로 적자일 수 있습니다." },
+
+  { id: "per", c: 5, t: "PER (주가수익비율)", k: "PER 주가수익비율 이익수익률 EP",
+    one: "지금 주가가 1년 순이익의 몇 배인가. 낮을수록 이익 대비 싸다는 뜻입니다.",
+    ex: "예) 시가총액 1,000억, 연 순이익 100억이면 PER 10배. 가게를 1,000억에 사면 이익으로 10년 만에 본전입니다. (EP = 1/PER, 이익수익률)",
+    app: "재무 스크리닝 'PER ≤', 백테스트 요인 '이익수익률 EP'.",
+    warn: "PER이 낮다고 항상 싼 것이 아닙니다. 이익이 곧 줄 회사라면 싸 보이는 함정일 수 있습니다. 순이익이 음수면 계산하지 않습니다." },
+  { id: "pbr", c: 5, t: "PBR (주가순자산비율)", k: "PBR 주가순자산 장부가 BP",
+    one: "주가가 회사 장부상 순자산의 몇 배인가. 1보다 낮으면 장부 가치보다 싸게 거래된다는 뜻입니다.",
+    ex: "예) 집 장부가가 10억인데 시장에서 8억에 팔리면 PBR 0.8. (BP = 1/PBR)",
+    app: "재무 스크리닝 'PBR ≤', 백테스트 요인 '장부가/주가 BP'.", warn: "자산 가치가 장부보다 실제로 낮은 경우(재고·설비 노후)나 수익성이 낮은 경우 PBR이 낮은 채로 계속될 수 있습니다." },
+  { id: "fcfy", c: 5, t: "FCF 수익률", k: "FCF 수익률 fcf yield",
+    one: "시가총액 대비 1년에 생기는 자유 현금의 비율. 높을수록 현금 대비 싸다는 뜻입니다.",
+    ex: "예) 시가총액 1,000억, FCF 70억이면 7%. 은행 이자와 비교해 볼 수 있습니다.",
+    app: "재무 스크리닝 'FCF 수익률 ≥', 백테스트 요인 'FCF 수익률'.", warn: "시세가 없는 종목은 계산하지 않습니다. 일시적 현금 유입(자산 매각 등)으로 높아 보일 수 있습니다." },
+  { id: "graham", c: 5, t: "Graham 복합 (PER × PBR)", k: "그레이엄 graham per pbr 복합",
+    one: "PER과 PBR을 곱해 둘 다 낮은 종목을 찾는 벤저민 그레이엄의 고전적 기준.",
+    ex: "예) PER 10배 × PBR 1.2배 = 12. 그레이엄은 대략 22.5 이하를 선호했습니다(원전 기준).",
+    app: "백테스트 요인 'Graham 복합'(실무 관행 등급).", warn: "시대와 시장이 달라 기준 숫자를 그대로 믿기보다 '낮은 쪽'이라는 방향만 쓰세요." },
+  { id: "mcap", c: 5, t: "시가총액", k: "시가총액 mcap 주가 주식수",
+    one: "회사 전체의 시장 가격 = 주가 × 주식 수.", ex: "예) 주가 5만 원 × 1,000만 주 = 5,000억 원.",
+    app: "스크리닝·재무 스크리닝. 재무 스크리닝은 저장된 가장 최근 종가를 씁니다.", warn: "시세 기준일이 오래되면 PER·PBR·FCF 수익률도 오래된 값입니다(화면 위 시세 기준일 확인)." },
+
+  { id: "cagr", c: 6, t: "CAGR (연평균 성장률)", k: "CAGR 연평균 성장률 3년 매출 영업이익 성장",
+    one: "N년 동안 한 해 평균 몇 %씩 컸는지를 복리로 환산한 값.",
+    ex: "예) 매출이 3년 동안 100억 → 133억이면 CAGR 약 10%.",
+    app: "재무 스크리닝 '매출·영업이익 3년 CAGR'.", warn: "시작이나 끝 값이 0 이하면 계산하지 않습니다(N/A). 기저가 작을 때 비정상적으로 크게 나올 수 있습니다." },
+  { id: "ttm", c: 6, t: "TTM (최근 12개월)", k: "TTM 최근 4분기 12개월 trailing",
+    one: "가장 최근 4개 분기를 더한 값. 사업보고서(연 1회)보다 더 최신 상태를 보여줍니다.",
+    ex: "예) 2026년 3분기까지 나왔다면 2025년 4분기+2026년 1·2·3분기가 TTM.",
+    app: "재무 스크리닝 '최신값: TTM 우선', 종목 상세표의 주황색 TTM 열.", warn: "4개 분기가 다 있어야 만들 수 있고, 하나라도 비면 TTM을 만들지 않습니다." },
+  { id: "cum", c: 6, t: "누적값과 단독 분기 (왜 빼서 쓰나)", k: "누적 단독 분기 현금흐름 손익 차감",
+    one: "DART의 분기 현금흐름·손익은 '연초부터 지금까지의 합계'로 공시됩니다. 분기 하나의 값을 알려면 뺄셈이 필요합니다.",
+    ex: "예) 1분기 100, 반기 260이면 2분기 단독은 260 − 100 = 160. 4분기는 연간 − 3분기 누적입니다.",
+    app: "TTM 계산 전 단계.", warn: "비교할 누적 기준이 없으면 무리하게 빼지 않고 N/A로 둡니다." },
+  { id: "cfs", c: 6, t: "연결 vs 별도, 결산월", k: "연결 별도 cfs ofs 결산월 12월 결산",
+    one: "연결은 자회사까지 합친 숫자, 별도는 본체만의 숫자. 결산월은 회계연도가 끝나는 달입니다.",
+    ex: "예) 지주회사는 별도 매출이 작아도 연결에서는 크게 나옵니다.",
+    app: "기본은 연결 우선. 12월 결산이 아닌 회사는 공시일 계산이 달라 백테스트에서 제외하거나 경고합니다.", warn: "연결·별도 숫자를 한 줄로 섞어 비교하면 왜곡됩니다." },
+  { id: "fscore", c: 7, t: "F-Score (피오트로스키 점수)", k: "fscore f-score piotroski 피오트로스키 9점",
+    one: "수익성·재무 건전성·효율 9가지를 하나씩 확인해 0~9점으로 매깁니다. 높을수록 재무가 탄탄해지는 중이라고 봅니다.",
+    ex: "예) 순이익 흑자, 영업현금 흑자, 부채 감소, 주식 수 증가 없음 같은 항목을 하나씩 체크합니다.",
+    app: "재무 스크리닝 'F-Score ≥', 백테스트 요인.", warn: "판정 가능한 항목이 8개 미만이면 N/A. 원 논문은 미국 시장에서 가치주 안의 선별에 쓴 것이라 한국에서는 따로 검증이 필요합니다(근거: Piotroski 2000)." },
+  { id: "de", c: 7, t: "부채비율 · 순차입금/EBITDA", k: "부채비율 순차입금 EBITDA 레버리지 빚",
+    one: "빚이 얼마나 되는지. 부채비율은 자본 대비 부채, 순차입금/EBITDA는 번 돈으로 순빚을 몇 년이면 갚는지입니다.",
+    ex: "예) 순차입금/EBITDA 2배는 현재 벌이로 약 2년이면 순빚을 다 갚는다는 뜻.",
+    app: "재무 스크리닝 상세표.", warn: "금융업은 부채 구조가 달라 일반 기업과 같은 눈금으로 보면 안 됩니다." },
+  { id: "ccc", c: 7, t: "현금전환주기 (CCC)", k: "ccc 현금전환주기 매출채권 재고 매입채무 dso dio dpo",
+    one: "원료 사서 팔고 돈을 회수하기까지 현금이 묶이는 날수. 짧을수록 자금 부담이 적습니다.",
+    ex: "예) 재고 30일 + 외상 회수 40일 − 외상 지급 50일 = 20일 동안 내 돈이 묶입니다.",
+    app: "재무 스크리닝 상세표 '현금전환주기(일)', 종목분석.", warn: "금융업 등에선 의미가 약합니다." },
+
+  { id: "rs", c: 8, t: "모멘텀 · 상대강도(RS)", k: "모멘텀 RS 상대강도 20일 60일 120일 52주",
+    one: "최근 주가가 시장(코스피)보다 얼마나 더 올랐는지. 오르던 종목이 한동안 더 오르는 경향을 쓰려는 지표입니다.",
+    ex: "예) 60일 RS가 +10%p면 최근 60일간 코스피보다 10%p 더 올랐다는 뜻.",
+    app: "스크리닝 탭의 20·60·120일 RS와 모멘텀 점수.",
+    warn: "시장 방향이 갑자기 바뀌면 모멘텀 전략은 크게 손실을 낼 수 있습니다. 가격이 오른 것은 사업 가치가 올랐다는 증거가 아닙니다." },
+  { id: "attention", c: 8, t: "거래대금 관심도 (Attention)", k: "거래대금 관심도 attention 거래량",
+    one: "평소보다 거래가 얼마나 늘었는지. 후보를 발견하는 용도이며, 좋은 회사라는 뜻이 아닙니다.",
+    ex: "예) 갑자기 손님이 몰린 가게 — 이유는 좋을 수도 나쁠 수도 있습니다.", app: "스크리닝 탭.", warn: "관심도가 높다고 사도 되는 것은 아닙니다. 재무·가치와 따로 확인하세요." },
+
+  { id: "ksic", c: 9, t: "업종 (KSIC)", k: "업종 ksic 산업분류 induty",
+    one: "회사가 주로 하는 사업의 종류. 이 앱은 DART 기업개황의 한국표준산업분류(KSIC) 코드를 중분류(앞 2자리) 이름으로 보여줍니다.",
+    ex: "예) 26 = 전자부품·컴퓨터·통신장비. '삼성전자'는 여기 속합니다.",
+    app: "스크리닝·재무 스크리닝·종목분석·백테스트 상위 종목·저장 종목 목록.",
+    warn: "거래소나 네이버 금융이 쓰는 업종과 분류가 다릅니다. 이름표는 이 앱이 요약한 것이므로 정확한 분류는 DART 기업개황을 확인하세요." },
+  { id: "na", c: 9, t: "N/A · 자료 없어 제외", k: "na 산출불가 자료없음 제외 결측",
+    one: "필요한 값이 없어 계산하지 않았다는 뜻. 임의 값을 채워 넣지 않습니다.",
+    ex: "예) 순이익이 음수면 PER은 의미가 없어 N/A, 시세가 없으면 FCF 수익률이 N/A.",
+    app: "재무 스크리닝 단계표의 '자료 없어 제외'.", warn: "N/A가 많으면 그 조건 때문에 후보가 빠르게 줄어듭니다. 단계표에서 어느 조건이 얼마나 줄였는지 보세요." },
+  { id: "badge", c: 9, t: "근거 등급 배지 (학술 검증·이론 근거·실무 관행·가정)", k: "배지 근거 등급 학술 검증 실무 가정 휴리스틱",
+    one: "그 지표가 얼마나 단단한 근거를 갖는지 색으로 알려줍니다.",
+    ex: "초록 '학술 검증' = 논문으로 반복 확인, 파랑 '이론 근거', 주황 '실무 관행' = 전문가들이 쓰지만 보장 없음, 회색 '가정·휴리스틱' = 이 앱의 임의 기준.",
+    app: "백테스트 요인 이름 옆, 종목분석 항목.", warn: "초록이어도 미국 등 다른 시장·기간의 결과일 수 있어 한국에서 따로 확인이 필요합니다." },
+  { id: "funnel", c: 9, t: "단계표 (깔때기)", k: "단계표 깔때기 funnel 남은 종목",
+    one: "조건을 하나씩 적용할 때마다 종목이 몇 개 남는지 보여주는 표.",
+    ex: "예) 전체 300개 → ROIC 조건 120개 → FCF 조건 40개 → 업종 조건 6개.",
+    app: "재무 스크리닝 맨 위.", warn: "조건을 너무 많이 겹치면 우연히 맞는 소수만 남습니다. 결과 개수가 너무 적으면 조건 수를 줄여 보세요." },
+];
+function guideSearchText(g) { return (g.t + " " + g.k + " " + g.one + " " + g.ex + " " + g.app + " " + g.warn).toLowerCase(); }
+function guideEntryHtml(g) {
+  const row = function (lab, v) { return v ? '<div style="margin:5px 0; line-height:1.6;"><b>' + lab + '</b> ' + escHtml(v) + '</div>' : ""; };
+  return '<details id="gd_' + g.id + '" class="gd" style="border-top:1px solid var(--border); padding:6px 0;"><summary style="cursor:pointer; font-weight:600; font-size:14px;">' + escHtml(g.t) + '</summary>' +
+    '<div style="font-size:13px; padding:4px 2px 6px;">' + '<div style="background:#f0f9ff; border-radius:8px; padding:6px 10px; line-height:1.6;"><b>한마디로</b> ' + escHtml(g.one) + '</div>' +
+    row("쉬운 예", g.ex) + row("이 앱에서", g.app) + row("조심할 점", g.warn) + '</div></details>';
+}
+function guideRender() {
+  const out = document.getElementById("guideOut"); if (!out) return;
+  const q = (document.getElementById("guideQ").value || "").trim().toLowerCase();
+  const cat = document.getElementById("guideCat").value;
+  let h = "", n = 0;
+  GUIDE_CATS.forEach(function (name, ci) {
+    if (cat !== "" && String(ci) !== cat) return;
+    const items = GUIDE.filter(function (g) { return g.c === ci && (!q || guideSearchText(g).indexOf(q) >= 0); });
+    if (!items.length) return;
+    n += items.length;
+    h += '<div style="font-weight:700; font-size:14px; margin:14px 0 2px; color:var(--primary-dark);">' + escHtml(name) + ' <span style="font-weight:400; color:var(--text-muted); font-size:12px;">(' + items.length + ')</span></div>' + items.map(guideEntryHtml).join("");
+  });
+  out.innerHTML = n ? h : '<div class="meta-line">일치하는 설명이 없습니다. 다른 단어(예: 현금, 수익률, 우연)로 찾아 보세요.</div>';
+  document.getElementById("guideCount").textContent = n + "개 설명";
+}
+function guideInit() {
+  const sel = document.getElementById("guideCat"); if (!sel || sel.getAttribute("data-ready")) { return; }
+  sel.setAttribute("data-ready", "1");
+  sel.innerHTML = '<option value="">전체 분야</option>' + GUIDE_CATS.map(function (c, i) { return '<option value="' + i + '">' + escHtml(c) + '</option>'; }).join("");
+  guideRender();
+}
+// 다른 화면의 「쉬운 설명」 링크에서 호출: 설명집을 열고 해당 항목을 펼쳐 보여 준다.
+function guideOpen(id) {
+  switchTab("guide"); guideInit();
+  document.getElementById("guideQ").value = ""; document.getElementById("guideCat").value = ""; guideRender();
+  const d = document.getElementById("gd_" + id);
+  if (d) { d.open = true; setTimeout(function () { if (d.scrollIntoView) d.scrollIntoView({ block: "start" }); }, 30); }
+}
+// ===== /쉬운 설명 =====
+
 
     // ===== 재무 스크리닝 (재무가 저장된 종목 안에서 ROIC·성장·FCF·가치로 거르기) =====
     // 자료: 저장된 재무(financial_raw) + 시장 DB의 최신 종가. 점수를 합산하지 않고 조건별 통과 수와 지표를 그대로 보여준다.
@@ -4582,13 +4865,14 @@ function indEnsureScreen() { const codes = []; Array.prototype.forEach.call(docu
       return kind === 'pct' ? (v * 100).toFixed(1) + '%' : kind === 'x1' ? v.toFixed(1) + '배' : kind === 'x2' ? v.toFixed(2) + '배' : kind === 'num0' ? String(Math.round(v)) : String(v);
     }
     function fscMsg(t) { const e = document.getElementById('fscMsg'); if (e) e.textContent = t || ''; }
+    const FSC_GUIDE = { roic3: 'roic', opm: 'opm', fscore: 'fscore', revG3: 'cagr', ebitG3: 'cagr', fcfm: 'fcfm', fcfni: 'fcfni', fcfPos: 'fcfpos', fcfy: 'fcfy', per: 'per', pbr: 'pbr' };
     function fscInit() {
       const el = document.getElementById('fscFilters'); if (!el || el.getAttribute('data-ready')) return;
       el.setAttribute('data-ready', '1');
       let h = '', g = '';
       FSC_FILTERS.forEach(function (f) {
         if (f.g !== g) { g = f.g; h += '<div style="font-weight:700; font-size:12.5px; margin:10px 0 2px;">' + g + '</div>'; }
-        h += '<label style="display:flex; align-items:center; gap:6px; font-size:13px; margin:3px 0;"' + (f.tip ? ' title="' + f.tip + '"' : '') + '><input type="checkbox" id="fscOn_' + f.k + '" onchange="fscRun()"> <span style="flex:1;">' + f.label + '</span>' +
+        h += '<label style="display:flex; align-items:center; gap:6px; font-size:13px; margin:3px 0;"' + (f.tip ? ' title="' + f.tip + '"' : '') + '><input type="checkbox" id="fscOn_' + f.k + '" onchange="fscRun()"> <span style="flex:1;">' + f.label + (FSC_GUIDE[f.k] ? ' <a href="#" onclick="guideOpen(&quot;' + FSC_GUIDE[f.k] + '&quot;); return false;" title="쉬운 설명" style="font-size:12px;">?</a>' : '') + '</span>' +
           '<input type="number" id="fscV_' + f.k + '" value="' + f.def + '" step="any" style="width:76px;" onchange="fscRun()"> <span style="width:22px; color:var(--text-muted);">' + f.unit + '</span></label>';
       });
       el.innerHTML = h;
@@ -5406,22 +5690,23 @@ function btStockHtml(name, table) {
 function btStkCsv(list) {
   const NL = String.fromCharCode(10), keys = Object.keys(BT_FACTORS);
   const q = (v) => { if (v == null) return ''; const t = String(v); return /[",]/.test(t) || t.indexOf(NL) >= 0 ? '"' + t.replace(/"/g, '""') + '"' : t; };
-  const head = ['종목', '종목코드', '결산연도', '공시일', '기간말주가', '매수일', '매수가', '매도일', '매도가', '12개월수익률', '상태', '매출', '영업이익', '순이익', 'FCF', 'EPS', 'ROIC', 'ROE'].concat(keys.map((k) => BT_FAC_SHORT[k] || k));
+  const head = ['종목', '종목코드', '업종', '결산연도', '공시일', '기간말주가', '매수일', '매수가', '매도일', '매도가', '12개월수익률', '상태', '매출', '영업이익', '순이익', 'FCF', 'EPS', 'ROIC', 'ROE'].concat(keys.map((k) => BT_FAC_SHORT[k] || k));
   const lines = [head.map(q).join(',')];
   list.forEach((it) => it.table.forEach((r) => {
     const f = r.fin || {};
-    lines.push([it.name, it.code, r.year, r.filing, r.pPe, r.buyDate, r.P0, r.sellDate, r.P1, r.f, r.status, f.revenue, f.ebit, f.ni, f.fcf, f.eps, f.roic, f.roe].concat(keys.map((k) => r.fac[k])).map(q).join(','));
+    lines.push([it.name, it.code, it.ind || '', r.year, r.filing, r.pPe, r.buyDate, r.P0, r.sellDate, r.P1, r.f, r.status, f.revenue, f.ebit, f.ni, f.fcf, f.eps, f.roic, f.roe].concat(keys.map((k) => r.fac[k])).map(q).join(','));
   }));
   return String.fromCharCode(0xFEFF) + lines.join(NL);
 }
 // ===== /종목별 백테스트 값 보기 =====
 
 const BT_STK = { list: null, cur: null, token: 0, cache: {}, pending: {} };
+function btIndOfCorp(corp) { const c = (BT_STK.list || []).filter((z) => z.corp_code === corp)[0]; return c && c.stock_code ? (indLabel(IND.map[c.stock_code]) || '') : ''; }
 async function btStkLoadList() {
   if (BT_STK.list) return;
   try {
     const r = await fetch('/api/db/companies'); const d = await r.json();
-    BT_STK.list = (d.companies || []).filter((c) => c.corp_name);
+    BT_STK.list = (d.companies || []).filter((c) => c.corp_name); indSyncList(BT_STK.list);
     const dl = document.getElementById('btStkList');
     if (dl) dl.innerHTML = BT_STK.list.map((c) => '<option value="' + anEsc(c.corp_name) + '"></option>').join('');
   } catch (e) { BT_STK.list = null; }
@@ -5450,17 +5735,19 @@ async function btStkPick(raw) {
     BT_STK.cur = { code: c.corp_code, name: c.corp_name, stock: c.stock_code || '', table: table };
     document.getElementById('btStkIn').value = c.corp_name;
     msg.textContent = '';
-    out.innerHTML = fiscalBanner(c.acc_mt) + btStockHtml(c.corp_name, table);
+    const sc0 = c.stock_code || ''; if (sc0 && c.ind) IND.map[sc0] = c.ind;
+    out.innerHTML = fiscalBanner(c.acc_mt) + '<div class="meta-line" style="margin:4px 0;">종목코드 ' + escHtml(sc0 || '-') + '<span data-ind="' + escHtml(sc0) + '"></span></div>' + btStockHtml(c.corp_name, table);
+    if (sc0) { indPaint(); indEnsure([sc0]); }
   } catch (e) { if (tk === BT_STK.token) { msg.textContent = '오류: ' + (e.message || e); } }
 }
 function btStkDownload(all) {
   let list;
   if (all) {
     if (!BT.stocks) { document.getElementById('btStkMsg').textContent = '전체 종목 CSV는 위 A의 「① 저장된 종목 불러오기」를 먼저 누른 뒤 쓸 수 있습니다.'; return; }
-    list = BT.stocks.map((s) => ({ name: s.name, code: s.code, table: btStockTable(s) }));
+    list = BT.stocks.map((s) => ({ name: s.name, code: s.code, ind: btIndOfCorp(s.code), table: btStockTable(s) }));
   } else {
     if (!BT_STK.cur) { document.getElementById('btStkMsg').textContent = '먼저 종목을 선택하세요.'; return; }
-    list = [{ name: BT_STK.cur.name, code: BT_STK.cur.code, table: BT_STK.cur.table }];
+    list = [{ name: BT_STK.cur.name, code: BT_STK.cur.code, ind: btIndOfCorp(BT_STK.cur.code), table: BT_STK.cur.table }];
   }
   const blob = new Blob([btStkCsv(list)], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
@@ -5530,6 +5817,19 @@ function btTopName(kind, id) {
   if (kind === 'scr') { const c = (BT_STK.list || []).filter((z) => z.stock_code === id)[0]; return c ? c.corp_name : ''; }
   const s = BT.stocks ? BT.stocks.filter((z) => z.code === id)[0] : null; return s ? s.name : '';
 }
+// 상위 종목의 종목코드·업종 이름. kind 'scr'는 id가 종목코드, 'fin'은 id가 DART 고유번호(corp_code)다.
+function btTopInd(kind, id) {
+  let sc = id;
+  if (kind !== 'scr') { const c = (BT_STK.list || []).filter((z) => z.corp_code === id)[0]; sc = c ? c.stock_code || '' : ''; }
+  return { sc: sc, label: sc ? (indLabel(IND.map[sc]) || '') : '' };
+}
+function btTopIndFill(kind, i) {
+  const c = BT_TOP[kind]; if (!c || !BT_STK.list) return;
+  const r = c.res.rows[i]; if (!r) return;
+  const codes = (r.top || []).map((z) => btTopInd(kind, z.id).sc).filter(Boolean);
+  if (!codes.some((x) => !IND.map[x])) return;
+  indEnsure(codes).then(() => { const el = document.getElementById('btTopBody_' + kind), sel = document.getElementById('btTopSel_' + kind); if (el && sel && Number(sel.value) === i) el.innerHTML = btTopHtml(kind, i); });
+}
 function btTopScore(kind, m, s) {
   if (!anFin(s)) return 'N/A';
   if (kind === 'fin') return m.keys.length === 1 ? btFacTxt(m.keys[0], s) : (s * 100).toFixed(0) + '점(순위평균)';
@@ -5545,18 +5845,18 @@ function btTopHtml(kind, i) {
   const best = list.slice().sort((a, b) => b.f - a.f);
   const sum = '<div style="font-size:12.5px; line-height:1.6; margin:6px 0;"><b>' + escHtml(r.label) + '</b> · 상위 그룹 ' + list.length + '개 종목 (전체 ' + r.n + '개 중) · 그룹 평균 <b>' + btTopPct(r.gm[c.res.G - 1]) + '</b> · 전체 평균 ' + btTopPct(r.uni) + ' · 오른 종목 ' + win + '개(' + (list.length ? Math.round(win * 100 / list.length) : 0) + '%)' +
     (best.length ? ' · 최고 ' + escHtml(btTopName(kind, best[0].id) || best[0].id) + ' ' + btTopPct(best[0].f) + ' / 최저 ' + escHtml(btTopName(kind, best[best.length - 1].id) || best[best.length - 1].id) + ' ' + btTopPct(best[best.length - 1].f) : '') + '</div>';
-  const head = '<th>순위</th><th class="an-first">종목</th><th>코드</th><th>점수</th>' + keys.map((k) => '<th>' + escHtml(BT_FAC_SHORT[k] || k) + '</th>').join('') + '<th>수익률</th>';
+  const head = '<th>순위</th><th class="an-first">종목</th><th>코드</th><th>업종</th><th>점수</th>' + keys.map((k) => '<th>' + escHtml(BT_FAC_SHORT[k] || k) + '</th>').join('') + '<th>수익률</th>';
   const body = list.map((z, n) => {
     const nm = btTopName(kind, z.id);
     const cell = nm ? '<a href="#" onclick="btTopOpen(\\'' + kind + '\\',\\'' + z.id + '\\'); return false;" title="재무 값·매수가·매도가를 연도별로 보기">' + escHtml(nm) + '</a>' : '<span style="color:var(--text-muted);">이름 없음</span>';
-    return '<tr><td>' + (n + 1) + '</td><td class="an-first">' + cell + '</td><td>' + escHtml(z.id) + '</td><td>' + btTopScore(kind, m, z.s) + '</td>' + keys.map((k) => '<td>' + btFacTxt(k, z.v ? z.v[k] : null) + '</td>').join('') + '<td style="color:' + (z.f >= 0 ? '#16a34a' : '#dc2626') + ';">' + btTopPct(z.f) + '</td></tr>';
+    return '<tr><td>' + (n + 1) + '</td><td class="an-first">' + cell + '</td><td>' + escHtml(z.id) + '</td><td>' + escHtml(btTopInd(kind, z.id).label || '-') + '</td><td>' + btTopScore(kind, m, z.s) + '</td>' + keys.map((k) => '<td>' + btFacTxt(k, z.v ? z.v[k] : null) + '</td>').join('') + '<td style="color:' + (z.f >= 0 ? '#16a34a' : '#dc2626') + ';">' + btTopPct(z.f) + '</td></tr>';
   }).join('');
   return sum + '<div class="tscroll" style="max-height:55vh;"><table class="an-tbl"><thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table></div>';
 }
 function btTopBlock(kind, res, m) {
   if (!res.rows.length || !res.rows[0].top) return '';
   BT_TOP[kind] = { res, m };
-  if (kind === 'scr') btStkLoadList().then(() => { const sel = document.getElementById('btTopSel_' + kind); if (sel) btTopShow(kind, Number(sel.value)); });
+  btStkLoadList().then(() => { const sel = document.getElementById('btTopSel_' + kind); if (sel) btTopShow(kind, Number(sel.value)); });
   const last = res.rows.length - 1;
   const opts = res.rows.map((r, i) => '<option value="' + i + '"' + (i === last ? ' selected' : '') + '>' + escHtml(r.label) + ' (' + btTopPct(r.gm[res.G - 1]) + ')</option>').join('');
   return '<details open style="margin-top:10px; border:1px solid #bbf7d0; background:#f0fdf4; border-radius:8px; padding:8px 10px;"><summary style="cursor:pointer; font-weight:700;">상위 그룹에 들어간 종목 상세</summary>' +
@@ -5564,7 +5864,7 @@ function btTopBlock(kind, res, m) {
     '<div id="btTopBody_' + kind + '">' + btTopHtml(kind, last) + '</div>' +
     '<div style="font-size:11.5px; color:var(--text-muted); margin-top:6px; line-height:1.5;">점수가 높은 순입니다. 종목명을 누르면 위 「C. 종목별 보기」에서 그 종목의 연도별 재무 값·매수가·매도가를 봅니다. 한 기간의 상위 종목 몇 개는 우연의 영향이 커서 선정 근거가 될 수 없고, 과거 결과는 미래를 보장하지 않습니다.</div></details>';
 }
-function btTopShow(kind, i) { const el = document.getElementById('btTopBody_' + kind); if (el) el.innerHTML = btTopHtml(kind, i); }
+function btTopShow(kind, i) { const el = document.getElementById('btTopBody_' + kind); if (el) { el.innerHTML = btTopHtml(kind, i); btTopIndFill(kind, i); } }
 function btTopOpen(kind, id) {
   const nm = btTopName(kind, id); if (!nm) return;
   btStkPick(nm).then(() => { const el = document.getElementById('btStkOut'); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
@@ -5573,8 +5873,8 @@ function btTopCsv(kind) {
   const c = BT_TOP[kind], NL = String.fromCharCode(10); if (!c) return '';
   const keys = kind === 'fin' ? c.m.keys : [];
   const q = (v) => { if (v == null) return ''; const t = String(v); return /[",]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
-  const lines = [['기간', '순위', '종목', '코드', '점수', '수익률'].concat(keys.map((k) => BT_FAC_SHORT[k] || k)).map(q).join(',')];
-  c.res.rows.forEach((r) => (r.top || []).forEach((z, n) => { lines.push([r.label, n + 1, btTopName(kind, z.id), z.id, z.s, z.f].concat(keys.map((k) => z.v ? z.v[k] : null)).map(q).join(',')); }));
+  const lines = [['기간', '순위', '종목', '코드', '업종', '점수', '수익률'].concat(keys.map((k) => BT_FAC_SHORT[k] || k)).map(q).join(',')];
+  c.res.rows.forEach((r) => (r.top || []).forEach((z, n) => { lines.push([r.label, n + 1, btTopName(kind, z.id), z.id, btTopInd(kind, z.id).label, z.s, z.f].concat(keys.map((k) => z.v ? z.v[k] : null)).map(q).join(',')); }));
   return String.fromCharCode(0xFEFF) + lines.join(NL);
 }
 function btTopDownload(kind) {
@@ -6383,8 +6683,8 @@ async function pfuExport() {
     function switchTab(tab, navMode) {
       const prevTab = curTab; curTab = tab; try { tblFullClose(); } catch (e) {}
       navRecord(tab, navMode || (tab === prevTab ? 'replace' : 'push')); updateBnav(tab); closeMore();
-      const tabs = { financial: 'tabFinancial', momentum: 'tabMomentum', fscr: 'tabFscr', macro: 'tabMacro', data: 'tabData', bt: 'tabBt', pf: 'tabPf', db: 'tabDb' };
-      const btns = { financial: 'tabBtnFinancial', momentum: 'tabBtnMomentum', fscr: 'tabBtnFscr', macro: 'tabBtnMacro', data: 'tabBtnData', bt: 'tabBtnBt', pf: 'tabBtnPf', db: 'tabBtnDb' };
+      const tabs = { financial: 'tabFinancial', momentum: 'tabMomentum', fscr: 'tabFscr', macro: 'tabMacro', data: 'tabData', bt: 'tabBt', pf: 'tabPf', db: 'tabDb', guide: 'tabGuide' };
+      const btns = { financial: 'tabBtnFinancial', momentum: 'tabBtnMomentum', fscr: 'tabBtnFscr', macro: 'tabBtnMacro', data: 'tabBtnData', bt: 'tabBtnBt', pf: 'tabBtnPf', db: 'tabBtnDb', guide: 'tabBtnGuide' };
       Object.keys(tabs).forEach(function (k) {
         document.getElementById(tabs[k]).style.display = k === tab ? '' : 'none';
         document.getElementById(btns[k]).className = k === tab ? 'toggle-active' : '';
@@ -6394,6 +6694,7 @@ async function pfuExport() {
       if (tab === 'bt') { btInitUi(); }
       if (tab === 'fscr') { fscInit(); }
       if (tab === 'db') { dbLoad(false); }
+      if (tab === 'guide') { guideInit(); }
       if (tab === 'pf') { pfuInit(); }
       if (tab === 'macro' && macroCorrDirty && rawRows.length) computeMacroCorrelation();
       if (tab === 'financial' && subTab === 'table' && chartSel.length) renderChartPanel(false);
@@ -7221,12 +7522,15 @@ async function pfuExport() {
     function renderDbList() {
       const q = document.getElementById('dbListFilter').value.trim().toLowerCase();
       const all = dbCompanies || [];
-      dbListShown = all.filter((c) => !q || c.corp_name.toLowerCase().indexOf(q) >= 0 || String(c.stock_code || '').indexOf(q) >= 0);
-      document.getElementById('dbListCount').textContent = '총 ' + all.length + '개 종목' + (q ? ' 중 ' + dbListShown.length + '개 일치' : '');
+      indSyncList(all); indFillSelect('dbListInd', all.map((c) => c.stock_code));
+      const isel = document.getElementById('dbListInd').value, grp = document.getElementById('dbListGrp').checked;
+      dbListShown = all.filter((c) => (!q || c.corp_name.toLowerCase().indexOf(q) >= 0 || String(c.stock_code || '').indexOf(q) >= 0) && indMatchSel(isel, c.stock_code));
+      if (grp) dbListShown = indSort(dbListShown, (c) => c.stock_code);
+      document.getElementById('dbListCount').textContent = '총 ' + all.length + '개 종목' + ((q || isel) ? ' 중 ' + dbListShown.length + '개 일치' : '');
       document.getElementById('dbListBody').innerHTML = dbListShown.length
-        ? dbListShown.map((c, i) =>
+        ? indJoin(dbListShown, (c) => c.stock_code, (c, i) =>
           '<button class="db-chip" onclick="pickDbCompany(' + i + ')" title="클릭하면 DB에서 바로 조회">' + escHtml(c.corp_name) +
-          '<small>' + escHtml(c.stock_code || '') + ' · ' + c.first_year + '~' + c.last_year + ' · ' + c.n + '건</small></button>').join('')
+          '<small>' + escHtml(c.stock_code || '') + indSmall(c.stock_code) + ' · ' + c.first_year + '~' + c.last_year + ' · ' + c.n + '건</small></button>', grp)
         : '<span style="color:var(--text-muted); font-size:13px;">일치하는 종목이 없습니다.</span>';
     }
     function pickDbCompany(i) {
