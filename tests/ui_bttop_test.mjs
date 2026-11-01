@@ -54,7 +54,7 @@ ok('종목명을 누르면 C 카드에 그 종목의 연도별 표가 열림', s
 // CSV
 const [dl] = await Promise.all([pg.waitForEvent('download'), pg.click('button:has-text("전체 기간 CSV")')]);
 const csv = fs.readFileSync(await dl.path(), 'utf8'); const lines = csv.replace(/^﻿/, '').split('\n');
-ok('CSV: BOM, 머리글 + 기간별 상위 종목 전부, 종목명 포함', csv.charCodeAt(0) === 0xFEFF && lines.length === 1 + sz.tot && lines[0].startsWith('기간,순위,종목,코드,점수,수익률') && /종목[A-P]/.test(lines[1]), String(lines.length) + ' ' + lines[1]);
+ok('CSV: BOM, 머리글 + 기간별 상위 종목 전부, 종목명 포함', csv.charCodeAt(0) === 0xFEFF && lines.length === 1 + sz.tot && lines[0].startsWith('기간,순위,종목,코드,업종,점수,수익률') && /종목[A-P]/.test(lines[1]), String(lines.length) + ' ' + lines[1]);
 ok('페이지 오류 없음', errs.length === 0, errs.join(' | '));
 await b.close(); srv.close();
 console.log(fail ? '\n실패 ' + fail + '건' : '\n전부 통과'); process.exit(fail ? 1 : 0);
