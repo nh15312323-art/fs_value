@@ -649,6 +649,8 @@ const HTML_PAGE = `<!doctype html>
         </div>
       </div>
 
+      <div id="matSlot"></div><!-- 📰 재료 점검: 주가 화면 바로 다음 -->
+
       <div id="sub_summary">
         <div class="card">
           <div class="row">
@@ -3918,7 +3920,6 @@ function sigRenderSections(c) {
   return anSection('📐 수익률 분해: 배당수익률 + EPS 성장 + PER 변화', '#7c3aed', '주가가 오른 이유를 실적과 기대감으로 나눕니다. 항등식이라 이론적으로 맞는 관계이며(Ibbotson-Chen 2003 등 장기 수익률 분해 연구), 값은 이 앱의 연간 공시 자료에서 계산합니다.', sigDecompHtml(c), false) +
     anSection('🧮 기대수익률 가정 계산 (EPS 성장 × PER 변화 + 배당)', '#7c3aed', '미래 수익률은 예측할 수 없으므로 성장률·PER 변화를 가정으로 바꿔 가며 범위를 봅니다. 하나의 목표가 대신 민감도 표를 사용합니다.', '<div id="sigCalcBody">' + sigCalcHtml(c) + '</div>', false) +
     anSection('🔔 변화 감지 시그널 (없다가 생김 · 있다가 사라짐)', '#0891b2', '시장은 ‘상태’보다 ‘변화’에 반응한다는 관점입니다. 재무 변화는 공시 자료로, 가격·거래량은 일별 주가로 계산합니다. 모든 시그널에 근거 수준을 붙였고, 매수·매도 신호나 점수를 만들지 않습니다. ' + evTxt, '<div id="sigDetectBody">' + sigRenderDetectBody(c) + '</div>', false) +
-    matSectionHtml() +
     anSection('✅ 투자 판단 체크리스트 (관찰 → 시그널 → 전략 → 반성)', '#0891b2', '매수 전 10가지 질문과 보유 중 규칙입니다. 자동 참고는 계산 가능한 부분만 보여주고, 체크는 직접 합니다. 충족 개수는 ‘매수 신호’가 아니라 내가 생각을 정리했는지의 기록입니다.', '<div id="sigChecklistBody">' + sigChecklistHtml(c) + '</div>', false);
 }
 function sigRefresh() {
@@ -4215,6 +4216,14 @@ async function matLoad() {
 }
 function matRetry() { MAT_ST.name = null; matLoad(); }
 function matOnToggle(el) { if (el && el.open) { try { matLoad(); if (typeof loadPriceSeries === 'function' && !sigPx()) loadPriceSeries(); } catch (e) { /* 무시 */ } } }
+// 재료 점검 카드는 주가 화면(차트 독) 바로 아래 칸(#matSlot)에 그린다. 다시 그려도 열어 둔 상태는 유지한다.
+function matSlotRender() {
+  const slot = document.getElementById('matSlot'); if (!slot) return;
+  const old = slot.querySelector('details'), was = !!(old && old.open);
+  slot.innerHTML = matSectionHtml();
+  if (was) { const d = slot.querySelector('details'); if (d) d.open = true; }
+  matRefresh();
+}
 function matRefresh() { const el = document.getElementById('matBody'); if (el) el.innerHTML = matBodyHtml(); }
 function matAutoText() {
   const nm = (document.getElementById('corpName').value || '').trim();
@@ -6123,6 +6132,7 @@ function renderAnalysis() {
     anChapter('⑨', '시그널과 판단 점검', '실적과 기대감을 나눠 보고, 변화(없다가 생김·있다가 사라짐)와 내 판단 과정을 점검', '주가수익률 분해는 항등식, 시그널은 연구별 근거 수준을 표시합니다. 결론을 대신 내리지 않고 판단 과정을 기록하게 돕습니다.') + sigRenderSections(c) +
     anChapter('참고', '설명서 · 용어 · 설정', '계산식·실제 입력값·근거와 판정 기준 변경', '숫자의 출처를 확인하거나 기준선을 바꾸고 싶을 때 펼쳐 보세요.') + anRenderExplain(c) + anRenderSettings();
   anFoldApply(el);
+  try { matSlotRender(); } catch (e) { /* 재료 점검 칸 갱신 실패는 무시 */ }
   anBuildNav();
   try { sigUpdateSummary(); } catch (e) { /* 체크리스트 요약 실패는 무시 */ }
   anUpdateScenarioView();
