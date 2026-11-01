@@ -773,7 +773,7 @@ const HTML_PAGE = `<!doctype html>
       <div style="font-size:12.5px; line-height:1.5;">ROIC·성장·FCF·가치 조건을 직접 켜서 거릅니다. 합산 점수는 만들지 않고, 조건마다 몇 종목이 남는지와 자료가 없어 빠진 수를 보여줍니다. 아래 기준값은 <b>참고용 출발값</b>이며 이 값으로 초과수익이 난다는 검증은 하지 않았습니다(백테스트 탭에서 방법별로 따로 확인).</div>
       <div class="row" style="margin-top:8px;">
         <button class="primary" onclick="fscLoad()">저장된 종목 불러오기·계산</button>
-        <select id="fscInd" onchange="fscRender()"><option value="">업종: 전체</option></select> <select id="fscBasis" onchange="fscRun()"><option value="ttm">최신값: TTM 우선(분기 포함)</option><option value="annual">최신값: 사업보고서(연간)만</option></select>
+        <select id="fscInd" onchange="fscRender()"><option value="">업종: 전체</option></select> <select id="fscSec" onchange="fscRender()" title="금융업·지주회사는 ROIC·FCF가 맞지 않아 ROE·PBR로 따로 거릅니다"><option value="">유형: 전체</option><option value="gen">일반 기업(금융·지주 제외)</option><option value="fin">금융업 전체</option><option value="bank">은행·금융지주</option><option value="insurer">보험</option><option value="broker">증권</option><option value="credit">여신금융(카드·캐피탈)</option><option value="invest">투자·기타 금융</option><option value="holding">지주회사(비금융)</option></select> <a href="#" onclick="guideOpen('finsec'); return false;" style="font-size:11.5px;">ⓘ 유형 분류</a> <select id="fscBasis" onchange="fscRun()"><option value="ttm">최신값: TTM 우선(분기 포함)</option><option value="annual">최신값: 사업보고서(연간)만</option></select>
       </div>
       <div id="fscMsg" class="meta-line"></div>
     </div>
@@ -818,6 +818,10 @@ const HTML_PAGE = `<!doctype html>
       <div class="row"><button onclick="btLoadStocks()">① 저장된 종목 불러오기</button><button onclick="btBackfillNextDay()" title="연간 백테스트가 매매가로 쓰는 '공시 다음 거래일 종가'를 기존 저장 행에 채웁니다(처음 한 번, 이후 새로 받는 행은 자동 저장)">공시 다음 거래일 가격 채우기</button><span id="btFinInfo" style="font-size:12px; color:var(--text-muted);"></span></div>
       <div style="margin:8px 0; font-size:12.5px;">
         <label>방식 <select id="btFinMode" onchange="btFinModeChange()"><option value="annual">연간 재무 방법 (공시 다음 거래일 종가 매수 → 다음 해 공시 다음 거래일 종가 매도)</option><option value="qttm">분기 TTM 재무 방법 (분기보고서 공시 다음 거래일 종가 매수 → 다음 분기보고서 공시 다음 거래일 종가 매도)</option><option value="momq">분기 모멘텀 (분기말 주가)</option></select></label>
+      </div>
+      <div style="margin:6px 0; font-size:12.5px;">
+        <label>대상 종목 <select id="btUniv" onchange="btUnivChange()" title="Fama-French(1992) 등 많은 연구가 금융회사를 뺍니다(레버리지 의미가 달라서). 금융업은 F-Score·ROIC·FCF가 맞지 않아 이 지표들에서는 자동으로 값이 비어 빠집니다"><option value="all">전체 (기본)</option><option value="exfin">금융업 제외</option><option value="exboth">금융업·지주회사 제외</option><option value="finonly">금융업만</option></select></label>
+        <span id="btUnivNote" style="color:var(--text-muted);"></span> <a href="#" onclick="guideOpen('btuniv'); return false;" style="font-size:11.5px;">ⓘ 쉬운 설명</a>
       </div>
       <div id="btFinFactors" style="margin:6px 0;"></div>
       <div id="btMomBox" style="display:none; margin:6px 0; font-size:12.5px;">
@@ -1819,7 +1823,7 @@ const HTML_PAGE = `<!doctype html>
     })();
 
     let rawRows = [];      // DB/DART에서 받아온, 가공 안 된 원본 기간별 데이터
-    let AN_STOCK = { code: '', ind: '' }; // 현재 종목의 종목코드·업종코드(업종은 DART 기업개황에서 받아 저장한 값)
+    let AN_STOCK = { code: '', ind: '', name: '' }; // 현재 종목의 종목코드·업종코드(업종은 DART 기업개황에서 받아 저장한 값)
     let AN_ACCMT = null;   // 현재 종목의 결산월(모르면 null). 12월이 아니면 날짜 기반 값이 부정확하다는 경고를 띄운다.
     let currentRows = [];  // 현재 화면에 표시 중인 데이터 (분기별 변환 or 연간 그대로)
     let viewMode = 'quarterly';
@@ -2678,11 +2682,16 @@ const HTML_PAGE = `<!doctype html>
       grossProfitability: { dir: 'high', good: 0.20, caution: 0.10, fmt: (v) => (v * 100).toFixed(2) + '%' },
       grossMargin:        { dir: 'high', good: 0.30, caution: 0.15, fmt: (v) => (v * 100).toFixed(2) + '%' },
       assetTurnover:      { dir: 'high', good: 1.0,  caution: 0.5,  fmt: (v) => v.toFixed(2) + '회' },
+      // 금융업 전용(neutral: 좋음/주의 배지를 붙이지 않고 값만 보여 줌 — 레버리지가 높은 것이 정상인 업종이라 일반 기업 눈금을 쓰면 오해를 부른다)
+      finRoe: { neutral: true, fmt: (v) => (v * 100).toFixed(2) + '%' },
+      finLev: { neutral: true, fmt: (v) => v.toFixed(1) + '배' },
+      finNi:  { neutral: true, fmt: (v) => (v * 100).toFixed(2) + '%' },
     };
     function judgeFactor(key, value) {
       if (value == null || !isFinite(value)) return { label: 'N/A', color: '#94a3b8', text: 'N/A' };
       const rule = FACTOR_RULES[key];
       if (!rule) return { label: '', color: '#94a3b8', text: rule ? rule.fmt(value) : String(value) };
+      if (rule.neutral) return { label: '', color: '#94a3b8', text: rule.fmt(value) };
       const isGood = rule.dir === 'high' ? value >= rule.good : value <= rule.good;
       const isCaution = rule.dir === 'high' ? value >= rule.caution : value <= rule.caution;
       const color = isGood ? '#16a34a' : (isCaution ? '#d97706' : '#dc2626');
@@ -2768,11 +2777,27 @@ const HTML_PAGE = `<!doctype html>
         ], '사업이 커지고 있는가. 전년 대비 증가율로, 다른 세 팩터와 달리 "현재 수준"이 아니라 "방향"을 본다.'),
       ].join('');
 
+      let FSX = null; try { FSX = finSectorNow(); } catch (e) { FSX = null; }
+      const isFinSec = !!(FSX && FSX.sec && FSX.sec.fin);
+      const factorCardsFin = isFinSec ? [
+        renderFactorCard('💰 Value (가치)', '#2563eb', [
+          { label: 'PER', key: 'per', value: m.per, series: hist && hist.per },
+          { label: 'PBR', key: 'pbr', value: m.pbr, series: hist && hist.pbr },
+          { label: '이익수익률(1/PER)', key: 'earningsYield', value: m.earningsYield, series: hist && hist.earningsYield },
+        ], '금융업은 PBR이 낮은 이유가 낮은 ROE일 수 있어, 낮다고 곧 싸다는 뜻이 아닙니다. 아래 「가격」 장의 정당 PBR과 함께 보세요. (배지는 일반 기업용 눈금)'),
+        renderFactorCard('🏦 수익성·자본 (' + FSX.sec.n + ')', '#7c3aed', [
+          { label: 'ROE 평균 (' + m.roeN + '개년)', key: 'finRoe', value: m.avgROE, series: hist && hist.avgROE },
+          { label: '자기자본승수 (자산/자본)', key: 'finLev', value: anFin(m.debtRatio) ? 1 + m.debtRatio : null },
+        ], '금융회사는 부채(예금·보험료·차입)가 영업의 원재료라 부채비율·이자보상배율·ROIC·매출총이익을 평가에 쓰지 않습니다. 그래서 좋음/주의 배지를 붙이지 않고 값만 보여 줍니다.'),
+        renderFactorCard('🌱 주주 몫 성장 (YoY)', '#ea580c', [
+          { label: '순이익 성장률', key: 'finNi', value: m.netIncomeGrowth, series: hist && hist.netIncomeGrowth },
+        ], '금융회사 매출은 업종마다 정의가 달라 비교할 수 없어 매출 성장률은 숨겼습니다.'),
+      ].join('') : null;
       const statTile = (label, value) => \`<div class="stat-tile"><div class="stat-label">\${label}</div><div class="stat-value">\${value}</div></div>\`;
 
       el.innerHTML = \`
         <div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">배지는 참고용 절대 기준(업종별 예외가 흔하니 동종업계와 비교해 참고하세요): PER↓PBR↓ 좋음, ROE·ROIC·이자보상배율·성장률은 ↑ 좋음. 작은 꺾은선은 연도별 추이(점이 최신 연도).</div>
-        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(250px, 1fr)); gap:10px;">\${factorCards}</div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(250px, 1fr)); gap:10px;">\${factorCardsFin || factorCards}</div>
 
         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:8px; margin:6px 0 10px;">
           \${statTile('평균 배당성향', pctStr(m.avgPayout) + '<div style="font-size:10.5px; color:var(--text-muted); font-weight:400;">' + anPeriodTxt(anPeriod(anBuildSeries(rawRows), 'payout', 10)) + '</div>')}
@@ -4563,6 +4588,395 @@ function anChapter(no, title, ask, lens) {
     '<div style="font-size:12.5px; margin-top:2px;">' + ask + '</div>' +
     '<details style="margin-top:2px;"><summary style="cursor:pointer; font-size:11.5px; color:var(--text-muted);">이 질문의 근거</summary><div style="font-size:11.5px; color:var(--text-muted); margin-top:2px; line-height:1.5;">' + lens + '</div></details></div>';
 }
+// ===== 금융업 · 지주회사 =====
+// 일반기업용 틀(ROIC·FCF·매출총이익·유동비율·F-Score)이 맞지 않는 업종을 따로 다룬다.
+//  - Damodaran, Valuing Financial Service Firms(가치평가 3판 21장): 금융회사에서는 부채(예금·차입)가 영업의 원재료라 자본(equity) 기준으로 평가하고, FCFF·EV 배수는 쓰기 어렵다.
+//  - Fama-French(1992): 금융회사의 높은 레버리지는 비금융회사에서처럼 부실 신호가 아니라서 표본에서 제외했다(원문 확인).
+const FIN_SEC = {
+  bank: { n: '은행', fin: true }, finhold: { n: '금융지주', fin: true }, insurer: { n: '보험', fin: true }, broker: { n: '증권', fin: true },
+  credit: { n: '여신금융(카드·캐피탈)', fin: true }, finsvc: { n: '기타 금융서비스', fin: true }, invest: { n: '투자·집합투자·창투', fin: true },
+  spac: { n: '기업인수목적회사(스팩)', fin: true }, holding: { n: '지주회사(비금융)', fin: false },
+};
+const FIN_HOLD_NAMES = ['금융지주', '금융그룹', '신한지주', 'KB금융', '하나금융', '우리금융', 'BNK금융', 'JB금융', 'DGB금융', 'iM금융', '한국금융지주', '메리츠금융', '한국투자금융'];
+const FIN_CREDIT_NAMES = ['카드', '캐피탈', '파이낸셜', '할부', '리스', '여신'];
+const FIN_VIEW = { force: {}, lastKey: null }; // force[corp_code] = 'fin'(금융업 화면) | 'gen'(일반기업 화면)
+const FIN_TH = { g: 0.02, roeSteps: [-0.04, -0.02, 0, 0.02, 0.04], keSteps: [-0.01, 0, 0.01, 0.02], gList: [0, 0.01, 0.02, 0.03, 0.04], minRoeYears: 3 };
+
+function finHas(name, arr) { const s = String(name || ''); return arr.some(function (a) { return s.indexOf(a) >= 0; }); }
+function finEnds(name, arr) { const s = String(name || '').trim(); return arr.some(function (a) { return s.length >= a.length && s.slice(s.length - a.length) === a; }); }
+function finMk(k, basis) { return { k: k, n: FIN_SEC[k].n, fin: FIN_SEC[k].fin, basis: basis }; }
+// 업종코드(KSIC; DART 기업개황 induty_code)와 회사 이름으로 유형을 정한다. 코드가 있으면 코드 우선(64=금융업, 65=보험·연금업, 66=금융·보험 관련 서비스업, 64992=지주회사).
+// 코드가 없거나 세부를 가르는 데는 이름을 쓰며, 이름으로 추정한 경우 basis에 '이름 추정'이라고 남긴다(틀릴 수 있음).
+function finSectorOf(code, name) {
+  const c = String(code || '').replace(/[^0-9]/g, ''), nm = String(name || '');
+  if (nm.indexOf('스팩') >= 0 || nm.indexOf('기업인수목적') >= 0) return finMk('spac', '이름 추정');
+  let k = null;
+  if (c) {
+    const p3 = c.slice(0, 3), p2 = c.slice(0, 2);
+    if (c.indexOf('64992') === 0) k = finHas(nm, FIN_HOLD_NAMES) ? 'finhold' : 'holding';
+    else if (p3 === '641') k = 'bank';
+    else if (p2 === '65') k = 'insurer';
+    else if (p3 === '642') k = 'invest';
+    else if (p2 === '64') k = finHas(nm, FIN_CREDIT_NAMES) ? 'credit' : 'invest';
+    else if (p2 === '66') k = nm.indexOf('증권') >= 0 ? 'broker' : 'finsvc';
+    if (k) return finMk(k, 'KSIC ' + c);
+  }
+  if (finHas(nm, FIN_HOLD_NAMES)) k = 'finhold';
+  else if (nm.indexOf('은행') >= 0 || nm.indexOf('뱅크') >= 0) k = 'bank';
+  else if (nm.indexOf('증권') >= 0) k = 'broker';
+  else if (finEnds(nm, ['생명', '화재', '해상', '보험', '재보험'])) k = 'insurer';
+  else if (finEnds(nm, ['카드', '캐피탈'])) k = 'credit';
+  else if (finHas(nm, ['인베스트먼트', '벤처투자', '창업투자', '투자파트너스'])) k = 'invest';
+  return k ? finMk(k, '이름 추정') : null;
+}
+// 지금 화면의 종목: 자동 분류 + 사용자가 고른 화면(금융업/일반)을 반영한 결과
+function finSectorNow() {
+  const key = (typeof rawRows !== 'undefined' && rawRows.length) ? rawRows[0].corp_code : '';
+  const code = AN_STOCK.code, ind = (code && IND.map[code]) || AN_STOCK.ind;
+  const auto = finSectorOf(ind, AN_STOCK.name);
+  const f = FIN_VIEW.force[key] || null;
+  let sec = auto;
+  if (f === 'fin') sec = (auto && auto.fin) ? auto : { k: 'finsvc', n: '금융업(직접 선택)', fin: true, basis: '직접 선택' };
+  else if (f === 'gen' && auto && auto.fin) sec = null;
+  return { sec: sec, auto: auto, forced: f, key: key };
+}
+function finSecChanged() { const s = finSectorNow(); const k = (s.sec ? s.sec.k : '') + '|' + s.key; const ch = FIN_VIEW.lastKey !== null && FIN_VIEW.lastKey !== k; return ch; }
+function finViewFin() { const key = finSectorNow().key; FIN_VIEW.force[key] = 'fin'; renderAnalysis(); }
+function finViewGen() { const key = finSectorNow().key; FIN_VIEW.force[key] = 'gen'; renderAnalysis(); }
+function finViewAuto() { const key = finSectorNow().key; delete FIN_VIEW.force[key]; renderAnalysis(); }
+
+// ---------- 계산 (순수 함수: 화면과 분리해 단독 검증 가능) ----------
+// 정당 PBR = (ROE − g) / (ke − g).  P0 = D1/(ke−g), D1 = E1(1−g/ROE) = B0(ROE−g)  (고든 성장 + 지속가능 배당성향). 표본·시장에 맞춘 값이 아니라 이론식이다.
+function finJustPbr(roe, g, ke) { if (!anFin(roe) || !anFin(g) || !anFin(ke) || !(ke > g)) return null; return Math.max(0, (roe - g) / (ke - g)); }
+// 시장 PBR이 정당화되려면 필요한 ROE (위 식을 ROE에 대해 푼 것)
+function finImpliedRoe(pbr, g, ke) { if (!anFin(pbr) || !(pbr >= 0) || !anFin(g) || !anFin(ke) || !(ke > g)) return null; return g + pbr * (ke - g); }
+function finDdm(dps, g, ke) { if (!anFin(dps) || !(dps > 0) || !anFin(g) || !anFin(ke) || !(ke > g)) return null; return dps * (1 + g) / (ke - g); }
+function finRowsOf(list) {
+  return list.map(function (d) {
+    const r = d.r || {};
+    const bps = (anFin(d.equity) && anFin(d.shares) && d.shares > 0) ? d.equity / d.shares : null;
+    return { year: d.year, ni: d.ni, eq: d.equity, assets: d.assets, roe: d.roe, roa: anDiv(d.ni, d.avgAssets), lev: anDiv(d.assets, d.equity),
+      bps: bps, eps: d.eps, dps: anFin(r.dividend_per_share) ? r.dividend_per_share : null, payout: d.payout, fs: r.fs_div || null };
+  });
+}
+function finBuild(c) {
+  const rows = finRowsOf(c.list), ke = c.r, m = c.m || {}, price = c.price;
+  const roes = rows.map(function (x) { return x.roe; }).filter(anFin);
+  const o = { rows: rows, ke: ke, nRoe: roes.length, g: FIN_TH.g, warn: [] };
+  o.roe3 = anMean(roes.slice(-3)); o.roe5 = anMean(roes.slice(-5)); o.roeMed5 = anMedian(roes.slice(-5)); o.roeSd = anStd(roes.slice(-10));
+  const l10 = rows.slice(-10);
+  o.lossYears = l10.filter(function (x) { return anFin(x.ni) && x.ni < 0; }).length;
+  o.nNi10 = l10.filter(function (x) { return anFin(x.ni); }).length;
+  o.belowKe = l10.filter(function (x) { return anFin(x.roe) && x.roe < ke; }).length;
+  o.nRoe10 = l10.filter(function (x) { return anFin(x.roe); }).length;
+  o.bpsG3 = anCagr(rows, 'bps', 3); o.bpsG5 = anCagr(rows, 'bps', 5);
+  o.epsG3 = anCagr(rows, 'eps', 3); o.niG3 = anCagr(rows, 'ni', 3);
+  o.payoutAvg = c.payoutAvg;
+  o.retG = anFin(o.roe3) ? o.roe3 * (1 - anClamp(anFin(c.payoutAvg) ? c.payoutAvg : 0, 0, 1)) : null; // 유보로 설명되는 장부가치 성장률(Higgins 1977과 같은 구조)
+  const withDps = rows.filter(function (x) { return anFin(x.dps); });
+  o.dps = withDps.length ? withDps[withDps.length - 1].dps : null; o.dpsYear = withDps.length ? withDps[withDps.length - 1].year : null;
+  o.divYield = (anFin(price) && price > 0 && anFin(o.dps) && o.dps > 0) ? o.dps / price : null;
+  o.pbr = anFin(m.pbr) ? m.pbr : null; o.per = anFin(m.per) ? m.per : null; o.bps = anFin(m.bps) ? m.bps : null;
+  o.roeBase = c.def ? c.def.base0 : o.roeMed5;
+  o.jPbr = finJustPbr(o.roeBase, o.g, ke);
+  o.impRoe = finImpliedRoe(o.pbr, o.g, ke);
+  o.jPrice = (anFin(o.jPbr) && anFin(o.bps)) ? o.jPbr * o.bps : null;
+  o.ddm = finDdm(o.dps, o.g, ke);
+  o.scenJ = c.def ? { bear: finJustPbr(c.def.bear.roe0, o.g, ke), base: finJustPbr(c.def.base.roe0, o.g, ke), bull: finJustPbr(c.def.bull.roe0, o.g, ke) } : null;
+  o.grid = null;
+  if (anFin(o.roeBase)) {
+    const kes = FIN_TH.keSteps.map(function (s) { return ke + s; });
+    o.grid = { kes: kes, rows: FIN_TH.roeSteps.map(function (s) { const roe = o.roeBase + s; return { roe: roe, cells: kes.map(function (k) { return finJustPbr(roe, o.g, k); }) }; }) };
+  }
+  // 읽는 법: 점수가 아니라 ROE(수익성)와 PBR(가격)의 관계를 4가지 경우로 설명한다
+  let read = null;
+  if (anFin(o.roeBase) && anFin(o.pbr) && anFin(o.jPbr)) {
+    const hi = o.roeBase >= ke, rel = o.pbr / (o.jPbr > 0 ? o.jPbr : NaN);
+    if (!hi) read = 'below';
+    else if (anFin(rel) && rel < 0.9) read = 'cheap';
+    else if (anFin(rel) && rel > 1.1) read = 'rich';
+    else read = 'fair';
+  }
+  o.read = read;
+  const fsSet = {}; rows.forEach(function (x) { if (x.fs) fsSet[x.fs] = 1; });
+  if (Object.keys(fsSet).length > 1) o.warn.push('연결(CFS)과 별도(OFS) 재무제표가 섞여 있습니다. 연도별 ROE 비교가 어긋날 수 있습니다.');
+  if (o.nRoe < FIN_TH.minRoeYears) o.warn.push('ROE를 계산할 수 있는 연도가 ' + o.nRoe + '개뿐입니다(3개 미만이면 정당 PBR·시나리오를 만들지 않습니다).');
+  if (!(anFin(price) && price > 0)) o.warn.push('현재가가 없어 PBR·PER·배당수익률은 N/A입니다.');
+  if (!rows.some(function (x) { return anFin(x.dps); })) o.warn.push('배당 자료(주당배당금)가 없어 배당성향은 0%(전액 유보)로 가정됩니다. 정당 PBR의 성장률 g 계산에는 쓰이지 않고(g는 고정 입력), 잔여이익 시나리오에만 영향을 줍니다.');
+  return o;
+}
+// 지주회사 순자산가치(NAV) = Σ(상장 자회사 시가총액 × 지분율) + 기타 자산 − 순차입금. 단위: 억원
+function finNav(items, other, debt, mcap, shares) {
+  let sum = 0, used = 0, miss = [];
+  (items || []).forEach(function (x) {
+    const s = Number(x.stake), cap = Number(x.cap);
+    if (!(s > 0) || !(s <= 100)) { miss.push((x.name || x.code || '?') + '(지분율)'); return; }
+    if (!(cap > 0)) { miss.push((x.name || x.code || '?') + '(시총)'); return; }
+    sum += s / 100 * cap; used++;
+  });
+  const o = anFin(Number(other)) ? Number(other) : 0, d = anFin(Number(debt)) ? Number(debt) : 0;
+  const nav = sum + o - d;
+  const mc = anFin(mcap) && mcap > 0 ? mcap / 1e8 : null; // 원 → 억
+  const out = { sumListed: sum, used: used, miss: miss, other: o, debt: d, nav: nav, mcapEok: mc, navPerShare: null, discount: null };
+  if (anFin(shares) && shares > 0) out.navPerShare = nav * 1e8 / shares;
+  if (mc != null && nav > 0) out.discount = 1 - mc / nav; // +면 NAV보다 싸게 거래(할인), −면 할증
+  return out;
+}
+
+// ---------- 업종별 설명(근거 수준과 함께) ----------
+const FIN_NOTES = {
+  bank: { why: '은행은 예금·차입이 영업의 원재료입니다. 그래서 "차입금을 빼는" EV·FCF·ROIC가 정의되지 않고, 자본(equity)을 기준으로 ROE와 PBR로 평가하는 것이 표준입니다.',
+    miss: [['순이자마진(NIM)', '예대마진 수익성'], ['고정이하여신비율·대손비용률', '자산 건전성과 이익의 질'], ['보통주자본비율(CET1)·BIS 비율', '배당·성장 여력(자본규제)']], where: '각사 사업보고서·분기보고서 본문, 금융감독원 금융통계정보시스템(FISIS)' },
+  finhold: { why: '금융지주는 연결재무제표가 은행·보험·증권 자회사를 합친 것이라 은행과 같은 방식(ROE·PBR)으로 봅니다. 별도 재무제표만 보면 자회사 배당이 수익의 대부분이라 사업 규모를 알 수 없습니다.',
+    miss: [['자회사별 이익 비중', '어느 사업이 이익을 내는지'], ['보통주자본비율(CET1)·BIS 비율', '주주환원 여력'], ['자회사 건전성 지표', '은행 NPL, 보험 지급여력 등']], where: '각사 사업보고서 본문과 IR 자료' },
+  insurer: { why: '보험회사는 보험료(부채)를 받아 운용하는 사업이라 은행처럼 자본 기준으로 평가합니다. IFRS 17 이후 이익이 보험계약마진(CSM) 상각·투자손익·금리 효과에 함께 좌우되어 연도별 ROE가 흔들릴 수 있습니다.',
+    miss: [['지급여력비율(K-ICS)', '자본규제 여력'], ['보험계약마진(CSM) 잔액·상각', '앞으로 인식할 보험이익의 쌓임'], ['보험손익 vs 투자손익 분해', '이익의 출처와 지속성']], where: '각사 공시, 생명보험협회·손해보험협회 공시' },
+  broker: { why: '증권회사는 위탁·IB·자기매매 수익이 증시 사이클에 크게 연동됩니다. 자본 기준(ROE·PBR)으로 보되, 호황과 불황의 ROE 차이가 커서 한두 해 ROE로 판단하지 않습니다.',
+    miss: [['순자본비율(NCR)·레버리지', '자본규제 여력'], ['수익원 구성(위탁·IB·자기매매·이자)', '이익의 지속성']], where: '각사 사업보고서, 금융투자협회 전자공시' },
+  credit: { why: '카드·캐피탈은 차입으로 조달해 대출해 주는 사업이라 은행과 같이 자본 기준으로 봅니다. 조달금리와 연체율에 민감합니다.',
+    miss: [['연체율·고정이하여신비율', '자산 건전성'], ['조정자기자본비율(레버리지 한도)', '자본규제 여력'], ['조달금리·조달 구조', '이익 변동 요인']], where: '각사 사업보고서, 여신금융협회·금융감독원 통계' },
+  finsvc: { why: '금융 관련 서비스업(증권 중개, 금융시장 운영, 투자자문 등)은 회사마다 구조가 달라 일반 기업용 지표를 그대로 쓰면 왜곡됩니다. 자본 기준 지표를 기본으로 보고, 구조를 직접 확인하세요.', miss: [['사업 구조(수수료·이자·자기자본투자 비중)', '이익의 성격']], where: '사업보고서 본문' },
+  invest: { why: '투자·창투회사는 보유 자산을 공정가치로 평가해 이익에 반영하므로 이익 변동이 큽니다. 이런 회사는 ROE보다 PBR(주가가 순자산가치의 몇 배인가)이 핵심이고, 폐쇄형 펀드가 순자산가치보다 싸게 거래되는 현상(Lee·Shleifer·Thaler 1991)이 참고가 됩니다. 다만 그 논문은 미국 폐쇄형 펀드 이야기라 이 회사들에 그대로 적용된다는 증거는 아닙니다.',
+    miss: [['보유 투자자산 구성·평가손익 비중', '순자산의 질'], ['투자조합 운용 규모·성과보수', '수수료 수익의 지속성']], where: '사업보고서 본문(투자 현황 주석)' },
+  spac: { why: '기업인수목적회사(스팩)는 합병 전까지 사업이 없고 자산이 신탁금입니다. 이 앱의 평가 틀로 의미 있는 판단을 할 수 없어 수치를 참고용으로만 표시합니다.', miss: [['신탁금 규모·합병 기한', '실제로 중요한 정보']], where: '증권신고서·공시' },
+};
+
+function finSafe(label, fn) { try { return fn(); } catch (e) { return '<div class="card" style="color:var(--danger); font-size:12.5px;">' + anEsc(label) + ' 표시 오류: ' + anEsc(e && e.message ? e.message : e) + '</div>'; } }
+function finGuideLink(id) { return ' <a href="#" onclick="guideOpen(this.getAttribute(\\'data-g\\')); return false;" data-g="' + id + '" style="font-size:11.5px;">ⓘ 쉬운 설명</a>'; }
+
+function finRenderGlance(S, c, o) {
+  const sec = S.sec, lv = function (v) { return v == null ? 'N/A' : v; };
+  const chip = function (name, v, sub) { return '<div style="flex:1 1 120px; border:1px solid var(--border); border-radius:10px; padding:8px 10px; background:#fff;"><div style="font-size:11.5px; color:var(--text-muted);">' + name + '</div><div style="font-size:16px; font-weight:800;">' + anEsc(lv(v)) + '</div>' + (sub ? '<div style="font-size:10.5px; color:var(--text-muted);">' + sub + '</div>' : '') + '</div>'; };
+  const r = c.last && c.last.r ? c.last.r : null;
+  const fd = r && r.fs_div ? (r.fs_div === 'CFS' ? '연결' : r.fs_div === 'OFS' ? '개별(별도)' : r.fs_div) : '기준 미확인';
+  const filing = r && r.filing_date ? btFmtDate(r.filing_date) : '공시일 미저장';
+  const jump = [['①', '수익성'], ['②', '주주환원'], ['③', '자본·레버리지'], ['④', '성장'], ['⑤', '가격'], ['⑥', '시장']].map(function (j) {
+    return '<button type="button" style="font-size:12.5px; padding:4px 10px; min-height:36px;" onclick="anGoChap(this.getAttribute(\\'data-n\\'))" data-n="' + j[0] + '">' + j[0] + ' ' + j[1] + '</button>'; }).join('');
+  const toggle = S.forced === 'fin' ? '<button type="button" onclick="finViewAuto()" style="font-size:12px; padding:3px 8px;">자동 분류로 되돌리기</button>' :
+    '<button type="button" onclick="finViewGen()" style="font-size:12px; padding:3px 8px;" title="분류가 틀렸다고 생각하면 일반 기업용 지표 화면으로 봅니다">일반 기업용 화면으로 보기</button>';
+  return '<div class="card" id="anGlance" style="border-left:4px solid #7c3aed;"><div style="font-weight:800; font-size:14.5px;">한눈에 보기 <span style="font-size:11.5px; font-weight:400; color:var(--text-muted);">— 금융업은 점수 대신 숫자를 그대로 보여 줍니다</span></div>' +
+    '<div style="margin:6px 0; font-size:12.5px;"><span style="display:inline-block; background:#7c3aed; color:#fff; border-radius:10px; padding:1px 9px; font-weight:700;">' + anEsc(sec.n) + '</span> <span style="color:var(--text-muted);">분류 근거: ' + anEsc(sec.basis || '') + (String(sec.basis || '').indexOf('이름') >= 0 ? ' — 업종코드가 없어 이름으로 추정했습니다. 틀리면 아래 버튼으로 바꿀 수 있습니다' : '') + '</span> ' + toggle + '</div>' +
+    '<div style="display:flex; flex-wrap:wrap; gap:8px; margin:8px 0;">' +
+    chip('ROE (최근 3년 평균)', anFin(o.roe3) ? anPct(o.roe3) : null, '요구수익률 ke ' + anPct(o.ke)) + chip('PBR', anFin(o.pbr) ? anX(o.pbr) : null, '주가 ÷ 주당순자산') +
+    chip('정당 PBR (기준값)', anFin(o.jPbr) ? anX(o.jPbr) : null, '(ROE−g)/(ke−g), g ' + anPct(o.g)) + chip('Momentum 주가 흐름', c.grades.mom, null) + '</div>' +
+    '<div style="font-size:12px; color:var(--text-muted); line-height:1.55;">기준: 최근 연간 ' + (c.last ? c.last.year : 'N/A') + '년 · ' + fd + '재무제표 · 공시일 ' + filing + ' · 연간 ' + c.list.length + '개년. ROIC·FCF·F-Score·매출총이익·유동비율은 이 업종에서 의미가 없어 계산하지 않습니다' + finGuideLink('finwhy') + '</div>' +
+    '<div style="margin-top:8px; font-size:12px; font-weight:600;">질문별로 바로가기</div><div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;">' + jump + '</div></div>';
+}
+
+function finRenderWhy(S, c, o) {
+  const nt = FIN_NOTES[S.sec.k] || FIN_NOTES.finsvc;
+  const miss = nt.miss.map(function (x) { return '<tr><td class="an-first">' + anEsc(x[0]) + '</td><td style="text-align:left;">' + anEsc(x[1]) + '</td><td>미수집</td></tr>'; }).join('');
+  const warn = o.warn.length ? '<div style="margin:6px 0; padding:8px 10px; background:#fffbeb; border:1px solid #fcd34d; border-radius:8px; font-size:12.5px;">' + o.warn.map(function (w) { return '⚠ ' + anEsc(w); }).join('<br>') + '</div>' : '';
+  const html = '<div style="font-size:12.5px; line-height:1.6;">' + anEsc(nt.why) + '</div>' + warn +
+    '<div style="font-size:12.5px; font-weight:700; margin-top:10px;">이 업종에서 중요하지만 이 앱이 수집하지 않는 지표 ' + finGuideLink('finmiss') + '</div>' +
+    '<div class="tscroll"><table class="an-tbl"><thead><tr><th class="an-first">지표</th><th style="text-align:left;">무엇을 알려주나</th><th>상태</th></tr></thead><tbody>' + miss + '</tbody></table></div>' +
+    '<div style="font-size:12px; color:var(--text-muted); margin-top:4px;">확인 위치: ' + anEsc(nt.where) + '. 재무제표 항목(DART 재무제표 API)에는 이런 규제·건전성 비율이 들어 있지 않아 값을 만들어 채우지 않았습니다.</div>';
+  return anSection('🏛 ' + S.sec.n + ' — 어떻게 평가하나, 무엇이 비어 있나', '#7c3aed', '', html, true);
+}
+
+function finRenderProfit(o) {
+  const defs = [{ label: '지배주주 순이익', key: 'ni', fmt: 'eok' }, { label: 'ROE (평균자본)', key: 'roe', fmt: 'pct' }, { label: 'ROA (순이익/평균자산)', key: 'roa', fmt: 'pct' }, { label: '자기자본승수 (자산/자본)', key: 'lev', fmt: 'x' }];
+  const tiles = anGrid([
+    anTile('ROE 3Y / 5Y 평균', anPct(o.roe3) + ' / ' + anPct(o.roe5), '지배주주순이익 ÷ 평균 지배주주지분'),
+    anTile('ROE 변동(표준편차)', anFin(o.roeSd) ? anPct(o.roeSd) : 'N/A', '최근 10년 이내, 클수록 이익이 불안정'),
+    anTile('ROE가 ke 미만인 해', o.nRoe10 ? o.belowKe + ' / ' + o.nRoe10 : 'N/A', 'ke ' + anPct(o.ke) + ' 기준, 최근 10년 이내'),
+    anTile('적자 연도', o.nNi10 ? o.lossYears + ' / ' + o.nNi10 : 'N/A', '최근 10년 이내'),
+  ]);
+  const note = '<div style="font-size:12px; color:var(--text-muted); line-height:1.55;">ROE = ROA × 자기자본승수(듀폰 분해). 금융회사는 승수가 10배 이상으로 높은 것이 정상이며 부실 신호가 아닙니다(Fama-French 1992도 이 이유로 금융회사를 제외) ' + anBadge('proof') + '. ROE는 레버리지(자본규제가 상한)와 ROA 중 어느 쪽이 만든 것인지 같이 봅니다. ROA는 지배주주 순이익을 총자산으로 나눈 근사치입니다.</div>';
+  return anSection('📈 수익성 — ROE와 그 분해', '#7c3aed', '', tiles + anTable(o.rows, defs, 10) + note, true);
+}
+function finRenderReturn(o) {
+  const defs = [{ label: 'EPS (원)', key: 'eps', fmt: 'won' }, { label: '주당배당금 DPS (원)', key: 'dps', fmt: 'won' }, { label: '배당성향', key: 'payout', fmt: 'pct' }];
+  const hiPay = o.rows.filter(function (x) { return anFin(x.payout) && x.payout > 1; }).map(function (x) { return x.year; });
+  const tiles = anGrid([
+    anTile('최근 배당금 (' + (o.dpsYear || 'N/A') + ')', anFin(o.dps) ? anWon(o.dps) : 'N/A', '사업보고서 기준 주당배당금'),
+    anTile('배당수익률', anFin(o.divYield) ? anPct(o.divYield) : 'N/A', '최근 DPS ÷ 현재가'),
+    anTile('배당성향 평균', anFin(o.payoutAvg) ? anPct(o.payoutAvg, 0) : 'N/A', '자료 있는 연도 평균'),
+  ]);
+  const note = '<div style="font-size:12px; color:var(--text-muted); line-height:1.55;">금융회사는 이익을 다 배당하면 자본이 늘지 않아 대출·보험 인수를 못 늘립니다(자본규제 때문). 배당성향이 높으면 성장은 그만큼 느려집니다(지속가능 성장률 = ROE × 유보율). ' + (hiPay.length ? '<b>배당성향 100% 초과 연도: ' + hiPay.join(', ') + '</b> — 이익보다 많이 지급해 자본이 줄었을 수 있습니다.' : '') + '</div>';
+  return anSection('💵 주주환원 — 이익이 배당으로 이어지는가', '#7c3aed', '', tiles + anTable(o.rows, defs, 10) + note, false);
+}
+function finRenderCapital(S, o) {
+  const defs = [{ label: '지배주주지분 (자본)', key: 'eq', fmt: 'eok' }, { label: '총자산', key: 'assets', fmt: 'eok' }, { label: '자기자본승수', key: 'lev', fmt: 'x' }, { label: 'BPS (주당순자산, 원)', key: 'bps', fmt: 'won' }];
+  const levs = o.rows.map(function (x) { return x.lev; }).filter(anFin);
+  const trend = levs.length >= 4 ? (levs[levs.length - 1] > levs[0] ? '상승' : '하락') : null;
+  const note = '<div style="font-size:12px; color:var(--text-muted); line-height:1.55;">자기자본승수가 ' + (trend ? '처음 대비 <b>' + trend + '</b>했습니다. ' : '') + '금융회사의 건전성은 재무상태표 숫자가 아니라 <b>규제 자본비율</b>(은행 CET1·BIS, 보험 K-ICS, 증권 NCR 등)로 판단합니다. 그 비율은 재무제표 API에 없어 이 앱은 계산하지 않았습니다. 위의 「미수집 지표」 표에서 확인할 곳을 안내합니다.</div>';
+  return anSection('🛡 자본과 레버리지', '#7c3aed', '', anTable(o.rows, defs, 10) + note, false);
+}
+function finRenderGrowth(o) {
+  const tiles = anGrid([
+    anTile('BPS 3Y / 5Y CAGR', anPct(o.bpsG3) + ' / ' + anPct(o.bpsG5), '주당순자산 연평균 증가율(시작·끝이 양수일 때만)'),
+    anTile('EPS 3Y CAGR', anFin(o.epsG3) ? anPct(o.epsG3) : (anFin(o.niG3) ? anPct(o.niG3) + ' (순이익)' : 'N/A'), '주식수 변동이 크면 순이익으로 대체'),
+    anTile('유보로 설명되는 성장', anFin(o.retG) ? anPct(o.retG) : 'N/A', 'ROE 3Y평균 × (1−배당성향)'),
+  ]);
+  let cmp = '';
+  if (anFin(o.bpsG3) && anFin(o.retG)) {
+    const d = o.bpsG3 - o.retG;
+    cmp = '<div style="font-size:12.5px; margin-top:6px;">실제 BPS 증가율(' + anPct(o.bpsG3) + ')과 유보 성장(' + anPct(o.retG) + ')의 차이 <b>' + (d >= 0 ? '+' : '') + anPct(d) + 'p</b>. ' +
+      (Math.abs(d) < 0.02 ? '이익을 쌓아서 자본이 늘었다는 설명과 대체로 맞습니다.' : '차이가 크면 증자·자사주·유가증권 평가손익(기타포괄손익) 등이 자본을 움직였다는 뜻이라, 자본이 늘었더라도 이익의 질과 따로 봐야 합니다.') + '</div>';
+  }
+  const note = '<div style="font-size:12px; color:var(--text-muted); line-height:1.55; margin-top:6px;">금융회사의 "매출"은 업종마다 정의가 달라(은행 이자수익, 보험 보험수익, 증권 영업수익) 회사끼리 비교할 수 없어 매출 성장률을 쓰지 않습니다. 대신 주주 몫인 BPS와 EPS의 성장을 봅니다.</div>';
+  return anSection('🌱 성장 — 주주 몫(BPS·EPS)이 늘고 있는가', '#7c3aed', '', tiles + cmp + note, false);
+}
+function finGridHtml(o) {
+  if (!o.grid) return '';
+  const cur = o.pbr;
+  const head = '<tr><th class="an-first">ROE ↓ · ke →</th>' + o.grid.kes.map(function (k) { return '<th>' + anPct(k) + '</th>'; }).join('') + '</tr>';
+  const body = o.grid.rows.map(function (r) {
+    return '<tr><td class="an-first">' + anPct(r.roe) + (Math.abs(r.roe - o.roeBase) < 1e-9 ? ' (기준)' : '') + '</td>' + r.cells.map(function (v, i) {
+      const base = Math.abs(r.roe - o.roeBase) < 1e-9 && Math.abs(o.grid.kes[i] - o.ke) < 1e-9;
+      return '<td' + (base ? ' style="background:#ede9fe; font-weight:700;"' : '') + '>' + (v == null ? 'N/A' : v.toFixed(2) + '배') + '</td>'; }).join('') + '</tr>'; }).join('');
+  return '<div style="font-size:12.5px; font-weight:700; margin-top:10px;">정당 PBR 민감도 (g ' + anPct(o.g) + ' 고정)' + (anFin(cur) ? ' — 현재 PBR ' + anX(cur) : '') + '</div><div class="tscroll"><table class="an-tbl"><thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
+}
+function finReadText(o) {
+  const t = {
+    below: 'ROE(' + anPct(o.roeBase) + ')가 요구수익률 ke(' + anPct(o.ke) + ')보다 낮습니다. 이론상 이런 회사의 정당 PBR은 1배 미만이 정상이므로, 낮은 PBR 자체는 저평가의 증거가 아닙니다(자본비용을 못 넘기는 자본은 장부가 이하로 평가됨, Damodaran). ROE가 개선될 근거가 있는지가 관건입니다.',
+    cheap: 'ROE가 ke 이상인데 시장 PBR(' + anX(o.pbr) + ')이 정당 PBR(' + anX(o.jPbr) + ')보다 10% 넘게 낮습니다. 가능한 설명은 두 가지입니다 — ① 시장이 앞으로 ROE가 내려갈 것(충당금·금리·규제·이익의 일회성)이라고 본다 ② 단순히 저평가다. 이 계산만으로는 둘을 가를 수 없으므로 이익의 질과 배당·자사주 지속성을 확인해야 합니다.',
+    rich: 'ROE가 ke 이상이고 시장 PBR(' + anX(o.pbr) + ')이 정당 PBR(' + anX(o.jPbr) + ')보다 10% 넘게 높습니다. 시장이 ROE 개선이나 더 높은 성장(g)을 이미 가격에 담았다는 뜻입니다. 그 기대가 근거 있는지 확인이 필요합니다.',
+    fair: 'ROE가 ke 이상이고 시장 PBR(' + anX(o.pbr) + ')이 정당 PBR(' + anX(o.jPbr) + ')과 ±10% 안에 있습니다. 현재 가격은 과거 ROE를 지속한다는 가정과 대체로 맞습니다.',
+  };
+  return o.read ? t[o.read] : '';
+}
+function finRenderValue(S, c, o) {
+  const tiles = anGrid([
+    anTile('PBR', anFin(o.pbr) ? anX(o.pbr) : 'N/A', '주가 ÷ 주당순자산(BPS ' + anWon(o.bps) + ')'),
+    anTile('PER', anFin(o.per) ? anX(o.per, 1) : 'N/A', '순이익이 양수일 때만'),
+    anTile('정당 PBR (기준)', anFin(o.jPbr) ? anX(o.jPbr) : 'N/A', 'ROE ' + anPct(o.roeBase) + ' · ke ' + anPct(o.ke) + ' · g ' + anPct(o.g)),
+    anTile('시장이 요구하는 ROE', anFin(o.impRoe) ? anPct(o.impRoe) : 'N/A', '현재 PBR이 정당화되려면 필요한 ROE = g + PBR×(ke−g). 실제 ROE ' + anPct(o.roeBase) + '와 비교'),
+    anTile('정당 PBR 환산 주가', anFin(o.jPrice) ? anWon(o.jPrice) : 'N/A', anFin(o.jPrice) && anFin(c.price) && c.price > 0 ? '현재가 대비 ' + anPct(o.jPrice / c.price - 1) : '현재가 필요'),
+    anTile('배당할인(고든) 가치', anFin(o.ddm) ? anWon(o.ddm) : 'N/A', anFin(o.dps) ? '최근 DPS ' + anWon(o.dps) + ' × (1+g) ÷ (ke−g). 배당이 이익보다 적으면 낮게 나옴' : '배당 자료 없음'),
+  ]);
+  const sj = o.scenJ ? '<div style="font-size:12.5px; margin:6px 0;">시나리오별 정당 PBR — Bear <b>' + (o.scenJ.bear == null ? 'N/A' : o.scenJ.bear.toFixed(2) + '배') + '</b> · Base <b>' + (o.scenJ.base == null ? 'N/A' : o.scenJ.base.toFixed(2) + '배') + '</b> · Bull <b>' + (o.scenJ.bull == null ? 'N/A' : o.scenJ.bull.toFixed(2) + '배') + '</b> (ROE만 시나리오값으로 바꾸고 ke·g는 같음)</div>' : '';
+  const read = finReadText(o) ? '<div style="margin:8px 0; padding:8px 10px; background:#f5f3ff; border:1px solid #ddd6fe; border-radius:8px; font-size:12.5px; line-height:1.6;"><b>읽는 법</b> — ' + finReadText(o) + ' (매수·매도 의견이 아닙니다)</div>' : '<div style="font-size:12.5px; color:var(--text-muted);">ROE나 PBR을 계산할 수 없어 해석 문장을 만들지 않았습니다.</div>';
+  const ev = '<details style="margin-top:8px;"><summary style="cursor:pointer; font-size:12px; color:var(--text-muted);">근거와 한계</summary><div style="font-size:12px; line-height:1.6; color:var(--text-muted);">' +
+    '정당 PBR = (ROE−g)/(ke−g)는 고든 성장모형에 "배당성향 = 1 − g/ROE"를 넣어 정리한 식입니다 ' + anBadge('theory') + ' Damodaran(가치평가 3판 21장)이 금융회사에 쓰는 배당할인·초과수익 모형과 같은 틀이며, 이 식 자체는 교재에 그대로 적혀 있지 않고 이 앱이 유도한 것입니다. ' +
+    '입력(ROE 지속성, ke, g)은 모두 가정입니다. g는 장기 명목성장률보다 높게 둘 수 없어 2%를 기본으로 하고 0~4%를 민감도로 봅니다. ke는 아래 시나리오 카드의 요구수익률 r과 같은 값입니다. ' +
+    '자본규제상 자본을 마음대로 늘릴 수 없고, 보험·증권은 ROE 변동이 커서 한두 해 값에 흔들립니다. 정당 PBR과 시장 PBR의 차이가 초과수익으로 이어진다는 검증은 이 앱에서 하지 않았습니다.</div></details>';
+  const html = tiles + sj + read + finGridHtml(o) + ev;
+  return anSection('💹 가격 — PBR과 ROE의 관계 (정당 PBR · 시장이 요구하는 ROE)', '#7c3aed', '', html, true);
+}
+function finRenderEvidence() {
+  const rows = [
+    ['금융회사는 자본(equity) 기준으로 평가, EV·FCFF 배수는 부적합', 'Damodaran, Valuing Financial Service Firms (가치평가 3판 21장, pp.581-610)', '원문 확인', '교재. 한국 시장에 대한 실증은 아님'],
+    ['금융회사의 높은 레버리지는 부실 신호가 아니다(표본에서 제외)', 'Fama & French (1992), The Cross-Section of Expected Stock Returns, Section I.A', '원문 문장 확인', '제외 이유 설명이지 금융업 평가법은 아님'],
+    ['정당 PBR = (ROE−g)/(ke−g)', '고든 성장모형 + 지속가능 배당성향(Damodaran 21장의 구성요소). 식은 이 앱이 유도', '이론', 'ROE 지속·g·ke가 모두 가정'],
+    ['잔여이익모형(RIM): 가치 = 장부가 + 초과이익의 현재가치', 'Ohlson (1995) 등. 아래 시나리오 카드에서 사용', '제목·연도만 알고 이번 세션에 원문은 열지 않음', '가정에 민감'],
+    ['RIM 기반 가치/가격이 이후 주식수익률을 예측', 'Frankel & Lee (1998), Journal of Accounting and Economics 25(3):283-319', '서지 확인(요지는 검색 초록 수준)', '미국 표본. 한국 금융업에서 이 앱이 검증하지 않음'],
+    ['폐쇄형 펀드는 순자산가치 대비 할인·할증 거래되며 개인 심리와 함께 움직임', 'Lee, Shleifer & Thaler (1991), Journal of Finance 46(1):75-109', '서지·초록 확인', '투자·창투회사에 대한 직접 증거는 아님(유추)'],
+    ['한국 상장사(비금융, KOSPI 1995-2010)에서 다각화 할인이 관찰됨', 'DOI 10.22510/KJOFM.2019.36.4.002 (초록만 확인, 저자·학술지명은 확인하지 못함)', '초록 수준', '지주회사 할인을 직접 검증한 연구가 아님'],
+    ['지주회사 NAV(자회사 시가 합계) 대비 할인율로 평가', '증권업계 실무 관행', '실무 관행', '학술적으로 이 할인율이 수익을 예측한다는 증명은 없음'],
+  ];
+  const body = rows.map(function (r) { return '<tr><td class="an-first" style="white-space:normal; min-width:150px;">' + anEsc(r[0]) + '</td><td style="text-align:left; white-space:normal; min-width:170px;">' + anEsc(r[1]) + '</td><td style="white-space:normal;">' + anEsc(r[2]) + '</td><td style="text-align:left; white-space:normal; min-width:130px;">' + anEsc(r[3]) + '</td></tr>'; }).join('');
+  return anSection('📚 이 화면의 근거와 확인 수준', '#475569', '이번에 직접 확인한 것과 확인하지 못한 것을 나눠 적었습니다.', '<div class="tscroll"><table class="an-tbl"><thead><tr><th class="an-first">주장</th><th>출처</th><th>확인 수준</th><th>한계</th></tr></thead><tbody>' + body + '</tbody></table></div>', false);
+}
+
+// 금융업 전용 분석 화면 전체 (일반 기업용 화면 대신 사용)
+function finRenderAnalysis(S, c, m, notice) {
+  const o = finBuild(c); c.fin = o;
+  const mom = finSafe('모멘텀', function () { return anRenderMomentum() + anRenderTrend(c); });
+  return notice + finSafe('한눈에 보기', function () { return finRenderGlance(S, c, o); }) +
+    finSafe('안내', function () { return finRenderWhy(S, c, o); }) +
+    anChapter('①', '자본을 잘 굴리는가?', '자본 1원이 1년에 얼마를 버는가(ROE), 그리고 그것이 마진(ROA)과 레버리지 중 어디서 오는가', 'Damodaran: 금융회사는 자본 기준 수익성(ROE)이 가치의 핵심. 레버리지는 규제 한도 안에서 사업의 일부.') +
+    finSafe('수익성', function () { return finRenderProfit(o); }) +
+    anChapter('②', '이익이 주주에게 돌아오는가?', '번 돈이 배당으로 나가는지, 얼마나 꾸준한지', '지속가능 성장률 = ROE × 유보율. 배당이 많으면 자본 성장이 느려집니다.') +
+    finSafe('주주환원', function () { return finRenderReturn(o); }) +
+    anChapter('③', '자본은 충분한가?', '레버리지 추이. 규제 자본비율은 이 앱이 수집하지 않아 확인할 곳을 안내합니다', '금융회사의 안전성은 규제 자본비율로 판단합니다. 재무상태표의 부채비율로 보지 않습니다.') +
+    finSafe('자본', function () { return finRenderCapital(S, o); }) +
+    anChapter('④', '주주 몫이 늘고 있는가?', '매출이 아니라 주당순자산(BPS)과 EPS의 성장', '금융회사 매출은 정의가 업종마다 달라 회사 간 비교가 안 됩니다.') +
+    finSafe('성장', function () { return finRenderGrowth(o); }) +
+    anChapter('⑤', '지금 가격은 합당한가?', 'PBR을 ROE로 설명해 보고(정당 PBR), 잔여이익모형(RIM)으로 Bear/Base/Bull 가치 범위를 봅니다', '자본 기준 평가(Damodaran 21장). 한 숫자가 아니라 가정에 따른 범위로 봅니다.') +
+    finSafe('가격', function () { return finRenderValue(S, c, o); }) + finSafe('시나리오', function () { return anRenderScenario(c); }) +
+    anChapter('⑥', '시장은 지금 이 주식을 어떻게 보고 있는가?', '가격 추세와 상대강도', '모멘텀은 가치와 별개의 독립된 정보입니다(Jegadeesh-Titman 1993).') + mom +
+    anChapter('⑦', '판단 기록', '내 판단 과정을 기록해 둡니다', '결론을 대신 내리지 않고 판단 과정을 기록하게 돕습니다.') + '<div id="anThesisBox" class="card">' + anThesisHtml() + '</div>' +
+    anChapter('참고', '근거 · 설정', '이 화면의 근거 수준과 요구수익률 등 설정', '확인한 것과 확인하지 못한 것을 구분해 적었습니다.') + finRenderEvidence() + anRenderSettings();
+}
+
+// ---------- 지주회사(비금융): 순자산가치(NAV) 계산기 ----------
+// NAV = Σ(상장 자회사 시가총액 × 지분율) + 기타 자산 − 순차입금. 지분율은 사업보고서의 「타법인 출자 현황」에서 직접 옮겨 적어야 한다(이 앱은 자동 수집하지 않음).
+const FIN_NAV = { key: '', rows: [], other: 0, debt: 0, msg: '' };
+function finNavLoad(key) {
+  if (FIN_NAV.key === key) return;
+  FIN_NAV.key = key; FIN_NAV.rows = []; FIN_NAV.other = 0; FIN_NAV.debt = 0; FIN_NAV.msg = '';
+  try { const s = localStorage.getItem('finNav_' + key); if (s) { const j = JSON.parse(s); if (j && j.rows) { FIN_NAV.rows = j.rows; FIN_NAV.other = j.other || 0; FIN_NAV.debt = j.debt || 0; } } } catch (e) { /* 저장 불가 환경이면 메모리만 */ }
+  if (!FIN_NAV.rows.length) FIN_NAV.rows = [{ name: '', code: '', stake: '', cap: '', auto: false }];
+}
+function finNavSave() { try { localStorage.setItem('finNav_' + FIN_NAV.key, JSON.stringify({ rows: FIN_NAV.rows, other: FIN_NAV.other, debt: FIN_NAV.debt })); } catch (e) { /* 무시 */ } }
+function finNavRead() {
+  const g = function (id) { const e = document.getElementById(id); return e ? e.value : ''; };
+  FIN_NAV.rows = FIN_NAV.rows.map(function (x, i) {
+    const cap = g('finNavCap' + i), prev = x.cap;
+    return { name: g('finNavNm' + i), code: g('finNavCd' + i).replace(/[^0-9A-Za-z]/g, '').slice(0, 6), stake: g('finNavSt' + i), cap: cap, auto: x.auto && String(cap) === String(prev) };
+  });
+  FIN_NAV.other = Number(g('finNavOther')) || 0; FIN_NAV.debt = Number(g('finNavDebt')) || 0;
+}
+function finNavInput() { finNavRead(); finNavSave(); finNavOut(); }
+function finNavAdd() { finNavRead(); FIN_NAV.rows.push({ name: '', code: '', stake: '', cap: '', auto: false }); finNavSave(); finNavRedraw(); }
+function finNavDel(btn) { finNavRead(); const i = Number(btn.getAttribute('data-i')); FIN_NAV.rows.splice(i, 1); if (!FIN_NAV.rows.length) FIN_NAV.rows.push({ name: '', code: '', stake: '', cap: '', auto: false }); finNavSave(); finNavRedraw(); }
+function finNavRedraw() { const e = document.getElementById('finNavBox'); if (e) e.innerHTML = finNavInner(); finNavOut(); }
+async function finNavFetch() {
+  finNavRead();
+  const codes = FIN_NAV.rows.map(function (x) { return x.code; }).filter(function (x) { return x.length === 6; });
+  if (!codes.length) { FIN_NAV.msg = '종목코드(6자리)를 입력한 줄이 없습니다.'; finNavRedraw(); return; }
+  FIN_NAV.msg = '시가총액을 조회하는 중...'; finNavRedraw();
+  try {
+    const res = await fetch('/api/market/caps?codes=' + encodeURIComponent(codes.join(','))); const d = await res.json();
+    if (!res.ok) throw new Error(d.error || '조회 실패');
+    let got = 0, none = [];
+    FIN_NAV.rows.forEach(function (x) {
+      if (x.code.length !== 6) return;
+      const v = d.caps && d.caps[x.code];
+      if (v && v.cap > 0) { x.cap = String(Math.round(v.cap / 1e8)); x.auto = true; got++; } else none.push(x.code);
+    });
+    FIN_NAV.msg = '시가총액 기준일 ' + (d.date ? fmtYmd(d.date) : '알 수 없음') + ' · ' + got + '개 채움' + (none.length ? ' · 시장 DB에 없는 종목(직접 입력 필요): ' + none.join(', ') : '') + '. 시장 DB는 시가총액 500억 원 이상 종목만 저장하는 경우가 많습니다.';
+    finNavSave();
+  } catch (e) { FIN_NAV.msg = '시가총액 조회 실패: ' + (e.message || e); }
+  finNavRedraw();
+}
+function finNavOut() {
+  const el = document.getElementById('finNavOut'); if (!el) return;
+  const c = AN_CTX, m = lastSummaryMetrics;
+  if (!c || !m) { el.innerHTML = ''; return; }
+  const r = finNav(FIN_NAV.rows, FIN_NAV.other, FIN_NAV.debt, m.marketCap, c.last ? c.last.shares : null);
+  const hasInput = FIN_NAV.rows.some(function (x) { return Number(x.stake) > 0 || Number(x.cap) > 0; });
+  if (!hasInput) { el.innerHTML = '<div style="font-size:12.5px; color:var(--text-muted);">자회사 지분율과 시가총액을 입력하면 NAV와 할인율이 계산됩니다.</div>'; return; }
+  const tiles = anGrid([
+    anTile('상장 자회사 지분가치 합', Math.round(r.sumListed).toLocaleString() + '억', r.used + '개 반영'),
+    anTile('NAV (순자산가치)', Math.round(r.nav).toLocaleString() + '억', '지분가치 + 기타자산 ' + Math.round(r.other).toLocaleString() + '억 − 순차입금 ' + Math.round(r.debt).toLocaleString() + '억'),
+    anTile('지주회사 시가총액', r.mcapEok == null ? 'N/A' : Math.round(r.mcapEok).toLocaleString() + '억', '현재가 × 주식수'),
+    anTile('주당 NAV', r.navPerShare == null ? 'N/A' : anWon(r.navPerShare), '자기주식 제외 주식수 기준'),
+    anTile('NAV 대비 할인율', r.discount == null ? 'N/A' : anPct(r.discount), r.discount == null ? 'NAV가 양수여야 계산' : (r.discount >= 0 ? '시가총액이 NAV보다 낮음(할인)' : '시가총액이 NAV보다 높음(할증)')),
+  ]);
+  const miss = r.miss.length ? '<div style="font-size:12px; color:#b45309; margin-top:4px;">⚠ 계산에서 빠진 줄: ' + r.miss.map(anEsc).join(', ') + ' — 지분율이나 시가총액이 비어 있습니다. 빠진 만큼 NAV가 작게 나옵니다.</div>' : '';
+  el.innerHTML = tiles + miss;
+}
+function finNavInner() {
+  const row = function (x, i) {
+    const inp = function (id, v, ph, w, extra) { return '<input id="' + id + '" value="' + escHtml(String(v == null ? '' : v)) + '" placeholder="' + ph + '" oninput="finNavInput()" style="width:' + w + '; padding:4px 6px; font-size:13px;" ' + (extra || '') + '>'; };
+    return '<div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:4px 0;">' + inp('finNavNm' + i, x.name, '자회사 이름', '120px') + inp('finNavCd' + i, x.code, '종목코드', '78px', 'inputmode="numeric"') +
+      inp('finNavSt' + i, x.stake, '지분율 %', '72px', 'inputmode="decimal"') + inp('finNavCap' + i, x.cap, '시총 억원', '92px', 'inputmode="decimal"') +
+      (x.auto ? '<span style="font-size:11px; color:var(--text-muted);">자동</span>' : '') + '<button type="button" data-i="' + i + '" onclick="finNavDel(this)" style="font-size:12px; padding:2px 8px;">삭제</button></div>';
+  };
+  return FIN_NAV.rows.map(row).join('') +
+    '<div class="row" style="margin:6px 0;"><button type="button" onclick="finNavAdd()">+ 자회사 추가</button> <button type="button" onclick="finNavFetch()" title="종목코드가 있는 줄의 시가총액을 이 앱의 시장 DB에서 채웁니다">시가총액 자동 채우기</button></div>' +
+    (FIN_NAV.msg ? '<div style="font-size:12px; color:var(--text-muted);">' + anEsc(FIN_NAV.msg) + '</div>' : '') +
+    '<div style="display:flex; flex-wrap:wrap; gap:12px; margin:8px 0;"><label style="font-size:12px;">기타 자산 가치(억원)<br><input id="finNavOther" value="' + (FIN_NAV.other || '') + '" placeholder="비상장 지분·현금 등" oninput="finNavInput()" inputmode="decimal" style="width:130px; padding:4px 6px;"></label>' +
+    '<label style="font-size:12px;">순차입금(억원)<br><input id="finNavDebt" value="' + (FIN_NAV.debt || '') + '" placeholder="지주회사 자체 차입−현금" oninput="finNavInput()" inputmode="decimal" style="width:130px; padding:4px 6px;"></label></div>';
+}
+function finRenderHolding(S, c, m) {
+  const key = (typeof rawRows !== 'undefined' && rawRows.length) ? rawRows[0].corp_code : '';
+  finNavLoad(key);
+  const r = c.last && c.last.r ? c.last.r : null;
+  const ofs = r && r.fs_div === 'OFS';
+  const fsWarn = ofs ? '<div style="margin:6px 0; padding:8px 10px; background:#fffbeb; border:1px solid #fcd34d; border-radius:8px; font-size:12.5px;">⚠ 이 종목은 연결재무제표가 없어 <b>개별(별도) 재무제표</b>가 저장되어 있습니다. 지주회사의 별도 재무제표는 매출이 배당금수익·지분법·임대료 정도라 자회사 사업의 크기가 보이지 않습니다. 매출·이익률 같은 일반 지표 해석에 주의하세요.</div>' : '';
+  const html = '<div style="font-size:12.5px; line-height:1.6;">지주회사는 가치의 대부분이 자회사 지분입니다. 연결재무제표로 보면 자회사 사업이 합쳐져 일반 지표(ROIC·FCF)도 해석할 수 있지만, 시장 가격은 자회사 지분 가치의 합(NAV)보다 낮게 형성되는 경우가 많아 <b>NAV 대비 할인율</b>을 함께 봅니다 ' + anBadge('practice') + finGuideLink('holdnav') + '</div>' + fsWarn +
+    '<div id="finNavBox" style="margin-top:8px;">' + finNavInner() + '</div><div id="finNavOut"></div>' +
+    '<details style="margin-top:8px;"><summary style="cursor:pointer; font-size:12px; color:var(--text-muted);">근거와 한계</summary><div style="font-size:12px; line-height:1.6; color:var(--text-muted);">' +
+    'NAV 접근은 증권업계 실무 관행입니다. 할인율이 크다고 수익이 난다는 학술 증명은 이 앱이 확인하지 못했습니다. 한국 비금융 상장사(KOSPI, 1995-2010)에서 다각화 할인이 관찰되고 최대주주 지분이 낮을수록 할인이 크다는 연구(DOI 10.22510/KJOFM.2019.36.4.002, 초록 수준 확인)가 있으나 지주회사 할인 자체를 검증한 것은 아니며 2010년 이후 표본은 포함하지 않습니다. ' +
+    '지분율은 사업보고서의 「타법인 출자 현황」에서 직접 옮겨 적어야 하고(자동 수집하지 않음), 상장 자회사는 시가총액 × 지분율, 비상장 자회사와 기타 자산은 장부가나 직접 추정한 값을 「기타 자산」에 넣으세요. 시가총액은 입력일 기준이라 시점이 다르면 할인율이 달라집니다. 자회사 간 상호출자, 우선주, 자회사의 순차입금은 반영하지 않았습니다. 입력값은 이 브라우저에만 저장됩니다.</div></details>';
+  return anSection('🧩 지주회사 — 순자산가치(NAV) 대비 할인율', '#0f766e', '', html, true);
+}
+
+// ===== /금융업 · 지주회사 =====
 // ===== 업종 (DART 기업개황의 업종코드 = 한국표준산업분류 KSIC) =====
 // 코드는 DART 값을 그대로 저장하고, 화면에는 앞 2자리(중분류)로 묶어 이름을 붙인다. 이름표는 KSIC 중분류를 요약한 것이며 거래소·네이버의 업종 분류와는 다르다.
 // 표에 없는 코드는 "KSIC 코드"로 그대로 보여 준다(틀린 이름을 붙이지 않는다).
@@ -4650,7 +5064,7 @@ async function indFillList(which) {
 
 // ===== 쉬운 설명 (백테스트·지표 용어집) =====
 // 비전공자용 설명집. 항목마다 "한마디로 / 쉬운 비유·예 / 이 앱에서 어디 / 조심할 점"을 적는다. 숫자 기준(예: t값 2·3)은 이 앱이 쓰는 기준이며 절대 규칙이 아니다.
-const GUIDE_CATS = ["백테스트 기초", "결과 읽는 법", "속기 쉬운 함정", "수익성·효율", "현금흐름", "가치(싼지 비싼지)", "성장·재무 데이터", "안정성", "주가 흐름", "화면에서 자주 보는 말"];
+const GUIDE_CATS = ["백테스트 기초", "결과 읽는 법", "속기 쉬운 함정", "수익성·효율", "현금흐름", "가치(싼지 비싼지)", "성장·재무 데이터", "안정성", "주가 흐름", "화면에서 자주 보는 말", "금융업·지주회사"];
 const GUIDE = [
   { id: "bt-what", c: 0, t: "백테스트란?", k: "백테스트 과거 검증 시뮬레이션",
     one: "과거 자료로 '이 방법을 그때 썼다면 어땠을까'를 미리 해보는 연습 시험입니다.",
@@ -4833,6 +5247,38 @@ const GUIDE = [
     ex: "예) 전체 300개 → ROIC 조건 120개 → FCF 조건 40개 → 업종 조건 6개.",
     app: "재무 스크리닝 맨 위.", warn: "조건을 너무 많이 겹치면 우연히 맞는 소수만 남습니다. 결과 개수가 너무 적으면 조건 수를 줄여 보세요." },
 ];
+GUIDE.push(
+  { id: "finwhy", c: 10, t: "은행·보험·증권은 왜 다른 지표로 보나", k: "금융업 은행 보험 증권 roic fcf 부채비율 레버리지 금융회사",
+    one: "일반 회사에게 빚은 '자금'이지만, 은행 같은 금융회사에게 빚(예금·보험료)은 장사하는 '재료'입니다. 그래서 일반 회사용 지표(ROIC, FCF, 부채비율)가 맞지 않습니다.",
+    ex: "예) 은행의 부채비율이 1,100%여도 정상입니다. 예금을 많이 받았다는 뜻이니까요. 제조업이 1,100%라면 위험 신호입니다.",
+    app: "종목분석(금융업 화면), 상단 요약 카드, 재무 스크리닝의 유형 선택.",
+    warn: "근거는 Damodaran의 가치평가 교재 21장(금융회사는 자본 기준으로 평가)과 Fama-French(1992)가 같은 이유로 금융회사를 표본에서 뺀 것입니다. 한국 시장에서 이 방식의 성과를 이 앱이 검증하지는 않았습니다." },
+  { id: "pbrroe", c: 10, t: "PBR이 낮으면 싼 걸까? (ROE와 정당 PBR)", k: "pbr roe 정당 pbr 저pbr 장부가 요구수익률 금융업 가치평가",
+    one: "PBR 1배 미만은 '장부가보다 싸다'는 뜻이지만, 그 회사가 자본으로 돈을 못 번다면 싼 게 아니라 정상 가격일 수 있습니다. ROE와 같이 봐야 합니다.",
+    ex: "예) 요구수익률이 9%인데 ROE가 6%인 은행은 이론상 PBR이 1배보다 낮은 게 맞습니다. 반대로 ROE가 12%인데 PBR이 0.5배라면 시장이 ROE가 곧 떨어질 거라고 보거나, 저평가이거나 둘 중 하나입니다.",
+    app: "종목분석 금융업 화면의 「가격」 장(정당 PBR, 시장이 요구하는 ROE, 민감도 표).",
+    warn: "정당 PBR = (ROE−g)/(ke−g)는 고든 성장모형에서 유도한 이론식입니다. ROE가 계속될지, 요구수익률 ke, 성장률 g가 모두 가정이라 한 숫자를 믿지 말고 민감도 표를 보세요." },
+  { id: "finmiss", c: 10, t: "재무제표에 없는 금융업 지표 (NIM·NPL·BIS·K-ICS·CSM·NCR)", k: "nim npl bis cet1 k-ics csm ncr 순이자마진 지급여력 자본비율",
+    one: "금융회사의 진짜 건강검진 숫자는 재무제표 항목에 들어 있지 않습니다. 이 앱은 값을 만들어 채우지 않고 확인할 곳만 안내합니다.",
+    ex: "NIM(순이자마진)은 예금이자와 대출이자 차이로 남기는 폭, NPL(고정이하여신)은 못 받을 가능성이 큰 대출 비율, BIS·CET1은 은행이 손실을 버틸 자기자본 비율, K-ICS는 보험사가 보험금을 줄 수 있는 능력 비율, CSM은 보험사가 앞으로 이익으로 인식할 보험계약 마진, NCR은 증권사 순자본비율입니다.",
+    app: "종목분석 금융업 화면 맨 위 「미수집 지표」 표.",
+    warn: "정확한 정의와 최신 값은 각사 공시와 금융감독원 자료를 확인하세요. 이 앱의 ROE·PBR만으로 금융회사의 안전성을 판단하면 안 됩니다." },
+  { id: "holdnav", c: 10, t: "지주회사 NAV(순자산가치)와 할인", k: "지주회사 nav 순자산가치 할인 자회사 지분 sotp",
+    one: "지주회사가 가진 자회사 지분을 시가로 전부 더한 값(NAV)과 지주회사 시가총액을 비교합니다. 시가총액이 NAV보다 낮으면 '할인'된 가격에 거래되는 것입니다.",
+    ex: "예) 상장 자회사 지분 합이 10조 원이고 순차입금이 1조 원이면 NAV는 9조 원. 시가총액이 4.5조 원이면 할인율은 50%입니다.",
+    app: "종목분석에서 지주회사(비금융)로 분류된 종목의 NAV 계산기.",
+    warn: "증권업계 실무 관행입니다. 할인이 크다고 주가가 오른다는 증명은 확인하지 못했고, 할인이 오래 지속되는 이유(지배구조, 배당 정책 등)도 있습니다. 지분율은 사업보고서의 타법인 출자 현황에서 직접 옮겨 적어야 합니다." },
+  { id: "finsec", c: 10, t: "금융업·지주회사를 구분하는 방법", k: "금융업 분류 ksic 64 65 66 64992 지주회사 이름 추정",
+    one: "업종코드(KSIC) 앞자리로 구분합니다: 64=금융업, 65=보험·연금, 66=금융 관련 서비스, 64992=지주회사. 코드가 없으면 회사 이름으로 추정하고 이름 추정에는 물음표(?)를 붙입니다.",
+    ex: "예) '신한지주'는 지주회사 코드지만 금융지주라서 은행처럼 봅니다(이 구분은 이름 목록으로 합니다).",
+    app: "종목분석 한눈에 보기, 재무 스크리닝의 유형 열, 백테스트 대상 선택.",
+    warn: "이름 추정은 틀릴 수 있습니다. 종목분석에서 「일반 기업용 화면으로 보기」「금융업 화면으로 보기」로 직접 바꿀 수 있습니다." },
+  { id: "btuniv", c: 10, t: "백테스트에서 금융업을 빼는 이유", k: "백테스트 금융업 제외 대상 종목 표본 레버리지",
+    one: "많은 주식 연구가 금융회사를 표본에서 뺍니다. 금융회사의 높은 부채는 부실 신호가 아니라서, 부채가 위험하다는 가정이 섞인 지표가 왜곡되기 때문입니다.",
+    ex: "예) F-Score에는 부채가 늘면 감점하는 항목이 있는데, 금융회사에는 맞지 않습니다.",
+    app: "백테스트 A 카드의 「대상 종목」 선택(전체 / 금융업 제외 / 금융업·지주회사 제외 / 금융업만).",
+    warn: "제외 여부를 바꿔 가며 결과를 비교해 좋은 쪽을 고르면 데이터 스누핑이 됩니다. 시험하기 전에 어떤 대상으로 볼지 정하세요. 분류는 이 앱의 방식(코드+이름)이라 틀린 종목이 섞일 수 있습니다." }
+);
 function guideSearchText(g) { return (g.t + " " + g.k + " " + g.one + " " + g.ex + " " + g.app + " " + g.warn).toLowerCase(); }
 function guideEntryHtml(g) {
   const row = function (lab, v) { return v ? '<div style="margin:5px 0; line-height:1.6;"><b>' + lab + '</b> ' + escHtml(v) + '</div>' : ""; };
@@ -4877,6 +5323,7 @@ function guideOpen(id) {
     const FSC = { stocks: null, rows: null, priceDate: null, nPrice: 0, sortKey: 'roic3', sortDir: -1, shown: 100, open: null, loading: false };
     const FSC_FILTERS = [
       { k: 'roic3', g: '품질', label: 'ROIC(최근 3년 평균) ≥', unit: '%', def: 10, fmt: 'pct', op: '>=', tip: '투하자본 대비 세후영업이익. 업종·회계기준에 따라 수준이 크게 다름' },
+      { k: 'roe3', g: '품질', label: 'ROE(최근 3년 평균) ≥', unit: '%', def: 8, fmt: 'pct', op: '>=', tip: '지배주주순이익 ÷ 평균 지배주주지분. 금융업은 ROIC 대신 이것으로 봅니다' },
       { k: 'opm', g: '품질', label: '영업이익률 ≥', unit: '%', def: 8, fmt: 'pct', op: '>=' },
       { k: 'fscore', g: '품질', label: 'F-Score(9점) ≥', unit: '점', def: 7, fmt: 'num0', op: '>=', tip: 'Piotroski(2000). 판정 가능한 신호가 8개 미만이면 N/A' },
       { k: 'revG3', g: '성장', label: '매출 3년 CAGR ≥', unit: '%', def: 10, fmt: 'pct', op: '>=' },
@@ -4893,13 +5340,14 @@ function guideOpen(id) {
       quality: { label: '품질+현금', on: { roic3: AN_TH.roicGood * 100, fcfm: 0, fcfni: AN_TH.fcfNiGood } },
       growth: { label: '성장+재투자', on: { revG3: AN_TH.growthHigh * 100, roic3: AN_TH.roicLow * 100 } },
       value: { label: '가치', on: { fcfy: 5, per: AN_TH.perGraham, roic3: AN_TH.roicLow * 100 } },
+      finval: { label: '금융업 ROE+PBR', on: { roe3: 8, pbr: 1.0 }, sec: 'fin' },
     };
     function fscFmt(kind, v) {
       if (!anFin(v)) return 'N/A';
       return kind === 'pct' ? (v * 100).toFixed(1) + '%' : kind === 'x1' ? v.toFixed(1) + '배' : kind === 'x2' ? v.toFixed(2) + '배' : kind === 'num0' ? String(Math.round(v)) : String(v);
     }
     function fscMsg(t) { const e = document.getElementById('fscMsg'); if (e) e.textContent = t || ''; }
-    const FSC_GUIDE = { roic3: 'roic', opm: 'opm', fscore: 'fscore', revG3: 'cagr', ebitG3: 'cagr', fcfm: 'fcfm', fcfni: 'fcfni', fcfPos: 'fcfpos', fcfy: 'fcfy', per: 'per', pbr: 'pbr' };
+    const FSC_GUIDE = { roe3: 'roe', roic3: 'roic', opm: 'opm', fscore: 'fscore', revG3: 'cagr', ebitG3: 'cagr', fcfm: 'fcfm', fcfni: 'fcfni', fcfPos: 'fcfpos', fcfy: 'fcfy', per: 'per', pbr: 'pbr' };
     function fscInit() {
       const el = document.getElementById('fscFilters'); if (!el || el.getAttribute('data-ready')) return;
       el.setAttribute('data-ready', '1');
@@ -4919,6 +5367,7 @@ function guideOpen(id) {
         document.getElementById('fscOn_' + f.k).checked = on;
         document.getElementById('fscV_' + f.k).value = on ? p.on[f.k] : f.def;
       });
+      const secEl = document.getElementById('fscSec'); if (secEl) secEl.value = p.sec || '';
       fscRun();
     }
     // 한 종목의 지표를 계산한다. basis: 'ttm'이면 사업보고서보다 새로운 분기가 있을 때 최근 4분기 합산(TTM)을 최신 값으로 쓴다.
@@ -4929,6 +5378,7 @@ function guideOpen(id) {
       const P = (basis === 'ttm' && ttm) ? ttm : list[list.length - 1];
       const out = { code: s.code, name: s.name, stock: s.stock || '', accMt: s.accMt, list: list, ttm: ttm, P: P, basisTxt: (P.isTTM ? 'TTM ' + P.year + '년 ' + P.q + 'Q' : P.year + '년 연간') };
       out.roic3 = anMean(anWin(list, 'roic', 3)); out.roicL = P.roic;
+      out.roe3 = anMean(anWin(list, 'roe', 3)); out.roeL = P.roe; out.roa = anDiv(P.ni, P.avgAssets); out.lev = anDiv(P.assets, P.equity);
       out.opm = P.opm; out.fcfm = P.fcfm; out.fcfni = P.fcfni;
       out.revG3 = anCagr(list, 'revenue', 3); out.ebitG3 = anCagr(list, 'ebit', 3);
       const w5 = list.filter(function (d) { return d.year > list[list.length - 1].year - 5 && anFin(d.fcf); });
@@ -4990,12 +5440,18 @@ function guideOpen(id) {
     function fscRender() { return guardedRender('재무 스크리닝 결과', 'fscOut', fscRenderImpl); }
     function fscRenderImpl() {
       const out = document.getElementById('fscOut'); if (!FSC.rows) return;
-      FSC.rows.forEach(function (r) { r.indTxt = indLabel(IND.map[r.stock]) || '(미확인)'; });
+      FSC.rows.forEach(function (r) { r.indTxt = indLabel(IND.map[r.stock]) || '(미확인)'; r.sec = finSectorOf(IND.map[r.stock], r.name); r.secTxt = r.sec ? r.sec.n + (String(r.sec.basis).indexOf('이름') >= 0 ? '?' : '') : '일반'; });
       const act = fscActive();
       // 필터를 하나씩 순서대로 적용하며 남는 종목 수와 자료 없음으로 빠진 수를 센다.
       let cur = FSC.rows.slice(); const funnel = [{ t: '재무가 저장된 종목', n: cur.length, miss: 0 }];
       const indSel = document.getElementById('fscInd') ? document.getElementById('fscInd').value : '';
       if (indSel) { cur = cur.filter(function (r) { const g = indGroup(IND.map[r.stock]); return indSel === 'none' ? !g : g === indSel; }); funnel.push({ t: '업종: ' + (indSel === 'none' ? '미확인' : (IND_NAMES[indSel] || indSel)), n: cur.length, miss: 0 }); }
+      const secSel = document.getElementById('fscSec') ? document.getElementById('fscSec').value : '';
+      if (secSel) {
+        const pick = { gen: function (x) { return !x; }, fin: function (x) { return !!(x && x.fin); }, bank: function (x) { return !!(x && (x.k === 'bank' || x.k === 'finhold')); }, insurer: function (x) { return !!(x && x.k === 'insurer'); }, broker: function (x) { return !!(x && x.k === 'broker'); }, credit: function (x) { return !!(x && x.k === 'credit'); }, invest: function (x) { return !!(x && (x.k === 'invest' || x.k === 'finsvc' || x.k === 'spac')); }, holding: function (x) { return !!(x && x.k === 'holding'); } }[secSel];
+        cur = cur.filter(function (r) { return pick(r.sec); });
+        funnel.push({ t: '유형: ' + (document.getElementById('fscSec').selectedOptions[0] ? document.getElementById('fscSec').selectedOptions[0].textContent : secSel), n: cur.length, miss: 0 });
+      }
       act.forEach(function (a) {
         let miss = 0; const next = [];
         cur.forEach(function (r) { const p = fscPass(r, a); if (p === null) miss++; else if (p) next.push(r); });
@@ -5008,7 +5464,7 @@ function guideOpen(id) {
       h += '<div class="tscroll"><table class="an-tbl"><thead><tr><th class="an-first">단계</th><th>남은 종목</th><th>자료 없어 제외</th></tr></thead><tbody>' +
         funnel.map(function (s) { return '<tr><td class="an-first">' + s.t + '</td><td>' + s.n + '</td><td>' + (s.miss || '') + '</td></tr>'; }).join('') + '</tbody></table></div>';
       if (!act.length) h += '<div class="meta-line">조건을 하나도 켜지 않아 저장된 종목 전체를 보여줍니다.</div>';
-      const cols = [['name', '종목', null], ['indTxt', '업종', null], ['basisTxt', '최신 기준', null], ['roic3', 'ROIC 3Y평균', 'pct'], ['roicL', 'ROIC 최신', 'pct'], ['opm', '영업이익률', 'pct'], ['revG3', '매출 3Y CAGR', 'pct'], ['ebitG3', '영업이익 3Y CAGR', 'pct'],
+      const cols = [['name', '종목', null], ['indTxt', '업종', null], ['secTxt', '유형', null], ['basisTxt', '최신 기준', null], ['roe3', 'ROE 3Y평균', 'pct'], ['roa', 'ROA', 'pct'], ['roic3', 'ROIC 3Y평균', 'pct'], ['roicL', 'ROIC 최신', 'pct'], ['opm', '영업이익률', 'pct'], ['revG3', '매출 3Y CAGR', 'pct'], ['ebitG3', '영업이익 3Y CAGR', 'pct'],
         ['fcfm', 'FCF 마진', 'pct'], ['fcfni', 'FCF/순이익', 'x2'], ['fcfPos', 'FCF 흑자(5년)', 'num0'], ['fscore', 'F-Score', 'num0'], ['fcfy', 'FCF 수익률', 'pct'], ['per', 'PER', 'x1'], ['pbr', 'PBR', 'x2']];
       h += '<div class="row" style="margin:8px 0;"><span class="meta-line">조건을 통과한 종목 <b>' + cur.length + '</b>개 · 열 제목을 누르면 정렬 · 종목을 누르면 아래에 모든 항목(연도별+TTM)</span> <button onclick="fscCsv()">CSV 저장</button></div>';
       h += '<div class="tscroll" style="max-height:70vh;"><table class="an-tbl" id="fscTbl"><thead><tr>' + cols.map(function (c) {
@@ -5017,6 +5473,7 @@ function guideOpen(id) {
         h += '<tr data-code="' + r.code + '" style="cursor:pointer;" onclick="fscToggle(\\'' + r.code + '\\')">' + cols.map(function (c, i) {
           if (i === 0) return '<td class="an-first">' + escHtml(r.name) + (r.accMt && r.accMt !== 12 ? ' <span title="12월 결산이 아님">⚠</span>' : '') + '</td>';
           if (c[0] === 'basisTxt') return '<td>' + r.basisTxt + '</td>';
+          if (c[0] === 'secTxt') return '<td title="업종코드(KSIC)와 이름으로 분류. 이름으로 추정한 경우 물음표(?)가 붙습니다. 금융업·지주회사는 ROIC·FCF 대신 ROE·PBR로 봅니다">' + escHtml(r.secTxt) + '</td>';
           if (c[0] === 'indTxt') return '<td title="한국표준산업분류(KSIC) 중분류 기준. 거래소·네이버 업종과 다릅니다">' + escHtml(r.indTxt) + '</td>';
           return '<td>' + fscFmt(c[2], r[c[0]]) + '</td>'; }).join('') + '</tr>';
         if (FSC.open === r.code) h += '<tr><td colspan="' + cols.length + '" style="background:var(--card-bg, #fff); padding:8px 4px;">' + fscDetailHtml(r) + '</td></tr>';
@@ -5058,7 +5515,7 @@ function guideOpen(id) {
     }
     function fscCsv() {
       if (!FSC.result) return;
-      const cols = ['name', 'stock', 'indTxt', 'basisTxt', 'roic3', 'roicL', 'opm', 'revG3', 'ebitG3', 'fcfm', 'fcfni', 'fcfPos', 'fscore', 'fcfy', 'per', 'pbr'];
+      const cols = ['name', 'stock', 'indTxt', 'secTxt', 'basisTxt', 'roe3', 'roa', 'roic3', 'roicL', 'opm', 'revG3', 'ebitG3', 'fcfm', 'fcfni', 'fcfPos', 'fscore', 'fcfy', 'per', 'pbr'];
       const lines = [cols.join(',')];
       FSC.result.forEach(function (r) { lines.push(cols.map(function (k) { const v = r[k]; return '"' + (anFin(v) ? String(Math.round(v * 10000) / 10000) : v == null ? '' : String(v).split('"').join('""')) + '"'; }).join(',')); });
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\\n')], { type: 'text/csv;charset=utf-8' })); a.download = 'fin_screening.csv'; a.click();
@@ -5069,7 +5526,7 @@ function guideOpen(id) {
 // 장(章) 머리글을 누르면 그 장에 속한 항목(details)을 모두 펼치거나 접는다. 처음에는 요약·분류·투자 판단 요약만 펼치고 나머지는 접어,
 // 첫 화면이 길지 않게 한다. 사용자가 연 항목은 같은 종목을 다시 그릴 때(가격 입력 등) 그대로 유지한다.
 const AN_UI = { key: null, open: {} };
-const AN_KEEP_OPEN = ['🏷 종합 분류', '🧭 투자 판단 요약'];
+const AN_KEEP_OPEN = ['🏷 종합 분류', '🧭 투자 판단 요약', '🏛 ', '📈 수익성 —', '💹 가격 —', '🧩 지주회사 —']; // 뒤 4개는 금융업·지주회사 화면의 핵심 섹션
 function anChapItems(chap) {
   const out = []; let n = chap.nextElementSibling;
   while (n && !(n.classList && n.classList.contains('an-chap'))) { if (n.tagName === 'DETAILS') out.push(n); n = n.nextElementSibling; }
@@ -5533,7 +5990,8 @@ async function btLoadStocks() {
       if (!res.ok) throw new Error(d.error || '불러오기 실패');
       (d.rows || []).forEach((row) => { (by[row.corp_code] = by[row.corp_code] || []).push(row); });
     }
-    BT.stocks = comps.map((c) => ({ code: c.corp_code, name: c.corp_name, rows: by[c.corp_code] || [] })).filter((s) => s.rows.length);
+    BT.stocks = comps.map((c) => ({ code: c.corp_code, name: c.corp_name, stock: c.stock_code || '', ind: c.ind || '', rows: by[c.corp_code] || [] })).filter((s) => s.rows.length);
+    BT.stocks.forEach((s) => { if (s.stock && s.ind) IND.map[s.stock] = s.ind; });
     btMsg('불러오기 완료: ' + BT.stocks.length + '개 종목 (' + BT.stocks.reduce((a, s) => a + s.rows.length, 0) + '개 기간). ' + (BT.fiscalNote || '') + ' 아래에서 방법을 고르고 실행하세요.');
     document.getElementById('btFinInfo').textContent = '불러온 종목 ' + BT.stocks.length + '개';
   } catch (e) { btMsg('오류: ' + (e.message || e)); } finally { BT.loading = false; }
@@ -5547,6 +6005,7 @@ function btBuildAnnual(keys, o) {
   const perYear = {};
   BT.skipNoNext = 0;
   BT.stocks.forEach((s) => {
+    if (!btUnivOk(s)) return;
     const ann = {};
     s.rows.forEach((r) => { if (r.reprt_code === '11011' && isUsable(r)) ann[Number(r.bsns_year)] = r; });
     Object.keys(ann).forEach((ys) => {
@@ -5586,6 +6045,7 @@ function btBuildQuarterly(keys, o) {
   BT.skipNoNext = 0; BT.qSkipTtm = 0;
   const SLOT = { '11013': 1, '11012': 2, '11014': 3, '11011': 4 };
   BT.stocks.forEach((s) => {
+    if (!btUnivOk(s)) return;
     const rep = {};
     s.rows.filter(isUsable).forEach((r) => { const n = SLOT[r.reprt_code]; if (n) rep[Number(r.bsns_year) + '|' + n] = r; });
     const qr = toQuarterlyRows(s.rows);
@@ -5622,6 +6082,7 @@ function btBuildQuarterly(keys, o) {
 function btBuildMomQ(K, skip) {
   const per = {};
   BT.stocks.forEach((s) => {
+    if (!btUnivOk(s)) return;
     const px = {};
     s.rows.forEach((r) => {
       if (!(r.price_at_period_end > 0)) return;
@@ -5666,7 +6127,7 @@ async function btRunFinImpl() {
   BT.last = { kind: 'fin', mode, keys, G };
   const keysShown = mode === 'momq' ? [] : keys;
   const qx = mode === 'qttm' ? ['분기 TTM 방식: 보유기간이 공시 간격(사업보고서→1Q 약 1.5개월, 그 밖에는 약 3개월)이라 서로 다릅니다. 샤프·CAGR 환산은 연 4회로 가정한 근사입니다.', '같은 시장 국면에 집중된 기간이 많아 기간 간 독립성이 연간보다 낮습니다(분기 수익률이 겹치는 TTM 재무를 공유). t통계량은 낙관적일 수 있습니다.'].concat(BT.qSkipTtm ? ['TTM(최근 4개 분기)을 만들 수 없어 제외된 종목·분기: ' + BT.qSkipTtm + '건 (중간 분기 보고서가 저장돼 있지 않은 경우)'] : []) : [];
-  document.getElementById('btFinOut').innerHTML = btRenderResult(res, { title, ppy, nTr, kind: mode === 'momq' ? 'momq' : 'fin', keys: keysShown, stocks: BT.stocks.length, extra: qx });
+  document.getElementById('btFinOut').innerHTML = btRenderResult(res, { title, ppy, nTr, kind: mode === 'momq' ? 'momq' : 'fin', keys: keysShown, stocks: BT.stocks.filter(btUnivOk).length, extra: qx.concat(btUnivMode() === 'all' ? [] : ['대상 종목: ' + btUnivNote(true)]) });
 }
 
 // ===== 종목별 백테스트 값 보기 =====
@@ -5986,6 +6447,29 @@ function btRenderResult(res, m) {
     '<div style="margin-top:8px; padding:8px 10px; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; font-size:12px; line-height:1.55;"><b>주의할 점</b><ul style="margin:4px 0 0 18px; padding:0;">' + warns.map((w) => '<li>' + w + '</li>').join('') + '</ul></div></div>';
 }
 
+// ----- 대상 종목(금융·지주 포함 여부) -----
+function btUnivMode() { const e = document.getElementById('btUniv'); return e ? e.value : 'all'; }
+function btSecOf(s) { return finSectorOf(s.ind || (s.stock && IND.map[s.stock]) || '', s.name); }
+function btUnivOk(s) {
+  const mode = btUnivMode(); if (mode === 'all') return true;
+  const sec = btSecOf(s), isFin = !!(sec && sec.fin), isHold = !!(sec && sec.k === 'holding');
+  return mode === 'exfin' ? !isFin : mode === 'exboth' ? !(isFin || isHold) : isFin;
+}
+function btUnivNote(short) {
+  if (!BT.stocks) return '';
+  const mode = btUnivMode(), n = BT.stocks.length, ok = BT.stocks.filter(btUnivOk).length;
+  const byName = BT.stocks.filter((s) => { const sc = btSecOf(s); return sc && String(sc.basis).indexOf('이름') >= 0; }).length;
+  const noInd = BT.stocks.filter((s) => !(s.ind || (s.stock && IND.map[s.stock]))).length;
+  return (short ? '' : '') + '불러온 ' + n + '개 중 ' + ok + '개 사용' + (mode === 'all' ? '' : '(제외 ' + (n - ok) + '개)') + (noInd ? ' · 업종코드 없는 ' + noInd + '개는 이름으로 추정(이름만으로는 일부 놓칠 수 있음)' : '') + (byName ? ' · 이름 추정 분류 ' + byName + '개' : '');
+}
+async function btUnivChange() {
+  const e = document.getElementById('btUnivNote'); if (!e) return;
+  if (!BT.stocks) { e.textContent = '종목을 불러온 뒤 적용됩니다.'; return; }
+  e.textContent = btUnivNote();
+  if (btUnivMode() === 'all') return;
+  const miss = BT.stocks.filter((s) => s.stock && !s.ind && !IND.map[s.stock]).map((s) => s.stock);
+  if (miss.length) { try { await indFill(miss, function (a, b) { e.textContent = '업종코드를 받는 중... ' + a + ' / ' + b; }); } catch (x) { /* 실패하면 이름 추정으로 진행 */ } e.textContent = btUnivNote(); }
+}
 function btFinModeChange() {
   const m = document.getElementById('btFinMode').value;
   document.getElementById('btFinFactors').style.display = (m === 'annual' || m === 'qttm') ? '' : 'none';
@@ -6324,10 +6808,21 @@ function renderAnalysisImpl() {
   AN_CTX = c;
   const needRefetch = !c.last.r || !anRefetched(c.last.r);
   const notice = fiscalBanner(AN_ACCMT) + (needRefetch ? '<div class="card" style="background:#fffbeb; border-color:#fcd34d; font-size:12.5px;">⚠ 이 종목은 <b>감가상각·배당지급·자사주·차입금 구성 항목이 아직 저장되어 있지 않습니다</b>. EBITDA, 순차입금, 총주주환원성향 등은 N/A로 표시되며, 위쪽에서 이 종목을 <b>다시 조회/저장</b>하면 채워집니다(DART 호출량은 기존과 같음).</div>' : '');
+  const S = finSectorNow(); FIN_VIEW.lastKey = (S.sec ? S.sec.k : '') + '|' + S.key;
+  if (S.sec && S.sec.fin) { // 금융업: 일반 기업용 틀(ROIC·FCF·F-Score)이 맞지 않아 자본 기준 전용 화면으로 대체
+    anFoldCapture(el, key);
+    el.innerHTML = finRenderAnalysis(S, c, m, fiscalBanner(AN_ACCMT));
+    anFoldApply(el); anBuildNav();
+    try { anUpdateScenarioView(); } catch (e) { console.error('[금융업 화면] 시나리오 갱신 실패', e); }
+    anLoadMomentum(); anLoadTrend();
+    return;
+  }
+  const holdPanel = (S.sec && S.sec.k === 'holding') ? finSafe('지주회사 NAV', function () { return finRenderHolding(S, c, m); }) : '';
+  const genBanner = S.forced === 'gen' ? '<div class="card" style="background:#f5f3ff; border-color:#ddd6fe; font-size:12.5px;">일반 기업용 지표 화면으로 보는 중입니다(' + anEsc(S.auto.n) + ' 자동 분류를 무시). 이 업종에서 ROIC·FCF·F-Score는 의미가 약합니다. <button type="button" onclick="finViewAuto()" style="font-size:12px; padding:2px 8px;">자동 분류로 되돌리기</button></div>' : '';
   const A = anRenderAreas(c);
   anFoldCapture(el, key);
   // 스토리 순서: 유형 → 사업의 질 → 이익의 진위 → 안전 → 성장 → 자본배분 → 가격 → 시장의 시선 → 결론, 마지막에 참고(설명서·설정)
-  el.innerHTML = notice + anRenderGlance(c, m) + anRenderClassify(c) + anRenderFcfType(c) +
+  el.innerHTML = notice + genBanner + anRenderGlance(c, m) + holdPanel + anRenderClassify(c) + anRenderFcfType(c) +
     anChapter('①', '좋은 사업인가?', '높은 자본수익률(ROIC)을 낼 수 있는 구조이고, 그 이유가 무엇인가', '버핏·멍거(경제적 해자), 그린왈드(진입장벽), 피셔(질적 우수성)가 가장 먼저 묻는 질문. 숫자로는 ROIC·매출총이익률·자산회전율을 봅니다.') + A.quality + anRenderRoic4(c) + A.capeff +
     anChapter('②', '이익이 현금으로 확인되는가?', '장부상 이익이 실제 주주가 가져갈 수 있는 현금으로 이어지는가', '버핏의 오너어닝스, 슬로언(1996)의 발생액 연구: 현금이 뒷받침되지 않는 이익은 지속성이 낮습니다.') + A.cash +
     anChapter('③', '재무적으로 안전한가?', '빚 때문에 사업이 흔들리거나 기회를 놓치지 않는가', '그레이엄·클라먼·막스: "먼저 잃지 않는 것". 좋은 사업도 과도한 차입 앞에서는 위험합니다.') + A.bs +
@@ -6341,6 +6836,7 @@ function renderAnalysisImpl() {
     anChapter('참고', '설명서 · 용어 · 설정', '계산식·실제 입력값·근거와 판정 기준 변경', '숫자의 출처를 확인하거나 기준선을 바꾸고 싶을 때 펼쳐 보세요.') + anRenderExplain(c) + anRenderSettings();
   anFoldApply(el);
   anBuildNav();
+  if (holdPanel) finNavOut();
   try { sigUpdateSummary(); } catch (e) { /* 체크리스트 요약 실패는 무시 */ }
   anUpdateScenarioView();
   anUpdateMethods();
@@ -7584,7 +8080,7 @@ async function pfuExport() {
     // 새 종목을 조회할 때 이전 종목의 화면·계산값·진행 중이던 요청 결과가 남지 않게 한꺼번에 비운다.
     // (선호 설정인 하위 탭·차트 항목·기간 단위 등은 그대로 둔다)
     function resetStockView() {
-      rawRows = []; lastSummaryMetrics = null; AN_CTX = null; AN_ACCMT = null; AN_STOCK = { code: '', ind: '' };
+      rawRows = []; lastSummaryMetrics = null; AN_CTX = null; AN_ACCMT = null; AN_STOCK = { code: '', ind: '', name: '' };
       AN_STATE.key = null; AN_STATE.mom = null; AN_STATE.momFor = null; AN_STATE.momErr = null; AN_STATE.trend = null; AN_STATE.trendFor = null; AN_STATE.trendErr = null;
       MAT_ST.name = null; MAT_ST.data = null; MAT_ST.err = null; MAT_ST.loading = false; MAT_ST.news = null; MAT_ST.newsErr = null; MAT_ST.newsNoKey = false; MAT_ST.newsLoading = false;
       PRICE.name = null; PRICE.data = null; PRICE.err = null; PRICE.m50 = []; PRICE.m200 = []; PRICE.hover = null;
@@ -7613,7 +8109,7 @@ async function pfuExport() {
       if (seq !== analyzeSeq) return;
       rawRows = data.rows;
       AN_ACCMT = data.acc_mt != null ? data.acc_mt : null;
-      AN_STOCK = { code: data.stock_code || '', ind: data.induty_code || '' }; if (AN_STOCK.code && AN_STOCK.ind) IND.map[AN_STOCK.code] = AN_STOCK.ind;
+      AN_STOCK = { code: data.stock_code || '', ind: data.induty_code || '', name: data.corp_name || '' }; if (AN_STOCK.code && AN_STOCK.ind) IND.map[AN_STOCK.code] = AN_STOCK.ind;
       if (rawRows.filter(isUsable).length === 0) {
         statusEl.textContent = '"' + data.corp_name + '"은(는) 저장된 재무데이터가 없어 DART에서 새로 받아옵니다(약 1~2분, 화면을 켜두세요).';
         await fetchAndSave();
@@ -7653,13 +8149,21 @@ async function pfuExport() {
         '<div id="anIndMeta" style="margin-top:3px;"></div>';
       anIndMeta();
     }
+    function finMetaLink() {
+      try {
+        const S = finSectorNow();
+        if (S.sec && S.sec.fin) return ' · <span style="color:#7c3aed;">분석 유형: ' + escHtml(S.sec.n) + '</span>';
+        if (S.sec && S.sec.k === 'holding') return ' · <span style="color:#0f766e;">분석 유형: ' + escHtml(S.sec.n) + '</span>';
+        return ' · <a href="#" onclick="finViewFin(); return false;" title="일반 기업용 지표(ROIC·FCF) 대신 ROE·PBR 중심 화면으로 봅니다">금융업 화면으로 보기</a>';
+      } catch (e) { return ''; }
+    }
     function anIndMeta() {
       const el = document.getElementById('anIndMeta'); if (!el) return;
       const code = AN_STOCK.code, ind = (code && IND.map[code]) || AN_STOCK.ind;
-      if (ind) { el.innerHTML = '업종: <b>' + escHtml(indLabel(ind)) + '</b> <span style="color:var(--text-muted);" title="DART 기업개황의 업종코드(한국표준산업분류). 거래소·네이버 업종과 다릅니다">(KSIC ' + escHtml(ind) + ')</span>'; return; }
+      if (ind) { el.innerHTML = '업종: <b>' + escHtml(indLabel(ind)) + '</b> <span style="color:var(--text-muted);" title="DART 기업개황의 업종코드(한국표준산업분류). 거래소·네이버 업종과 다릅니다">(KSIC ' + escHtml(ind) + ')</span>' + finMetaLink(); return; }
       if (!code) { el.textContent = '업종: 종목코드가 없어 확인할 수 없습니다'; return; }
       el.textContent = '업종: 확인 중...';
-      indEnsure([code]).then(function () { const v = IND.map[code]; if (v) AN_STOCK.ind = v; const e2 = document.getElementById('anIndMeta'); if (!e2) return; if (v) anIndMeta(); else e2.textContent = '업종: 확인하지 못했습니다(DART 응답에 업종코드 없음)'; });
+      indEnsure([code]).then(function () { const v = IND.map[code]; if (v) AN_STOCK.ind = v; try { if (v && finSecChanged()) renderAnalysis(); } catch (e) { /* 분류 갱신 실패는 무시 */ } const e2 = document.getElementById('anIndMeta'); if (!e2) return; if (v) anIndMeta(); else e2.textContent = '업종: 확인하지 못했습니다(DART 응답에 업종코드 없음)'; });
     }
     async function updateLatest() {
       const usable = rawRows.filter(isUsable);
@@ -10767,6 +11271,19 @@ async function handleRequest(request, env) {
         results.forEach((r) => { if (r.close_price > 0) prices[r.stock_code] = r.close_price; });
       }
       return new Response(JSON.stringify({ date, prices }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "private, max-age=60" } });
+    }
+    // 지주회사 NAV 계산기용: 종목코드 목록의 최신 시가총액(원). 시장 DB의 가장 최근 시가총액 기록일 한 줄씩만 읽는다(기본키 조회).
+    if (pathname === "/api/market/caps") {
+      const codes = (searchParams.get("codes") || "").split(",").map((x) => x.trim()).filter((x) => /^[0-9A-Za-z]{6}$/.test(x)).slice(0, 80);
+      if (!codes.length) return Response.json({ date: null, caps: {} });
+      const dRow = await env.DB.prepare("SELECT market_date AS d FROM market_raw_daily WHERE market_cap IS NOT NULL ORDER BY market_date DESC LIMIT 1").first();
+      const date = dRow ? dRow.d : null;
+      const caps = {};
+      if (date) {
+        const { results } = await env.DB.prepare("SELECT stock_code, close_price, market_cap FROM market_raw_daily WHERE market_date = ? AND stock_code IN (" + codes.map(() => "?").join(",") + ")").bind(date, ...codes).all();
+        results.forEach((r) => { if (r.market_cap > 0) caps[r.stock_code] = { cap: r.market_cap, close: r.close_price }; });
+      }
+      return new Response(JSON.stringify({ date, caps }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "private, max-age=60" } });
     }
     if (pathname === "/api/data/fresh") {
       await ensureScreenTables(env.DB);

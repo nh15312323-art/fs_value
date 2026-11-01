@@ -36,7 +36,7 @@ const errs = [];
 const pg = await (await b.newContext({ viewport: { width: 390, height: 844 } })).newPage(); pg.on('pageerror', (e) => errs.push(String(e)));
 await pg.goto(base); await pg.waitForTimeout(500);
 await pg.click('#bn_find'); await pg.click('#tabBtnFscr'); await pg.waitForTimeout(200);
-ok('발굴 묶음에 재무 스크리닝 메뉴, 화면 열림', await pg.isVisible('#tabFscr') && await pg.isVisible('#tabBtnFscr') && (await pg.$$('#fscFilters input[type=checkbox]')).length === 11);
+ok('발굴 묶음에 재무 스크리닝 메뉴, 화면 열림', await pg.isVisible('#tabFscr') && await pg.isVisible('#tabBtnFscr') && (await pg.$$('#fscFilters input[type=checkbox]')).length === 12);
 await pg.click('button:has-text("저장된 종목 불러오기")'); await pg.waitForTimeout(1500);
 let txt = await pg.innerText('#fscOut');
 ok('3개 종목 계산, 시세 3중 2개', txt.includes('재무가 저장된 종목') && txt.includes('시세가 있는 종목 2 / 3'), txt.slice(0, 200));
