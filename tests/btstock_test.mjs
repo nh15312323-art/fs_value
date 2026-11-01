@@ -32,7 +32,7 @@ check('표시 형식: F-Score 7/9, Graham은 양수 PER×PBR, BP 배', S.btFacTx
 check('날짜 표시 YYYYMMDD → YYYY-MM-DD', S.btFmtDate('20210320') === '2021-03-20' && S.btFmtDate(null) === 'N/A');
 const csv = S.btStkCsv([{ name: '가,나 "다"', code: 'X1', table: t }]);
 const lines = csv.replace(/^﻿/, '').split(String.fromCharCode(10));
-check('CSV: 머리글+4행, BOM, 쉼표·따옴표가 있는 이름은 따옴표로 감쌈', csv.charCodeAt(0) === 0xFEFF && lines.length === 5 && lines[1].startsWith('"가,나 ""다""",X1,2023') && lines[0].startsWith('종목,종목코드,결산연도'), lines[1].slice(0, 60));
+check('CSV: 머리글+4행, BOM, 쉼표·따옴표가 있는 이름은 따옴표로 감쌈', csv.charCodeAt(0) === 0xFEFF && lines.length === 5 && lines[1].startsWith('"가,나 ""다""",X1,,2023') && lines[0].startsWith('종목,종목코드,업종,결산연도'), lines[1].slice(0, 60));
 check('CSV: 수익률은 숫자 그대로(0.1), 없는 값은 빈칸', lines[4].split(',').includes('0.1') && /,,/.test(lines[1]));
 const html = S.btStockHtml('테스트', t);
 check('표 HTML: 12개월 수익률·매수가 머리글, 수익률 있는 해 3개 요약, 사용 표시', html.includes('12개월') && html.includes('수익률이 계산된 해 3개') && html.includes('✓ 수익률 사용') && html.includes('보유 중'));

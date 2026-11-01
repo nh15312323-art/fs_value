@@ -28,7 +28,8 @@ const code = [
   client.replace(/\bFLOW_KEYS\b/g, 'FLOW_KEYS_'),
   'let BT = { stocks: [] };',
   'const anBuildSeries = (rows) => { const ys = rows.filter((r) => r.reprt_code === "11011").map((r) => Number(r.bsns_year)); return ys.length ? [{ year: Math.max(...ys) }] : []; };',
-  'const BT_FACTORS = { f: { fn: () => 1 } }; const btRankAvg = (a) => a.map((_, i) => i / a.length);',
+  'const btUnivOk = () => true;', // 대상 종목 선택(금융·지주 제외 등)은 별도 테스트(ui_fin_test)에서 확인
+  'const BT_FACTORS = { f: { fn: () => 1 } }; const btRankAvg = (a) => a.map((_, i) => i / a.length); const btFac = (k) => BT_FACTORS[k]; const btFacVal = (k, L, d, P) => BT_FACTORS[k].fn(L, d, P);',
   annualSrc,
   'return { smaSeries, drawdownSeries, priceJumps, priceStats, SCREEN_EXTRA_SQL, SCREEN_JUMP_LIMIT, screenExtraMetric, getTTMFlow, getIsolatedQ4, toQuarterlyRows, firstCloseAfter, btBuildAnnual, anFcfType, parseAccMt, fiscalSkipDates, btSplitFiscal, fiscalBanner, setStocks: (s) => { BT.stocks = s; }, getBT: () => BT };',
 ].join('\n');
