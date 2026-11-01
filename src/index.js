@@ -633,6 +633,7 @@ const HTML_PAGE = `<!doctype html>
             <button id="rngBtn_9999" onclick="setPriceRange(9999)" style="padding:4px 10px; font-size:12.5px;">전체(약 3년)</button>
             <label style="font-size:12.5px;"><input type="checkbox" id="chkMa50" checked onchange="drawPrice()" /> 50일선</label>
             <label style="font-size:12.5px;"><input type="checkbox" id="chkMa200" checked onchange="drawPrice()" /> 200일선</label>
+            <label style="font-size:12.5px;"><input type="checkbox" id="chkKospi" checked onchange="drawPrice()" /> 코스피 겹쳐보기</label>
           </div>
           <div class="row" style="margin:0 0 6px; gap:6px;"><span style="font-size:12.5px; color:var(--text-muted);">하단 막대</span>
             <button id="volBtn_tv" class="toggle-active" onclick="setVolMode('tv')" style="padding:4px 10px; font-size:12.5px;">거래대금</button>
@@ -1208,9 +1209,9 @@ const HTML_PAGE = `<!doctype html>
     </div>
 
     <div class="card">
-      <div class="card-title">3. 거시경제 데이터 (환율·금리·WTI)</div>
+      <div class="card-title">3. 거시경제 데이터 (환율·금리·WTI·코스피·S&P500)</div>
       <p class="meta-line" style="margin-top:0;">
-        원/달러 환율·통안증권(1년)·국고채(3년)·국고채(10년)는 한국은행 ECOS, WTI는 미국 FRED에서 최근 9년치를 받아옵니다. 한 번 받아두면 거시·상관 탭이 계속 재사용합니다.
+        원/달러 환율·통안증권(1년)·국고채(3년)·국고채(10년)는 한국은행 ECOS, WTI·S&P500은 미국 FRED(S&P500은 FRED가 최근 약 10년만 제공), 코스피는 공공데이터포털 지수시세에서 최근 9년치를 받아옵니다. 지수는 배당을 뺀 가격지수입니다. 한 번 받아두면 거시·상관 탭이 계속 재사용합니다.
       </p>
       <div class="row"><button class="primary" onclick="refreshMacroData()">거시경제 데이터 갱신</button></div>
       <div id="macroStatus" class="meta-line" style="white-space:pre-line;"></div>
@@ -1937,8 +1938,8 @@ const HTML_PAGE = `<!doctype html>
     // 표 렌더링과 "LLM이 읽기 좋은 파일로 내보내기" 양쪽에서 같은 열 정의를 재사용하도록 모듈 스코프로 뺐다.
     // 거시지표 키→표시 이름. COLUMN_GROUPS가 스크립트 로드 시점에 바로 이 값을 쓰므로(const는 선언 전 참조 불가)
     // 반드시 COLUMN_GROUPS보다 위에 둔다.
-    const MACRO_LABELS = { usdkrw: '원/달러 환율', msb1y: '통안증권(1년)', ktb3y: '국고채(3년)', ktb10y: '국고채(10년)', wti: 'WTI 현물가' };
-    const MACRO_COL_LABELS = { usdkrw: '원/달러 환율(원)', msb1y: '통안채 1년(%)', ktb3y: '국고채 3년(%)', ktb10y: '국고채 10년(%)', wti: 'WTI 현물가($)' };
+    const MACRO_LABELS = { usdkrw: '원/달러 환율', msb1y: '통안증권(1년)', ktb3y: '국고채(3년)', ktb10y: '국고채(10년)', wti: 'WTI 현물가', kospi: '코스피', sp500: 'S&P500' };
+    const MACRO_COL_LABELS = { usdkrw: '원/달러 환율(원)', msb1y: '통안채 1년(%)', ktb3y: '국고채 3년(%)', ktb10y: '국고채 10년(%)', wti: 'WTI 현물가($)', kospi: '코스피(pt)', sp500: 'S&P500(pt)' };
     const COLUMN_GROUPS = [
         { name: '기본', color: '#64748b', cols: [
           { label: '기간', key: 'period_label', type: 'text' },
@@ -6947,7 +6948,7 @@ async function pfuExport() {
         const res = await fetch('/api/data/summary', { cache: 'no-store' });
         const d = await res.json();
         if (!res.ok) throw new Error(d.error || '조회 실패');
-        const ml = { usdkrw: '환율', msb1y: '통안1Y', ktb3y: '국고3Y', ktb10y: '국고10Y', wti: 'WTI' };
+        const ml = { usdkrw: '환율', msb1y: '통안1Y', ktb3y: '국고3Y', ktb10y: '국고10Y', wti: 'WTI', kospi: '코스피', sp500: 'S&P500' };
         const macroTxt = d.macro && d.macro.length ? d.macro.map(function (m) { return (ml[m.series] || m.series) + ' ~' + m.last; }).join(' · ') : '없음(거시·상관을 쓰려면 아래에서 갱신)';
         el.innerHTML =
           '• <b>시세(스크리닝)</b>: 최근 거래일 ' + (d.market_last || '없음') + ' · 가격이력 확보 종목 ' + sN(d.backfilled) + '개 / 조건 통과 ' + sN(d.passed) + '개 (대기 ' + sN(d.market_queue) + '개)<br />' +
@@ -7497,7 +7498,8 @@ async function pfuExport() {
       const jumps = priceJumps(PRICE.data.c);
       note.innerHTML = '종가 기준(장중 고저가 아님), 수정주가가 아니라 액면분할·병합·감자가 있으면 가격이 끊겨 보입니다' +
         (jumps.length ? ' — <span style="color:#b45309;">⚠ 하루 ±30% 초과 변동 ' + jumps.length + '회(' + jumps.slice(0, 3).map((i) => PRICE.data.d[i]).join(', ') + (jumps.length > 3 ? ' 등' : '') + '): 해당 구간의 낙폭·이동평균은 왜곡됐을 수 있습니다</span>' : '') +
-        '. 이동평균·52주 고가 같은 추세 지표가 한국 시장에서 초과수익을 낸다는 점은 검증되지 않았습니다(참고용). 마우스를 올리거나 손가락으로 훑으면 값이 보입니다.';
+        '. 이동평균·52주 고가 같은 추세 지표가 한국 시장에서 초과수익을 낸다는 점은 검증되지 않았습니다(참고용). 마우스를 올리거나 손가락으로 훑으면 값이 보입니다.' +
+        (PRICE.data.ki ? ' 초록 선(코스피)은 표시 구간 첫날을 이 종목 종가에 맞춰 환산한 것이라, 두 선의 높이 차이가 그 기간 코스피 대비 상대 성과입니다(출처: ' + escHtml(PRICE.data.ki_src || '') + ', 가격지수·배당 제외).' : (PRICE.data.ki_err ? ' <span style="color:#b45309;">코스피를 불러오지 못해 겹쳐보기를 쓸 수 없습니다: ' + escHtml(PRICE.data.ki_err) + '</span>' : ''));
     }
     function drawPrice() {
       const cv = document.getElementById('priceCanvas');
@@ -7510,6 +7512,11 @@ async function pfuExport() {
       const c = full.c.slice(from), d = full.d.slice(from), m50 = PRICE.m50.slice(from), m200 = PRICE.m200.slice(from);
       const dd = drawdownSeries(c);
       const showM50 = document.getElementById('chkMa50').checked, showM200 = document.getElementById('chkMa200').checked;
+      // 코스피 겹쳐보기: 표시 구간에서 종목과 코스피가 모두 있는 첫 날을 기준으로, 코스피를 그날 종목 종가에 맞춰 환산해(= 코스피 × 종목시작가 ÷ 코스피시작가)
+      // 같은 축에 그린다. 두 선의 높이 차이가 그 기간 상대 성과이며 절대 지수 값이 아니다. 지수가 없는 날은 선을 끊는다(채우지 않음).
+      const chkK = document.getElementById('chkKospi'), kRaw = (full.ki && chkK && chkK.checked) ? full.ki.slice(from) : null;
+      let kBase = -1; if (kRaw) { for (let q = 0; q < kRaw.length; q++) { if (kRaw[q] != null) { kBase = q; break; } } }
+      const kIdx = kBase >= 0 ? kRaw.map((v) => (v == null ? null : v / kRaw[kBase] * c[kBase])) : null;
       const FONT = '-apple-system, "Segoe UI", "Noto Sans KR", sans-serif';
       const vmode = (PRICE.vm === 'off') ? 'off' : ((PRICE.vm === 'tv' && full.tv && full.tv.some((x) => x != null)) ? 'tv' : (full.v && full.v.some((x) => x != null) ? 'vol' : 'off'));
       const volSrc = vmode === 'tv' ? full.tv : full.v, vol = vmode === 'off' ? [] : volSrc.slice(from);
@@ -7520,7 +7527,7 @@ async function pfuExport() {
       const st = priceStats(full.c);
       let lo = Infinity, hi = -Infinity;
       const feed = (v) => { if (v != null) { if (v < lo) lo = v; if (v > hi) hi = v; } };
-      c.forEach(feed); if (showM50) m50.forEach(feed); if (showM200) m200.forEach(feed); feed(st.hi); feed(st.lo);
+      c.forEach(feed); if (kIdx) kIdx.forEach(feed); if (showM50) m50.forEach(feed); if (showM200) m200.forEach(feed); feed(st.hi); feed(st.lo);
       const pad = (hi - lo) * 0.06; lo -= pad; hi += pad;
       const ys = (v) => mainTop + mainH - (v - lo) / (hi - lo) * mainH;
       ctx.font = '10px ' + FONT; ctx.textAlign = 'right'; ctx.fillStyle = '#94a3b8'; ctx.strokeStyle = '#eef2f7'; ctx.lineWidth = 1;
@@ -7531,10 +7538,11 @@ async function pfuExport() {
       const line = (arr, color, w) => { ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineJoin = 'round'; ctx.beginPath(); let s0 = false; arr.forEach((v, i) => { if (v == null) { s0 = false; return; } if (!s0) { ctx.moveTo(xs(i), ys(v)); s0 = true; } else ctx.lineTo(xs(i), ys(v)); }); ctx.stroke(); };
       if (showM200) line(m200, '#7c3aed', 1.4);
       if (showM50) line(m50, '#ea580c', 1.4);
+      if (kIdx) line(kIdx, '#16a34a', 1.5);
       line(c, '#2563eb', 1.8);
       priceJumps(c).forEach((i) => { ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(xs(i), mainTop); ctx.lineTo(xs(i), mainTop + mainH); ctx.stroke(); });
       ctx.textAlign = 'left'; ctx.font = '11px ' + FONT; let lx = padL + 4;
-      [['종가', '#2563eb', true], ['50일선', '#ea580c', showM50], ['200일선', '#7c3aed', showM200]].forEach((l) => { if (!l[2]) return; ctx.fillStyle = l[1]; ctx.fillRect(lx, mainTop + mainH + 3, 10, 3); ctx.fillStyle = '#475569'; ctx.fillText(l[0], lx + 14, mainTop + mainH + 8); lx += 14 + ctx.measureText(l[0]).width + 12; });
+      [['종가', '#2563eb', true], ['50일선', '#ea580c', showM50], ['200일선', '#7c3aed', showM200], ['코스피(환산)', '#16a34a', !!kIdx]].forEach((l) => { if (!l[2]) return; ctx.fillStyle = l[1]; ctx.fillRect(lx, mainTop + mainH + 3, 10, 3); ctx.fillStyle = '#475569'; ctx.fillText(l[0], lx + 14, mainTop + mainH + 8); lx += 14 + ctx.measureText(l[0]).width + 12; });
       if (vmode !== 'off') {
         const vmax = Math.max.apply(null, vol.filter((x) => x != null).concat([1]));
         const yv = (v) => volTop + volH - v / vmax * volH, bw = Math.max(1, Math.min(8, step * 0.7));
@@ -7558,9 +7566,10 @@ async function pfuExport() {
         const i = PRICE.hover, x = xs(i);
         ctx.strokeStyle = '#64748b'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(x, mainTop); ctx.lineTo(x, ddTop + ddH); ctx.stroke(); ctx.setLineDash([]);
         ctx.fillStyle = '#2563eb'; ctx.beginPath(); ctx.arc(x, ys(c[i]), 3.5, 0, 6.3); ctx.fill();
-        const lines = [d[i].slice(0, 4) + '-' + d[i].slice(4, 6) + '-' + d[i].slice(6, 8), '종가 ' + Math.round(c[i]).toLocaleString() + '원', m50[i] != null ? '50일선 ' + Math.round(m50[i]).toLocaleString() : '', m200[i] != null ? '200일선 ' + Math.round(m200[i]).toLocaleString() : '', vmode !== 'off' ? ((vmode === 'tv' ? '거래대금 ' : '거래량 ') + fmtVol(vol[i], vmode)) : '', '낙폭 ' + (dd[i] * 100).toFixed(1) + '%'].filter(Boolean);
+        if (kIdx && kIdx[i] != null) { ctx.fillStyle = '#16a34a'; ctx.beginPath(); ctx.arc(x, ys(kIdx[i]), 3, 0, 6.3); ctx.fill(); }
+        const lines = [d[i].slice(0, 4) + '-' + d[i].slice(4, 6) + '-' + d[i].slice(6, 8), '종가 ' + Math.round(c[i]).toLocaleString() + '원', m50[i] != null ? '50일선 ' + Math.round(m50[i]).toLocaleString() : '', m200[i] != null ? '200일선 ' + Math.round(m200[i]).toLocaleString() : '', (kIdx && kRaw[i] != null) ? ('코스피 ' + Math.round(kRaw[i]).toLocaleString() + 'pt') : '', (kIdx && kRaw[i] != null) ? ('시작 후 코스피 ' + ((kRaw[i] / kRaw[kBase] - 1) * 100).toFixed(1) + '%') : '', (kIdx && kRaw[i] != null) ? ('시작 후 종목 ' + ((c[i] / c[kBase] - 1) * 100).toFixed(1) + '%') : '', vmode !== 'off' ? ((vmode === 'tv' ? '거래대금 ' : '거래량 ') + fmtVol(vol[i], vmode)) : '', '낙폭 ' + (dd[i] * 100).toFixed(1) + '%'].filter(Boolean);
         ctx.font = '11px ' + FONT; const bw = Math.max.apply(null, lines.map((t) => ctx.measureText(t).width)) + 14, bh = lines.length * 15 + 8;
-        let bx = x + 10; if (bx + bw > W - 2) bx = x - 10 - bw;
+        let bx = x + 10; if (bx + bw > W - 2) bx = x - 10 - bw; if (bx < 2) bx = 2;
         ctx.fillStyle = 'rgba(15,23,42,0.88)'; ctx.fillRect(bx, mainTop + 4, bw, bh);
         ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; lines.forEach((t, li) => ctx.fillText(t, bx + 7, mainTop + 18 + li * 15));
       }
@@ -8086,7 +8095,7 @@ async function pfuExport() {
 
     async function refreshMacroData() {
       const statusEl = document.getElementById('macroStatus');
-      statusEl.textContent = '거시경제 데이터를 받아오는 중입니다(최근 9년치, 지표 5개 — 처음엔 여러 번에 나눠 자동으로 이어받습니다)...';
+      statusEl.textContent = '거시경제 데이터를 받아오는 중입니다(최근 9년치, 지표 7개 — 처음엔 여러 번에 나눠 자동으로 이어받습니다)...';
       try {
         let total = 0, last = null;
         for (let round = 1; round <= 30; round++) {
@@ -8164,8 +8173,8 @@ async function pfuExport() {
     //  3) 상관계수는 극단값(예: 순이익이 몇 배 급증)에 덜 민감한 스피어만 순위상관(ρ)을 쓴다.
     //  4) 표본이 매우 적어 유의성(양측 5%)을 표시한다. 분기 YoY 창은 인접 분기끼리 3/4가 겹쳐 독립이 아니므로 유효 표본을 n/4로 보고 판정한다.
     //  5) 표의 칸이 많아 우연히 유의하게 나오는 칸이 섞인다(다중검정). 인과가 아니라 "참고용 동행성"이다.
-    const MACRO_KIND = { usdkrw: 'pct', msb1y: 'diff', ktb3y: 'diff', ktb10y: 'diff', wti: 'pct' };
-    const MACRO_CHG_LABELS = { usdkrw: '원/달러 환율 변화율', msb1y: '통안증권(1년) 변화(%p)', ktb3y: '국고채(3년) 변화(%p)', ktb10y: '국고채(10년) 변화(%p)', wti: 'WTI 변화율' };
+    const MACRO_KIND = { usdkrw: 'pct', msb1y: 'diff', ktb3y: 'diff', ktb10y: 'diff', wti: 'pct', kospi: 'pct', sp500: 'pct' };
+    const MACRO_CHG_LABELS = { usdkrw: '원/달러 환율 변화율', msb1y: '통안증권(1년) 변화(%p)', ktb3y: '국고채(3년) 변화(%p)', ktb10y: '국고채(10년) 변화(%p)', wti: 'WTI 변화율', kospi: '코스피 변화율', sp500: 'S&P500 변화율' };
     let macroCorrDirty = true;
 
     function rankAvg(arr) {
@@ -8710,7 +8719,7 @@ function closeAsOf(prices, targetDate) {
 }
 
 // ============================================================
-// 거시경제 지표(환율·금리·WTI) — ECOS(한국은행) + FRED(미 연준)
+// 거시경제 지표(환율·금리·WTI·주가지수) — ECOS(한국은행) + FRED(미 연준)
 // ============================================================
 // series별 소스/코드 정의. ECOS는 (통계표코드, 항목코드), FRED는 series_id만 있으면 된다.
 // 금리·환율 통계표/항목코드는 ECOS 공식 사이트(https://ecos.bok.or.kr → 통계표코드 검색)에서
@@ -8721,6 +8730,9 @@ const MACRO_SERIES = {
   ktb3y:  { source: "ecos", statCode: "817Y002", itemCode: "010200000", label: "국고채(3년)", expectName: "3년" },
   ktb10y: { source: "ecos", statCode: "817Y002", itemCode: "010210000", label: "국고채(10년)", expectName: "10년" },
   wti:    { source: "fred", seriesId: "DCOILWTICO", label: "WTI 현물가" },
+  // 주가지수: 코스피는 공공데이터포털 지수시세(종목 차트·모멘텀과 같은 출처), S&P500은 FRED SP500(종가, 최근 약 10년만 제공)
+  kospi:  { source: "krxidx", idxName: "코스피", label: "코스피 지수" },
+  sp500:  { source: "fred", seriesId: "SP500", label: "S&P500 지수" },
 };
 
 // ECOS StatisticSearch API: 한 번 호출로 기간 전체(start~end)를 받아온다.
@@ -8773,7 +8785,7 @@ async function fetchFredSeries(seriesId, startDate, endDate, apiKey, timeoutMs =
     .filter((r) => /^\d{8}$/.test(r.date) && !Number.isNaN(r.value)); // FRED는 휴장일에 value="."로 와서 NaN으로 자동 제외됨
 }
 
-// 거시지표 5개를 받아 macro_data에 저장한다. D1 쓰기는 하루 10만행이 "계정 전체 테이블 합산"이라서,
+// 거시지표(환율·금리·WTI·코스피·S&P500)를 받아 macro_data에 저장한다. D1 쓰기는 하루 10만행이 "계정 전체 테이블 합산"이라서,
 // 이 함수를 누를 때마다 수년치 전체를 다시 받아 쓰면(특히 여러 번 누르면) 그것만으로 하루 쓰기 한도를
 // 다 써버릴 수 있다 — 실제로 발생한 D1 무료한도 초과 사고의 유력한 원인 중 하나였다.
 // 그래서 explicitStart가 없으면(=사용자가 날짜를 직접 지정하지 않은 평소 "갱신" 클릭이면) 지표별로
@@ -8802,9 +8814,13 @@ async function runMacroRefresh(env, explicitStart, endDate, defaultLookbackStart
     }
     let points;
     try {
-      points = def.source === "ecos"
-        ? await fetchEcosSeries(def.statCode, def.itemCode, effectiveStart, endDate, env.ECOS_API_KEY, 15000, def.expectName || null)
-        : await fetchFredSeries(def.seriesId, effectiveStart, endDate, env.FRED_API_KEY);
+      if (def.source === "ecos") points = await fetchEcosSeries(def.statCode, def.itemCode, effectiveStart, endDate, env.ECOS_API_KEY, 15000, def.expectName || null);
+      else if (def.source === "krxidx") {
+        if (!env.DATA_GO_KR_KEY) throw new Error("DATA_GO_KR_KEY 미설정");
+        const rows = await fetchIndexHistory(def.idxName, effectiveStart, endDate, env.DATA_GO_KR_KEY);
+        points = rows.map((r) => ({ date: r.basDt, value: Number(r.clpr) })).filter((r) => /^\d{8}$/.test(r.date) && Number.isFinite(r.value) && r.value > 0)
+          .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)); // 오래된 날짜부터 저장해야 partial 이어받기가 맞다
+      } else points = await fetchFredSeries(def.seriesId, effectiveStart, endDate, env.FRED_API_KEY);
     } catch (e) {
       summary[seriesKey] = { error: e.message || String(e) };
       continue;
@@ -10420,8 +10436,26 @@ async function handleRequest(request, env) {
       const kstNow = new Date(Date.now() + 9 * 3600 * 1000);
       const hist = (await fetchKrxStockHistory(corpRow.stock_code, ymd(new Date(kstNow.getTime() - days * 86400000)), ymd(kstNow), env.DATA_GO_KR_KEY)).filter((x) => x.close > 0);
       if (!hist.length) return Response.json({ error: "data.go.kr에서 이 종목의 시세를 받지 못했습니다." }, { status: 502 });
+      // 같은 기간 코스피 종가를 종목 거래일에 맞춰 붙인다(겹쳐보기용). 실패해도 주가 차트는 그대로 내려준다.
+      // 1순위 공공데이터포털 조회, 실패하면 D1에 저장된 코스피(최근 1~2년)로 대체한다. 날짜가 없으면 null(만들어 채우지 않음).
+      let ki = null, kiErr = null, kiSrc = null;
+      try {
+        const kmap = new Map();
+        try {
+          const kr = await fetchIndexHistory(KOSPI_NAME, hist[0].date, hist[hist.length - 1].date, env.DATA_GO_KR_KEY);
+          kr.forEach((r) => { if (r.clpr > 0) kmap.set(r.basDt, r.clpr); });
+          if (kmap.size) kiSrc = "공공데이터포털 지수시세";
+        } catch (e) { kiErr = (e && e.message) || String(e); }
+        if (!kmap.size) {
+          const { results } = await env.DB.prepare("SELECT market_date, close_price FROM market_index_daily WHERE idx_name = ? AND market_date >= ? ORDER BY market_date").bind(KOSPI_NAME, hist[0].date).all();
+          (results || []).forEach((r) => { if (r.close_price > 0) kmap.set(r.market_date, r.close_price); });
+          if (kmap.size) kiSrc = "저장된 코스피(일부 기간만)";
+        }
+        if (kmap.size) ki = hist.map((x) => (kmap.has(x.date) ? kmap.get(x.date) : null));
+      } catch (e) { kiErr = kiErr || (e && e.message) || String(e); }
       return new Response(JSON.stringify({
         corp_name: corpRow.corp_name, stock_code: corpRow.stock_code, n: hist.length, from: hist[0].date, to: hist[hist.length - 1].date,
+        ki: ki, ki_src: kiSrc, ki_err: ki ? null : kiErr,
         d: hist.map((x) => x.date), c: hist.map((x) => x.close), v: hist.map((x) => x.volume == null ? null : x.volume), tv: hist.map((x) => x.tradingValue == null ? null : x.tradingValue),
       }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "private, max-age=300" } });
     }
