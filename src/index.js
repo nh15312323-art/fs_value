@@ -855,6 +855,21 @@ const HTML_PAGE = `<!doctype html>
     </div>
 
     <div class="card">
+      <div class="card-title">A-3. 신규 지표 발굴 — 기존 방법 말고 어떤 지표가 유의한가 (역방향) <a href="#" onclick="guideOpen('bt-multi'); return false;" style="font-size:12px; font-weight:400; margin-left:6px;">ⓘ 쉬운 설명</a></div>
+      <div style="font-size:12.5px; line-height:1.5;">위 A·A-2는 내가 정한(또는 기존에 제시된 10개) 방법만 다룹니다. 여기서는 <b>저장된 재무로 만들 수 있는 후보 지표 40여 개</b>(수익성·안정성·효율·자본배분·가격결합·변화·지속성)를 <b>기존 방법과 함께 한꺼번에</b> 시험해, 어느 것이 <b>보정 후에도 우연이 아닌지</b>와 <b>높을수록/낮을수록 유리한지</b>를 알려줍니다. 지표가 많을수록 우연히 좋아 보이는 것이 늘어나므로 수익률을 섞은 가짜 세계로 보정하고, 앞 구간에서 찾은 것을 뒤 구간에서 다시 확인합니다. 결과는 <b>가설 후보</b>이며 투자 신호가 아닙니다.</div>
+      <div class="row" style="margin-top:8px; gap:10px; flex-wrap:wrap; font-size:12.5px;">
+        <label>방식 <select id="dscMode"><option value="annual">연간(기간 수 적음)</option><option value="qttm" selected>분기 TTM(기간 수 많음, 권장)</option></select></label>
+        <label>범위 <select id="dscScope"><option value="all" selected>기존 10개 + 신규 후보</option><option value="cand">신규 후보만(시험 수 적음)</option></select></label>
+        <label>그룹 수 <select id="dscG"><option value="3">3</option><option value="5" selected>5</option><option value="10">10</option></select></label>
+        <label>가짜 세계 <select id="dscB"><option value="200">200회</option><option value="500" selected>500회</option><option value="1000">1000회</option></select></label>
+        <label>씨앗 <input id="dscSeed" type="number" value="1" style="width:60px;" /></label>
+        <label><input id="dscSplit" type="checkbox" checked /> 기간 나누기(앞 2/3 탐색 → 뒤 1/3 확인)</label>
+      </div>
+      <div class="row"><button class="primary" onclick="dscRun()">신규 지표 발굴 실행</button> <span id="dscMsg" class="meta-line"></span></div>
+      <div id="dscOut"></div>
+    </div>
+
+    <div class="card">
       <div class="card-title">C. 종목별 보기 — 재무 값 · 주가 · 주가수익률 한 번에 <a href="#" onclick="guideOpen('bt-lookahead'); return false;" style="font-size:12px; font-weight:400; margin-left:6px;">ⓘ 쉬운 설명</a></div>
       <div style="font-size:12px; color:var(--text-muted); line-height:1.55; margin-bottom:6px;">위 A의 연간 재무 백테스트가 종목마다 실제로 쓰는 값을 결산연도별로 모아 보여 줍니다. <b>매수가</b> = 사업보고서 공시 다음 거래일 종가, <b>매도가</b> = 다음 해 사업보고서 공시 다음 거래일 종가, <b>12개월 수익률</b> = 매도가 ÷ 매수가 − 1(배당 제외). 재무 팩터 값은 공시 시점에 알 수 있었던 자료와 매수가로만 계산합니다.</div>
       <div class="row" style="gap:8px; flex-wrap:wrap; align-items:center;">
@@ -5528,6 +5543,7 @@ async function btLoadStocks() {
 // 공시 당일 종가에는 공시 전 정보가 섞일 수 있어 쓰지 않는다. 다음 거래일 가격이 없는 행은 대체값 없이 제외하고 개수를 BT.skipNoNext에 센다.
 // 한계: 공시일은 법정 기한으로 상한을 둔 근사값(정정공시·지연공시는 완전히 통제하지 못함)이고, 12월 결산 법인을 전제로 한다.
 function btBuildAnnual(keys, o) {
+  const keepMissing = !!(o && o.keepMissing); // 신규 지표 발굴: 값이 없는 지표가 있어도 그 종목을 버리지 않는다
   const perYear = {};
   BT.skipNoNext = 0;
   BT.stocks.forEach((s) => {
@@ -5544,16 +5560,17 @@ function btBuildAnnual(keys, o) {
       const d = L.length ? L[L.length - 1] : null;
       if (!d || d.year !== Y) return;
       const vals = {};
-      for (const k of keys) { let v = null; try { v = BT_FACTORS[k].fn(L, d, P0); } catch (e) { v = null; } if (!anFin(v)) return; vals[k] = v; }
+      for (const k of keys) { let v = null; try { v = btFacVal(k, L, d, P0); } catch (e) { v = null; } if (!anFin(v)) { if (keepMissing) continue; return; } vals[k] = v; }
       (perYear[Y] = perYear[Y] || []).push({ id: s.code, vals, f: P1 / P0 - 1 });
     });
   });
-  return btFinPeriods(perYear, keys, (Y) => 'FY' + Y + ' → ' + (Y + 1));
+  return btFinPeriods(perYear, keys, (Y) => 'FY' + Y + ' → ' + (Y + 1), keepMissing);
 }
 // 기간 키 → 종목 목록을 백테스트 기간 배열로. 방법이 여러 개면 각 방법의 횡단면 순위(퍼센타일)를 같은 비중으로 평균한다.
-function btFinPeriods(perKey, keys, labelOf) {
+function btFinPeriods(perKey, keys, labelOf, raw) {
   return Object.keys(perKey).map(Number).sort((a, b) => a - b).map((K) => {
     const arr = perKey[K];
+    if (raw) return { label: labelOf(K), items: arr.map((x) => ({ id: x.id, s: null, f: x.f, v: x.vals })), bench: null }; // 발굴용: 지표별로 따로 순위를 매기므로 합성 점수를 만들지 않는다
     const sc = arr.map(() => 0);
     keys.forEach((k) => { const rk = btRankAvg(arr.map((x) => x.vals[k])); rk.forEach((v, i) => { sc[i] += v / arr.length / keys.length; }); });
     return { label: labelOf(K), items: arr.map((x, i) => ({ id: x.id, s: keys.length === 1 ? x.vals[keys[0]] : sc[i], f: x.f, v: x.vals })), bench: null };
@@ -5563,7 +5580,8 @@ function btFinPeriods(perKey, keys, labelOf) {
 // 분기보고서(1Q·반기·3Q·사업보고서)가 공시될 때마다: 그 시점까지 알려진 "최근 4개 분기 합산(TTM)" 재무로 방법 값을 계산 →
 // 공시 다음 거래일 종가에 매수 → 바로 다음 분기보고서 공시 다음 거래일 종가에 매도. 연 4회 구간(공시 간격은 1.5~3개월로 일정하지 않음).
 // 연도별 변화율·3년 평균 등은 "같은 분기의 TTM을 1년씩 이어 붙인 시계열"(예: 2Q TTM끼리)로 계산해 기간 길이를 맞춘다. 미래 분기는 쓰지 않는다.
-function btBuildQuarterly(keys) {
+function btBuildQuarterly(keys, o) {
+  const keepMissing = !!(o && o.keepMissing);
   const per = {};
   BT.skipNoNext = 0; BT.qSkipTtm = 0;
   const SLOT = { '11013': 1, '11012': 2, '11014': 3, '11011': 4 };
@@ -5593,11 +5611,11 @@ function btBuildQuarterly(keys) {
       const L = ser[N].filter((d) => d.year <= Y), d = L.length ? L[L.length - 1] : null;
       if (!d || d.year !== Y) { BT.qSkipTtm++; return; }
       const vals = {};
-      for (const f of keys) { let v = null; try { v = BT_FACTORS[f].fn(L, d, P0); } catch (e) { v = null; } if (!anFin(v)) return; vals[f] = v; }
+      for (const f of keys) { let v = null; try { v = btFacVal(f, L, d, P0); } catch (e) { v = null; } if (!anFin(v)) { if (keepMissing) continue; return; } vals[f] = v; }
       (per[Y * 10 + N] = per[Y * 10 + N] || []).push({ id: s.code, vals, f: P1 / P0 - 1 });
     });
   });
-  return btFinPeriods(per, keys, (K) => { const Y = Math.floor(K / 10), N = K % 10, nm = ['', '1Q', '2Q', '3Q', '4Q']; return Y + ' ' + nm[N] + ' → ' + (N === 4 ? (Y + 1) + ' 1Q' : Y + ' ' + nm[N + 1]); });
+  return btFinPeriods(per, keys, (K) => { const Y = Math.floor(K / 10), N = K % 10, nm = ['', '1Q', '2Q', '3Q', '4Q']; return Y + ' ' + nm[N] + ' → ' + (N === 4 ? (Y + 1) + ' 1Q' : Y + ' ' + nm[N + 1]); }, keepMissing);
 }
 // ===== /분기 TTM 재무 백테스트 =====
 // 분기 모멘텀: 분기말 주가만 사용. 형성기간 K분기, 건너뛰기 skip분기, 보유 1분기. (분기 자료라 "최근 1개월 제외"는 불가 — 0 또는 1분기 건너뛰기만 가능)
@@ -5638,7 +5656,7 @@ async function btRunFinImpl() {
   } else {
     if (!keys.length) { btMsg('재무 방법을 하나 이상 고르세요.'); return; }
     const q = mode === 'qttm';
-    periods = q ? btBuildQuarterly(keys) : btBuildAnnual(keys, {}); ppy = q ? 4 : 1; title = (q ? '분기 TTM 재무: ' : '연간 재무: ') + keys.map((k) => BT_FACTORS[k].name.split(' (')[0]).join(' + ') + (keys.length > 1 ? ' (순위 평균 복합)' : '');
+    periods = q ? btBuildQuarterly(keys) : btBuildAnnual(keys, {}); ppy = q ? 4 : 1; title = (q ? '분기 TTM 재무: ' : '연간 재무: ') + keys.map((k) => btFacName(k).split(' (')[0] + (BT_DIR[k] === -1 ? ' [값 뒤집음]' : '')).join(' + ') + (keys.length > 1 ? ' (순위 평균 복합)' : '');
     sig = (q ? 'finq|' : 'fin|') + keys.slice().sort().join('+') + '|' + G;
   }
   const skipNote = (mode !== 'momq' && BT.skipNoNext) ? '공시 다음 거래일 가격이 없어 제외된 종목·연도: ' + BT.skipNoNext + '건 (「공시 다음 거래일 가격 채우기」를 먼저 실행하세요)' : '';
@@ -5909,7 +5927,8 @@ function btTopDownload(kind) {
 // ===== /상위 그룹 종목 상세 =====
 
 // ---------- 결과 화면 ----------
-function btBadgeFor(k) { const f = BT_FACTORS[k]; return f ? anBadge(f.badge) : ''; }
+function btBadgeFor(k) { const f = btFac(k); return f ? anBadge(f.badge) : ''; }
+function btFacName(k) { const f = btFac(k); return f ? f.name + (BT_DIR[k] === -1 ? ' [값 뒤집음: 낮을수록 유리]' : '') : k; }
 function btChart(res) {
   const W = 640, H = 190, pad = 34, G = res.G;
   const ser = (fn) => { let c = 1; const a = [1]; res.rows.forEach((r) => { c *= (1 + fn(r)); a.push(c); }); return a; };
@@ -5957,7 +5976,7 @@ function btRenderResult(res, m) {
   const grow = res.groupStats.map((st, g) => '<tr' + (g === G - 1 ? ' style="background:#f0fdf4;"' : g === 0 ? ' style="background:#fef2f2;"' : '') + '><td class="an-first">' + (g === G - 1 ? '상위 ' : g === 0 ? '하위 ' : '') + '그룹 ' + (g + 1) + '/' + G + '</td><td>' + f1(st.mean) + '</td><td>' + f1(st.mean - res.uniStat.mean) + '</td><td>' + f2(st.sharpe) + '</td><td>' + f1(st.cum) + '</td><td>' + f1(st.mdd) + '</td><td>' + (st.hit * 100).toFixed(0) + '%</td></tr>').join('');
   const prow = res.rows.map((r) => '<tr><td class="an-first">' + escHtml(r.label) + '</td><td>' + r.n + '</td><td>' + f1(r.gm[G - 1]) + '</td><td>' + f1(r.gm[0]) + '</td><td>' + f1(r.spread) + '</td><td>' + f2(r.ic) + '</td><td>' + (m.kind === 'scr' && typeof r.bench === 'number' ? f1(r.bench) : '-') + '</td></tr>').join('');
   const splitTxt = res.split ? ('전반 ' + res.split.nFirst + '개 기간 롱숏 평균 ' + f1(res.split.first) + ' / 후반 ' + res.split.nSecond + '개 기간 ' + f1(res.split.second) + (Math.sign(res.split.first) !== Math.sign(res.split.second) ? ' → 부호가 달라 결과가 불안정합니다.' : ' → 부호가 같아 시기별로 일관됩니다.')) : '기간이 6개 미만이라 전반/후반 비교 불가';
-  const evid = m.keys ? '<div style="font-size:12px; margin:6px 0;">' + m.keys.map((k) => '<div>' + btBadgeFor(k) + ' <b>' + escHtml(BT_FACTORS[k].name) + '</b> — ' + escHtml(BT_FACTORS[k].ev) + '</div>').join('') + '</div>' : '';
+  const evid = m.keys ? '<div style="font-size:12px; margin:6px 0;">' + m.keys.map((k) => '<div>' + btBadgeFor(k) + ' <b>' + escHtml(btFacName(k)) + '</b> — ' + escHtml(btFac(k).ev) + '</div>').join('') + '</div>' : '';
   return '<div class="card" style="border-left:4px solid ' + vcol + ';"><div style="font-weight:800; font-size:14px;">' + escHtml(m.title) + '</div>' +
     '<div style="margin:6px 0; font-weight:700; color:' + vcol + ';">판정: ' + verdict + dir + '</div>' + evid + cards +
     '<div style="margin:8px 0; font-size:12px; line-height:1.55;"><b>표본 분할 점검</b> ' + splitTxt + '</div>' +
@@ -6108,6 +6127,179 @@ function cmbOpen(i) {
   btRunFin(); const el = document.getElementById('btFinOut'); if (el && el.scrollIntoView) el.scrollIntoView();
 }
 // ===== /조합 탐색 =====
+
+// ===== 신규 지표 발굴 (역백테스트 2): 후보 지표 40여 개를 한꺼번에 시험해 무엇이 우연이 아닌지 찾기 =====
+// 기존 BT_FACTORS(제시된 10개 방법)에 더해, 저장된 재무에서 만들 수 있는 후보 지표를 모두 같은 규칙으로 시험한다.
+// 방향(높을수록 좋은지 낮을수록 좋은지)을 미리 정하지 않고 양쪽을 모두 본다(양측 검정). 지표 수가 많을수록 우연히 좋아 보이는 것이 늘어나므로
+// 조합 탐색과 같은 Westfall-Young maxT(수익률을 종목 사이에서 섞은 가짜 세계의 최대 |t|)로 보정하고, 앞 2/3 기간에서 찾은 것을 뒤 1/3에서 다시 확인한다.
+// 후보는 "가설 생성"용이다: 문헌 근거가 있는 것은 표시했고, 없는 것은 탐색 결과만으로 투자 근거가 되지 않는다.
+const BT_DIR = {}; // 발굴 결과에서 「낮을수록 유리」로 나온 지표를 정식 백테스트(A)로 열 때 값을 뒤집기 위한 표시 { 지표키: -1 }
+(function () {
+  const prevOf = function (L) { return L.length >= 2 && L[L.length - 1].year - L[L.length - 2].year === 1 ? L[L.length - 2] : null; };
+  const dif = function (a, b) { return anFin(a) && anFin(b) ? a - b : null; };
+  const gro = function (a, b) { return anFin(a) && anFin(b) && b > 0 ? a / b - 1 : null; };
+  const lastN = function (L, key, n, minN) { const v = anWin(L, key, n).filter(anFin); return v.length >= minN ? v : null; };
+  const C = {};
+  const add = function (k, grp, name, desc, fn, ev, badge) { C[k] = { grp: grp, name: name, desc: desc, fn: fn, ev: ev || '탐색용 후보(문헌 근거는 확인하지 않음)', badge: badge || 'assume', cand: true }; };
+  add('c_roe', '수익성', 'ROE (최근 연도)', '주주 몫 자본 대비 순이익', function (L, d) { return d.roe; }, 'Fama-French(2015) 수익성 요인 계열', 'theory');
+  add('c_roe3', '수익성', 'ROE 3년 평균', '최근 3년 ROE의 평균', function (L) { return anMean(anWin(L, 'roe', 3)); });
+  add('c_opm', '수익성', '영업이익률 (최근)', '매출 대비 영업이익', function (L, d) { return d.opm; }, 'Fama-French(2015) 영업수익성(RMW) 계열', 'theory');
+  add('c_opm3', '수익성', '영업이익률 3년 평균', '최근 3년 영업이익률의 평균', function (L) { return anMean(anWin(L, 'opm', 3)); });
+  add('c_gm', '수익성', '매출총이익률', '매출 대비 매출총이익', function (L, d) { return d.gm; });
+  add('c_fcfm', '수익성', 'FCF 마진', '매출 대비 잉여현금흐름', function (L, d) { return d.fcfm; });
+  add('c_cfoni', '수익성', '영업현금흐름 / 순이익', '이익이 현금으로 이어지는 정도(순이익 양수일 때)', function (L, d) { return d.cfoni; });
+  add('c_at', '수익성', '총자산회전율', '자산 대비 매출', function (L, d) { return d.at; });
+  add('c_roic1', '수익성', 'ROIC (최근 연도)', '투하자본 대비 세후영업이익', function (L, d) { return d.roic; });
+  add('c_de', '안정성', '부채비율 (부채/자본)', '값이 클수록 빚이 많음', function (L, d) { return d.de; });
+  add('c_ibde', '안정성', '차입금비율 (차입금/자본)', '이자 내는 빚의 비중', function (L, d) { return d.ibde; });
+  add('c_nde', '안정성', '순차입금 / EBITDA', '벌이로 순빚을 갚는 데 걸리는 햇수', function (L, d) { return d.nde; });
+  add('c_icov', '안정성', '이자보상배율', '영업이익 / 이자비용', function (L, d) { return d.icov; });
+  add('c_cur', '안정성', '유동비율', '유동자산 / 유동부채', function (L, d) { return d.cur; });
+  add('c_cashdebt', '안정성', '현금 / 차입금', '보유 현금으로 차입금을 갚을 수 있는 정도', function (L, d) { return d.cashDebt; });
+  add('c_ccc', '효율', '현금전환주기', '현금이 묶이는 일수(짧을수록 자금 부담↓)', function (L, d) { return d.ccc; });
+  add('c_dso', '효율', '매출채권 회수일수', '외상을 회수하는 데 걸리는 일수', function (L, d) { return d.dso; });
+  add('c_dio', '효율', '재고 보유일수', '재고가 팔리기까지 걸리는 일수', function (L, d) { return d.dio; });
+  add('c_capexrev', '자본배분', 'CAPEX / 매출', '매출 대비 설비·시설 투자', function (L, d) { return anFin(d.capex) && d.revenue > 0 ? Math.abs(d.capex) / d.revenue : null; });
+  add('c_capexda', '자본배분', 'CAPEX / 감가상각', '1보다 크면 설비를 늘리는 중', function (L, d) { return d.capexDa; });
+  add('c_payout', '자본배분', '배당성향', '순이익 중 배당 비율', function (L, d) { return d.payout; });
+  add('c_shp', '자본배분', '주주환원 / 순이익', '(배당+자사주) / 순이익', function (L, d) { return d.shp; });
+  add('c_lnmcap', '가격결합', '시가총액 (로그)', '규모 효과: 작은 회사가 더 오르는지', function (L, d, P) { return anFin(d.shares) && d.shares > 0 && P > 0 ? Math.log(P * d.shares) : null; }, 'Banz(1981) 소형주 효과', 'proof');
+  add('c_sp', '가격결합', '매출 / 시가총액 (SP)', '주가가 매출에 비해 싼 정도', function (L, d, P) { return anFin(d.revenue) && anFin(d.shares) && d.shares > 0 && P > 0 ? d.revenue / d.shares / P : null; });
+  add('c_cfop', '가격결합', '영업현금흐름 / 시가총액 (CFO/P)', '주가가 영업현금에 비해 싼 정도', function (L, d, P) { return anFin(d.ocf) && anFin(d.shares) && d.shares > 0 && P > 0 ? d.ocf / d.shares / P : null; }, 'Lakonishok-Shleifer-Vishny(1994)', 'proof');
+  add('c_evebit', '가격결합', '영업이익 / 기업가치 (EBIT/EV)', '빚까지 포함한 가격 대비 영업이익', function (L, d, P) { if (!(anFin(d.shares) && d.shares > 0 && P > 0 && anFin(d.netDebt) && d.ebit > 0)) return null; const ev = P * d.shares + d.netDebt; return ev > 0 ? d.ebit / ev : null; }, 'Loughran-Wellman(2011) 기업가치 배수', 'proof');
+  add('c_dopm', '변화', '영업이익률 변화 (전년 대비)', '마진이 좋아지는 중인가', function (L, d) { const p = prevOf(L); return p ? dif(d.opm, p.opm) : null; });
+  add('c_dgm', '변화', '매출총이익률 변화', '원가 경쟁력이 좋아지는 중인가', function (L, d) { const p = prevOf(L); return p ? dif(d.gm, p.gm) : null; });
+  add('c_droic', '변화', 'ROIC 변화', '자본수익률이 개선되는 중인가', function (L, d) { const p = prevOf(L); return p ? dif(d.roic, p.roic) : null; });
+  add('c_dat', '변화', '자산회전율 변화', '자산을 더 효율적으로 쓰는 중인가', function (L, d) { const p = prevOf(L); return p ? dif(d.at, p.at) : null; });
+  add('c_dde', '변화', '부채비율 변화', '빚이 늘고 있는가', function (L, d) { const p = prevOf(L); return p ? dif(d.de, p.de) : null; });
+  add('c_dfcfm', '변화', 'FCF 마진 변화', '현금창출이 좋아지는 중인가', function (L, d) { const p = prevOf(L); return p ? dif(d.fcfm, p.fcfm) : null; });
+  add('c_revg', '변화', '매출 성장률 (전년 대비)', '매출이 커지는 속도', function (L, d) { const p = prevOf(L); return p ? gro(d.revenue, p.revenue) : null; }, 'Lakonishok-Shleifer-Vishny(1994)(과거 매출성장 열위)', 'proof');
+  add('c_ebitg', '변화', '영업이익 성장률', '전년 영업이익이 양수일 때만 계산', function (L, d) { const p = prevOf(L); return p ? gro(d.ebit, p.ebit) : null; });
+  add('c_nig', '변화', '순이익 성장률', '전년 순이익이 양수일 때만 계산', function (L, d) { const p = prevOf(L); return p ? gro(d.ni, p.ni) : null; });
+  add('c_assetg', '변화', '총자산 증가율', '자산을 빠르게 늘린 회사', function (L, d) { const p = prevOf(L); return p ? gro(d.assets, p.assets) : null; }, 'Cooper-Gulen-Schill(2008) 자산 증가율', 'proof');
+  add('c_sharechg', '변화', '발행주식수 증가율', '주식을 찍어 희석했는가(증자·전환)', function (L, d) { const p = prevOf(L); return p ? gro(d.shares, p.shares) : null; }, 'Pontiff-Woodgate(2008) 주식 발행', 'proof');
+  add('c_roicstd', '지속성', 'ROIC 변동성 (5년 표준편차)', '수익성이 들쭉날쭉한 정도', function (L) { const v = lastN(L, 'roic', 5, 3); return v ? anStd(v) : null; });
+  add('c_opmstd', '지속성', '영업이익률 변동성 (5년)', '마진이 들쭉날쭉한 정도', function (L) { const v = lastN(L, 'opm', 5, 3); return v ? anStd(v) : null; });
+  add('c_fcfpos', '지속성', 'FCF 흑자 비율 (최근 5년)', '잉여현금흐름이 플러스였던 해의 비율', function (L) { const v = lastN(L, 'fcf', 5, 3); return v ? v.filter(function (x) { return x > 0; }).length / v.length : null; });
+  window.BT_CANDS = C;
+})();
+function btFac(k) { return BT_FACTORS[k] || (typeof BT_CANDS !== 'undefined' ? BT_CANDS[k] : null); }
+function btFacVal(k, L, d, P) { const f = btFac(k); let v = f.fn(L, d, P); if (BT_DIR[k] === -1 && anFin(v)) v = -v; return v; }
+const DSC = { res: null, running: false };
+// periods: [{label, items:[{id, f, v:{지표:값(없을 수 있음)}}]}]. 지표마다 값이 있는 종목만으로 따로 순위를 매긴다(지표별 표본이 다를 수 있음).
+async function dscSearch(o) {
+  const keys = o.keys, G = o.G || 5, B = o.B == null ? 300 : o.B, seed = o.seed || 1, minN = Math.max(3 * G, 10);
+  const data = [];
+  o.periods.forEach(function (p) {
+    let it = p.items.filter(function (x) { return anFin(x.f); });
+    if (o.trim) it = it.filter(function (x) { return x.f > -0.9 && x.f < 5; });
+    if (it.length < minN) return;
+    const g = {};
+    keys.forEach(function (k) {
+      const idx = []; it.forEach(function (x, i) { if (anFin(x.v[k])) idx.push(i); });
+      if (idx.length < minN) { g[k] = null; return; }
+      const rk = btRankAvg(idx.map(function (i) { return it[i].v[k]; }));
+      const ord = idx.map(function (_, j) { return j; }).sort(function (a, b) { return (rk[a] - rk[b]) || (it[idx[a]].id < it[idx[b]].id ? -1 : it[idx[a]].id > it[idx[b]].id ? 1 : 0); });
+      const top = [], bot = [], n = idx.length;
+      ord.forEach(function (j, pos) { const gg = Math.min(G - 1, Math.floor(pos * G / n)); if (gg === G - 1) top.push(idx[j]); else if (gg === 0) bot.push(idx[j]); });
+      g[k] = { top: Int32Array.from(top), bot: Int32Array.from(bot), n: n };
+    });
+    data.push({ label: p.label, n: it.length, f: Float64Array.from(it.map(function (x) { return x.f; })), g: g });
+  });
+  const T = data.length; if (T < 4) return { error: '계산에 쓸 수 있는 기간이 ' + T + '개뿐입니다(최소 4개 필요). 분기 방식을 쓰거나 저장 종목을 늘려 보세요.', T: T };
+  const exN = (o.split && T >= 9) ? Math.ceil(T * o.split) : T;
+  const spread = function (k, t, f) { const g = data[t].g[k]; if (!g) return null; let a = 0, b = 0; for (let i = 0; i < g.top.length; i++) a += f[g.top[i]]; for (let i = 0; i < g.bot.length; i++) b += f[g.bot[i]]; return a / g.top.length - b / g.bot.length; };
+  const rows = [];
+  for (const k of keys) {
+    const ex = [], co = [], ns = [];
+    for (let t = 0; t < T; t++) { const v = spread(k, t, data[t].f); if (v == null) continue; (t < exN ? ex : co).push(v); ns.push(data[t].g[k].n); }
+    if (ex.length < 4) { rows.push({ key: k, insufficient: true, nPer: ex.length + co.length }); continue; }
+    const sx = btStat(ex, o.ppy || 1), cm = co.length ? btMean(co) : null, sc2 = co.length >= 3 ? btStat(co, o.ppy || 1) : null;
+    rows.push({ key: k, mean: sx.mean, t: sx.t, tNW: sx.tNW, hit: sx.hit, n: sx.n, pRaw: sx.t == null ? null : cmbPTwo(sx.t, sx.n - 1), avgN: btMean(ns), nPer: ex.length + co.length,
+      conf: co.length ? { n: co.length, mean: cm, t: sc2 ? sc2.t : null, same: sx.mean !== 0 && cm * sx.mean > 0 } : null });
+  }
+  const live = rows.filter(function (r) { return !r.insufficient; });
+  const rng = cmbRng(seed), maxT = [];
+  for (let b = 0; b < B; b++) {
+    const fs = []; for (let t = 0; t < exN; t++) { const f = Float64Array.from(data[t].f); for (let i = f.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); const x = f[i]; f[i] = f[j]; f[j] = x; } fs.push(f); }
+    let mx = 0;
+    for (const r of live) {
+      let s = 0, s2 = 0, n = 0; for (let t = 0; t < exN; t++) { const v = spread(r.key, t, fs[t]); if (v == null) continue; s += v; s2 += v * v; n++; }
+      const tt = cmbTstat(s, s2, n); if (tt != null && Math.abs(tt) > mx) mx = Math.abs(tt);
+    }
+    maxT.push(mx);
+    if (b % 10 === 9) { if (o.onProgress) o.onProgress('가짜 세계 시뮬레이션 ' + (b + 1) + ' / ' + B); await cmbTick(); }
+  }
+  maxT.sort(function (a, b) { return a - b; });
+  live.forEach(function (r) { if (r.t == null) { r.pAdj = null; return; } let ge = 0; for (let i = maxT.length - 1; i >= 0 && maxT[i] >= Math.abs(r.t); i--) ge++; r.pAdj = (ge + 1) / (B + 1); });
+  rows.sort(function (a, b) { return Math.abs(b.t || 0) - Math.abs(a.t || 0); });
+  const q = function (p) { return maxT.length ? maxT[Math.min(maxT.length - 1, Math.floor(p * maxT.length))] : null; };
+  return { rows: rows, M: live.length, T: T, exN: exN, coN: T - exN, B: B, seed: seed, nullMed: q(0.5), null95: q(0.95), null99: q(0.99), labels: data.map(function (d) { return d.label; }), avgAll: btMean(data.map(function (d) { return d.n; })), G: G };
+}
+function dscRender(R) {
+  const out = document.getElementById('dscOut');
+  if (R.error) { out.innerHTML = '<div class="meta-line" style="color:var(--danger);">' + escHtml(R.error) + '</div>'; return; }
+  const pc = function (v) { return anFin(v) ? (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%' : 'N/A'; };
+  const def = function (k) { return btFac(k) || { name: k, grp: '', desc: '', ev: '', badge: 'assume' }; };
+  const live = R.rows.filter(function (r) { return !r.insufficient; });
+  const sigs = live.filter(function (r) { return r.pAdj != null && r.pAdj <= 0.05; });
+  const sigNew = sigs.filter(function (r) { return def(r.key).cand; }), sigOld = sigs.filter(function (r) { return !def(r.key).cand; });
+  const rawSig = live.filter(function (r) { return r.pRaw != null && r.pRaw <= 0.05; }).length;
+  let h = '<div class="meta-line" style="line-height:1.6;">시험한 지표 <b>' + R.M + '</b>개(기존 제시 방법 ' + live.filter(function (r) { return !def(r.key).cand; }).length + ' + 신규 후보 ' + live.filter(function (r) { return def(r.key).cand; }).length + ') · 기간 <b>' + R.T + '</b>개(탐색 ' + R.exN + (R.coN ? ' + 확인 ' + R.coN : '') + ') · 기간당 평균 종목 약 ' + Math.round(R.avgAll) + '개 · 가짜 세계 ' + R.B + '회</div>';
+  h += '<div class="card" style="background:var(--bg); margin:8px 0; font-size:13px; line-height:1.6;"><b>우연의 기준선</b>: 수익률을 무작위로 섞은 가짜 세계에서도 ' + R.M + '개 지표를 뒤지면 가장 좋은 |t|가 중앙값 <b>' + anNum(R.nullMed, 2) + '</b>, 95% 상한 <b>' + anNum(R.null95, 2) + '</b>까지 나옵니다. 진짜 데이터의 |t|가 이 선을 넘어야 우연이 아닐 가능성이 있습니다.<br />' +
+    '보정하지 않은 p≤0.05 지표 ' + rawSig + '개(우연만으로도 약 ' + Math.round(R.M * 0.05) + '개 나옴) → 보정 후 p≤0.05: <b>신규 ' + sigNew.length + '개 · 기존 ' + sigOld.length + '개</b>.<br />' +
+    (sigNew.length ? '<b>판정:</b> 신규 후보 중 보정 후에도 남은 것이 있습니다(초록 칸). 확인 구간에서 같은 방향인지, 표본(종목 수)이 충분한지 꼭 보세요. 이것은 <b>가설</b>이지 매매 신호가 아닙니다.' : '<b>판정:</b> 신규 후보 중 보정 후 유의한 지표가 <b>없습니다</b>. 이 데이터(기간 ' + R.T + '개)에서는 기존 방법보다 확실히 낫다고 말할 새 지표를 찾지 못했다는 뜻이며, 지표가 쓸모없다는 뜻은 아닙니다(검정력 부족 가능).') + '</div>';
+  h += '<div class="tscroll" style="max-height:70vh;"><table class="an-tbl"><thead><tr><th class="an-first">지표 (|t| 큰 순)</th><th>구분</th><th>유리한 방향</th><th>평균 스프레드/기간</th><th>t</th><th>원시 p</th><th>보정 p</th><th>지표당 종목수</th>' + (R.coN ? '<th>확인 구간 평균</th><th>확인 t</th><th>같은 방향</th>' : '') + '<th></th></tr></thead><tbody>';
+  R.rows.forEach(function (r, i) {
+    const f = def(r.key), isNew = !!f.cand;
+    if (r.insufficient) { h += '<tr style="color:var(--text-muted);"><td class="an-first">' + escHtml(f.name) + '</td><td>' + (isNew ? '신규' : '기존') + '</td><td colspan="' + (R.coN ? 10 : 7) + '">자료가 있는 기간이 ' + r.nPer + '개뿐이라 제외</td></tr>'; return; }
+    const good = r.pAdj != null && r.pAdj <= 0.05, dir = r.mean >= 0 ? '높을수록' : '낮을수록';
+    h += '<tr' + (good ? ' style="background:#ecfdf5;"' : '') + '><td class="an-first" title="' + escHtml((f.grp ? f.grp + ' · ' : '') + (f.desc || '') + ' · 근거: ' + (f.ev || '')) + '">' + escHtml(f.name) + '</td><td>' + (isNew ? '신규' : '기존') + '</td><td>' + dir + '</td><td>' + pc(r.mean) + '</td><td>' + anNum(r.t, 2) + '</td><td>' + (r.pRaw == null ? 'N/A' : r.pRaw.toFixed(3)) + '</td><td><b>' + (r.pAdj == null ? 'N/A' : r.pAdj.toFixed(3)) + '</b></td><td>' + Math.round(r.avgN) + '</td>' +
+      (R.coN ? '<td>' + (r.conf ? pc(r.conf.mean) : 'N/A') + '</td><td>' + (r.conf ? anNum(r.conf.t, 2) : 'N/A') + '</td><td>' + (r.conf ? (r.conf.same ? '✓' : '✗') : '') + '</td>' : '') +
+      '<td><button onclick="dscOpen(' + i + ')" title="이 지표를 위 A의 정식 백테스트로 실행(방향이 「낮을수록」이면 값을 뒤집어 실행)">열기</button></td></tr>';
+  });
+  h += '</tbody></table></div>';
+  if (R.coN) {
+    const pool = (sigs.length ? sigs : live.slice(0, 10)).filter(function (r) { return r.conf; });
+    h += '<div class="meta-line" style="margin-top:6px;">확인 구간 점검: ' + (sigs.length ? '보정 p≤0.05' : '|t| 상위 10개') + ' 지표 ' + pool.length + '개 중 ' + pool.filter(function (r) { return r.conf.same; }).length + '개가 뒤 구간에서도 같은 방향이었습니다.</div>';
+  }
+  h += '<div class="meta-line" style="line-height:1.55; margin-top:6px;"><b>읽는 법·한계</b> ① 스프레드 = 상위 그룹 − 하위 그룹의 기간당 평균 수익률(값이 큰 쪽이 상위). 「유리한 방향」은 스프레드 부호로 정했으며 사전에 정한 방향이 아닙니다. ② 지표마다 값이 있는 종목만 쓰므로 지표별 표본이 다릅니다(지표당 종목수 참고). ③ 많이 뒤질수록 우연히 좋아 보이는 것이 늘어 시뮬레이션으로 보정했지만, 같은 데이터를 계속 새 지표로 뒤지면 보정이 소용없어지는 데이터 스누핑이 다시 생깁니다 — 결과는 <b>다른 기간·다른 시장에서 따로 확인</b>해야 합니다. ④ 문헌 근거가 있는 후보(툴팁 참고)도 한국 시장 검증은 이 표가 전부이며, 거래비용·생존편향·업종·시장 동조는 반영되지 않았습니다. 용어는 「쉬운 설명」 탭을 참고하세요.</div>';
+  out.innerHTML = h;
+}
+async function dscRun() {
+  if (DSC.running) return;
+  const msg = document.getElementById('dscMsg');
+  if (!BT.stocks) { msg.textContent = '먼저 위 A의 「① 저장된 종목 불러오기」를 눌러 주세요.'; return; }
+  const mode = document.getElementById('dscMode').value;
+  const scope = document.getElementById('dscScope').value;
+  const keys = scope === 'cand' ? Object.keys(BT_CANDS) : Object.keys(BT_FACTORS).concat(Object.keys(BT_CANDS));
+  DSC.running = true;
+  try {
+    msg.textContent = '지표 ' + keys.length + '개의 기간별 값을 만드는 중...'; await cmbTick();
+    const periods = mode === 'qttm' ? btBuildQuarterly(keys, { keepMissing: true }) : btBuildAnnual(keys, { keepMissing: true });
+    const R = await dscSearch({ periods: periods, keys: keys, G: Number(document.getElementById('dscG').value) || 5, B: Number(document.getElementById('dscB').value) || 300,
+      seed: Number(document.getElementById('dscSeed').value) || 1, split: document.getElementById('dscSplit').checked ? 2 / 3 : null, trim: true, ppy: mode === 'qttm' ? 4 : 1, onProgress: function (t) { msg.textContent = t; } });
+    R.mode = mode; DSC.res = R; msg.textContent = ''; dscRender(R);
+  } catch (e) { msg.textContent = '오류: ' + (e.message || e); } finally { DSC.running = false; }
+}
+function dscOpen(i) {
+  const R = DSC.res; if (!R || !R.rows[i] || R.rows[i].insufficient) return;
+  const r = R.rows[i], k = r.key;
+  Object.keys(BT_DIR).forEach(function (x) { delete BT_DIR[x]; });
+  if (r.mean < 0) BT_DIR[k] = -1; // 낮을수록 유리로 나온 지표는 값을 뒤집어 「점수 높음 = 유리」로 맞춘다
+  btCandCheckboxes();
+  [].slice.call(document.querySelectorAll('.btFac')).forEach(function (c) { c.checked = c.value === k; });
+  document.getElementById('btFinMode').value = R.mode === 'qttm' ? 'qttm' : 'annual'; btFinModeChange();
+  btRunFin(); const el = document.getElementById('btFinOut'); if (el && el.scrollIntoView) el.scrollIntoView();
+}
+// 정식 백테스트(A)의 방법 목록에 신규 후보 체크박스가 아직 없으면 접이식으로 추가한다.
+function btCandCheckboxes() {
+  const box = document.getElementById('btFinFactors'); if (!box || document.getElementById('btCandBox')) return;
+  box.insertAdjacentHTML('beforeend', '<details id="btCandBox" style="margin-top:6px;"><summary style="cursor:pointer; font-size:12.5px; font-weight:600;">신규 후보 지표 (발굴용 · 방향 미정)</summary>' +
+    Object.keys(BT_CANDS).map(function (k) { return '<label style="display:block; font-size:12.5px; margin:2px 0;"><input type="checkbox" class="btFac" value="' + k + '" /> ' + escHtml(BT_CANDS[k].name) + ' ' + anBadge(BT_CANDS[k].badge) + '</label>'; }).join('') + '</details>');
+}
+// ===== /신규 지표 발굴 =====
+
 
 let btUiReady = false;
 function btInitUi() {
