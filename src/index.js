@@ -2702,12 +2702,22 @@ const HTML_PAGE = `<!doctype html>
     // 밸류에이션 시뮬레이션 카드가 현재 어떤 종목 기준으로 그려졌는지(가정 입력값 리셋·재계산에 사용).
     let lastSummaryMetrics = null;
 
-    function renderSummary() {
+    // 화면 구성이 조회 때마다 달라지지 않게 하는 안전장치(아래 stepFail·guardedRender 참고)
+    function stepFail(label, e, slotId) {
+      try { console.error('[화면 그리기 오류] ' + label, e); } catch (x) { /* 무시 */ }
+      const el = slotId ? document.getElementById(slotId) : null; if (!el) return;
+      el.style.display = el.id === 'summary' ? 'block' : '';
+      el.innerHTML = '<div class="card" style="border-left:4px solid var(--danger); font-size:13px; line-height:1.6;">⚠ <b>' + escHtml(label) + '</b>을(를) 표시하는 중 오류가 났습니다: ' + escHtml((e && e.message) || String(e)) + '<br /><span style="color:var(--text-muted);">다른 부분은 정상적으로 표시됩니다. 같은 종목을 다시 조회해 보세요. 계속되면 이 문구를 알려 주세요.</span></div>';
+    }
+    function guardedRender(label, slotId, fn) { try { return fn(); } catch (e) { stepFail(label, e, slotId); } }
+    function renderSummary() { return guardedRender('요약·분석', 'summary', renderSummaryImpl); }
+    function renderSummaryImpl() {
       const priceInput = Number(document.getElementById('currentPrice').value) || null;
       const m = computeSummaryMetrics(rawRows, priceInput);
       if (!m) {
         const el0 = document.getElementById('summary');
         el0.style.display = 'block';
+        lastSummaryMetrics = null; AN_CTX = null; AN_STATE.key = null; // 이전 종목의 분석값이 남아 다른 화면에 쓰이지 않게 비운다
         el0.innerHTML = '<div class="card meta-line">연간(사업보고서) 데이터가 없어 요약을 만들 수 없습니다. 분석하기를 다시 누르거나 고급 설정에서 DART 데이터를 받아주세요.</div>';
         return;
       }
@@ -4102,6 +4112,7 @@ function matNewsMonthly(news, asof) {
 }
 function matSafeUrl(u) { const x = String(u || ''); return /^https?:[/][/]/.test(x) ? x.split('"').join('%22').split("'").join('%27').split('<').join('%3C').split(' ').join('%20') : '#'; }
 // ----- 화면 -----
+const MAT_UI = { open: false }; // 재료 점검 카드를 열어 뒀는지(종목을 바꿔도 사용자의 선택을 유지)
 const MAT_ST = { name: null, data: null, err: null, loading: false, news: null, newsErr: null, newsNoKey: false, newsLoading: false };
 function matYmdDash(d) { const s = String(d); return s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8); }
 function matSigned(v) { return v == null || !isFinite(v) ? '<span style="color:#94a3b8;">N/A</span>' : '<span style="color:' + (v >= 0 ? '#dc2626' : '#2563eb') + ';">' + (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%</span>'; }
@@ -4215,13 +4226,12 @@ async function matLoad() {
   try { sigRefresh(); } catch (e) { /* 체크리스트 갱신 실패는 무시 */ }
 }
 function matRetry() { MAT_ST.name = null; matLoad(); }
-function matOnToggle(el) { if (el && el.open) { try { matLoad(); if (typeof loadPriceSeries === 'function' && !sigPx()) loadPriceSeries(); } catch (e) { /* 무시 */ } } }
+function matOnToggle(el) { if (el) MAT_UI.open = !!el.open; if (el && el.open) { try { matLoad(); if (typeof loadPriceSeries === 'function' && !sigPx()) loadPriceSeries(); } catch (e) { /* 무시 */ } } }
 // 재료 점검 카드는 주가 화면(차트 독) 바로 아래 칸(#matSlot)에 그린다. 다시 그려도 열어 둔 상태는 유지한다.
 function matSlotRender() {
   const slot = document.getElementById('matSlot'); if (!slot) return;
-  const old = slot.querySelector('details'), was = !!(old && old.open);
   slot.innerHTML = matSectionHtml();
-  if (was) { const d = slot.querySelector('details'); if (d) d.open = true; }
+  const d = slot.querySelector('details'); if (d && MAT_UI.open) d.open = true; // 열면 ontoggle이 공시·뉴스를 불러온다
   matRefresh();
 }
 function matRefresh() { const el = document.getElementById('matBody'); if (el) el.innerHTML = matBodyHtml(); }
@@ -4962,7 +4972,8 @@ function guideOpen(id) {
       });
     }
     function fscPass(r, a) { const v = r[a.f.k]; if (!anFin(v)) return null; return a.f.op === '>=' ? v >= a.th : v <= a.th; }
-    function fscRender() {
+    function fscRender() { return guardedRender('재무 스크리닝 결과', 'fscOut', fscRenderImpl); }
+    function fscRenderImpl() {
       const out = document.getElementById('fscOut'); if (!FSC.rows) return;
       FSC.rows.forEach(function (r) { r.indTxt = indLabel(IND.map[r.stock]) || '(미확인)'; });
       const act = fscActive();
@@ -5609,6 +5620,10 @@ function btBuildMomQ(K, skip) {
 }
 
 async function btRunFin() {
+  try { await btRunFinImpl(); }
+  catch (e) { btMsg('오류: ' + (e.message || e)); stepFail('백테스트 계산', e, 'btFinOut'); }
+}
+async function btRunFinImpl() {
   if (!BT.stocks) { btMsg('먼저 「저장된 종목 불러오기」를 눌러 주세요.'); return; }
   const mode = document.getElementById('btFinMode').value;
   const G = Number(document.getElementById('btFinG').value) || 5;
@@ -6104,7 +6119,8 @@ function btInitUi() {
     keys.map((k) => '<label style="display:block; font-size:12.5px; margin:2px 0;"><input type="checkbox" class="btFac" value="' + k + '"' + (k === 'fscore' ? ' checked' : '') + ' /> ' + BT_FACTORS[k].name + ' ' + anBadge(BT_FACTORS[k].badge) + ' <span style="color:var(--text-muted); font-size:11px;">' + BT_FACTORS[k].ev + '</span></label>').join('');
 }
 
-function renderAnalysis() {
+function renderAnalysis() { return guardedRender('확장 분석', 'analysis', renderAnalysisImpl); }
+function renderAnalysisImpl() {
   const el = document.getElementById('analysis'); if (!el) return;
   const m = lastSummaryMetrics; if (!m) { el.innerHTML = ''; return; }
   const key = rawRows.length ? rawRows[0].corp_code : '';
@@ -6132,7 +6148,6 @@ function renderAnalysis() {
     anChapter('⑨', '시그널과 판단 점검', '실적과 기대감을 나눠 보고, 변화(없다가 생김·있다가 사라짐)와 내 판단 과정을 점검', '주가수익률 분해는 항등식, 시그널은 연구별 근거 수준을 표시합니다. 결론을 대신 내리지 않고 판단 과정을 기록하게 돕습니다.') + sigRenderSections(c) +
     anChapter('참고', '설명서 · 용어 · 설정', '계산식·실제 입력값·근거와 판정 기준 변경', '숫자의 출처를 확인하거나 기준선을 바꾸고 싶을 때 펼쳐 보세요.') + anRenderExplain(c) + anRenderSettings();
   anFoldApply(el);
-  try { matSlotRender(); } catch (e) { /* 재료 점검 칸 갱신 실패는 무시 */ }
   anBuildNav();
   try { sigUpdateSummary(); } catch (e) { /* 체크리스트 요약 실패는 무시 */ }
   anUpdateScenarioView();
@@ -6151,11 +6166,13 @@ function renderAnalysis() {
       try {
         const res = await fetch('/api/latest-price?corp_name=' + encodeURIComponent(corpName));
         const data = await res.json();
+        if (document.getElementById('corpName').value.trim() !== corpName) return false; // 그 사이 다른 종목으로 바뀌었으면 이 응답은 버린다(남의 종가가 들어오는 것 방지)
         if (!res.ok) throw new Error(data.error || '조회 실패');
         document.getElementById('currentPrice').value = data.close;
         noteEl.textContent = data.corp_name + ' ' + data.date + ' 종가 ' + data.close.toLocaleString() + '원을 현재 주가로 사용했습니다(직접 고쳐서 다시 계산할 수 있습니다).';
         return true;
       } catch (e) {
+        if (document.getElementById('corpName').value.trim() !== corpName) return false;
         noteEl.textContent = '현재가를 자동으로 가져오지 못했습니다(' + e.message + '). 직접 입력한 뒤 "이 가격으로 다시 계산"을 눌러주세요.';
         return false;
       }
@@ -6940,11 +6957,15 @@ async function pfuExport() {
         fillOpIncomeLoop();
       } catch (e) {
         st.textContent = '오류: ' + e.message;
+        screenData = null; // 실패했는데 이전 결과 표가 새 조건의 결과처럼 남아 있지 않게 비운다
         document.getElementById('screenRegime').textContent = '표시할 스크리닝 결과가 없습니다.';
+        ['screenCards', 'screenWrap', 'screenDesc'].forEach(function (id) { const x = document.getElementById(id); if (x) x.innerHTML = ''; });
+        const tb = document.getElementById('screenTabs'); if (tb) { tb.innerHTML = ''; tb.style.display = 'none'; }
       }
     }
 
-    function renderScreen() {
+    function renderScreen() { return guardedRender('스크리닝 결과', 'screenCards', renderScreenImpl); }
+    function renderScreenImpl() {
       if (!screenData) return;
       const meta = screenData.meta || {};
       const k = meta.kospi || {};
@@ -7368,12 +7389,27 @@ async function pfuExport() {
       });
       if (k === 'table' && chartSel.length) renderChartPanel(false);
     }
+    // 새 종목을 조회할 때 이전 종목의 화면·계산값·진행 중이던 요청 결과가 남지 않게 한꺼번에 비운다.
+    // (선호 설정인 하위 탭·차트 항목·기간 단위 등은 그대로 둔다)
+    function resetStockView() {
+      rawRows = []; lastSummaryMetrics = null; AN_CTX = null; AN_ACCMT = null; AN_STOCK = { code: '', ind: '' };
+      AN_STATE.key = null; AN_STATE.mom = null; AN_STATE.momFor = null; AN_STATE.momErr = null; AN_STATE.trend = null; AN_STATE.trendFor = null; AN_STATE.trendErr = null;
+      MAT_ST.name = null; MAT_ST.data = null; MAT_ST.err = null; MAT_ST.loading = false; MAT_ST.news = null; MAT_ST.newsErr = null; MAT_ST.newsNoKey = false; MAT_ST.newsLoading = false;
+      PRICE.name = null; PRICE.data = null; PRICE.err = null; PRICE.m50 = []; PRICE.m200 = []; PRICE.hover = null;
+      const clear = function (id, hide) { const e = document.getElementById(id); if (!e) return; e.innerHTML = ''; if (hide) e.style.display = 'none'; };
+      clear('summary', true); clear('matSlot'); clear('fiveStepWrap', true); clear('wrap'); clear('macroCorrWrap', true); clear('priceStats');
+      const note = document.getElementById('pxNote'); if (note) note.textContent = '';
+      const cv = document.getElementById('priceCanvas'); if (cv && cv.getContext) { try { cv.getContext('2d').clearRect(0, 0, cv.width, cv.height); } catch (e) { /* 무시 */ } }
+      const cs = document.getElementById('macroCorrStatus'); if (cs) cs.textContent = '';
+      macroCorrDirty = true;
+    }
     async function analyzeStock() {
       const corpName = document.getElementById('corpName').value.trim();
       const statusEl = document.getElementById('status');
       statusEl.className = '';
       if (!corpName) { statusEl.textContent = '종목명을 입력해주세요.'; return; }
       const seq = ++analyzeSeq;
+      resetStockView();
       document.getElementById('stockBody').style.display = 'none'; document.getElementById('cmpPanel').style.display = 'none'; document.getElementById('searchCard').style.display = '';
       document.getElementById('stockMeta').innerHTML = '';
       document.getElementById('currentPrice').value = '';
@@ -7398,18 +7434,19 @@ async function pfuExport() {
       document.getElementById('stockBody').style.display = '';
       { const sc = document.getElementById('searchCard'); sc.classList.add('compact'); document.getElementById('btnSearchMore').style.display = ''; document.getElementById('btnSearchMore').textContent = '▾ 더보기'; }
       setTimeout(setNavVars, 50);
-      renderStockMeta();
-      applyView();
+      guardedRender('저장된 재무데이터 안내', 'stockMeta', renderStockMeta);
+      guardedRender('재무제표 표', 'wrap', applyView);
       const stEl = document.getElementById('status');
       const stTxt = stEl.textContent || '';
       if (stTxt.indexOf('조회 중') >= 0 || stTxt.indexOf('받는 중') >= 0 || stTxt.indexOf('받아옵니다') >= 0) stEl.textContent = '';
       await fetchLatestPrice();
       if (seq != null && seq !== analyzeSeq) return;
       pushRecent(document.getElementById('corpName').value.trim());
-      loadPriceSeries();
+      guardedRender('일별 주가', 'priceStats', loadPriceSeries);
       loadDbCompanies(true).catch(() => {}); // 새로 저장된 종목이 있을 수 있어 목록 갱신(저장 종목 패널·배지)
       renderSummary();
-      renderFiveStep();
+      guardedRender('ROE 5단계 분해', 'fiveStepWrap', renderFiveStep);
+      guardedRender('재료 점검', 'matSlot', matSlotRender); // 재료 점검은 연간 재무가 없어도 항상 같은 자리에 둔다
       macroCorrDirty = true;
       document.getElementById('macroCorrFor').textContent = '대상 종목: ' + document.getElementById('corpName').value.trim();
       setSubTab(subTab);
