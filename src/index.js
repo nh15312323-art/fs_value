@@ -769,7 +769,7 @@ const HTML_PAGE = `<!doctype html>
       <div style="font-size:12.5px; line-height:1.5;">ROIC·성장·FCF·가치 조건을 직접 켜서 거릅니다. 합산 점수는 만들지 않고, 조건마다 몇 종목이 남는지와 자료가 없어 빠진 수를 보여줍니다. 아래 기준값은 <b>참고용 출발값</b>이며 이 값으로 초과수익이 난다는 검증은 하지 않았습니다(백테스트 탭에서 방법별로 따로 확인).</div>
       <div class="row" style="margin-top:8px;">
         <button class="primary" onclick="fscLoad()">저장된 종목 불러오기·계산</button>
-        <select id="fscBasis" onchange="fscRun()"><option value="ttm">최신값: TTM 우선(분기 포함)</option><option value="annual">최신값: 사업보고서(연간)만</option></select>
+        <select id="fscInd" onchange="fscRender()"><option value="">업종: 전체</option></select> <select id="fscBasis" onchange="fscRun()"><option value="ttm">최신값: TTM 우선(분기 포함)</option><option value="annual">최신값: 사업보고서(연간)만</option></select>
       </div>
       <div id="fscMsg" class="meta-line"></div>
     </div>
@@ -1784,6 +1784,7 @@ const HTML_PAGE = `<!doctype html>
     })();
 
     let rawRows = [];      // DB/DART에서 받아온, 가공 안 된 원본 기간별 데이터
+    let AN_STOCK = { code: '', ind: '' }; // 현재 종목의 종목코드·업종코드(업종은 DART 기업개황에서 받아 저장한 값)
     let AN_ACCMT = null;   // 현재 종목의 결산월(모르면 null). 12월이 아니면 날짜 기반 값이 부정확하다는 경고를 띄운다.
     let currentRows = [];  // 현재 화면에 표시 중인 데이터 (분기별 변환 or 연간 그대로)
     let viewMode = 'quarterly';
@@ -4510,6 +4511,49 @@ function anChapter(no, title, ask, lens) {
     '<div style="font-size:12.5px; margin-top:2px;">' + ask + '</div>' +
     '<details style="margin-top:2px;"><summary style="cursor:pointer; font-size:11.5px; color:var(--text-muted);">이 질문의 근거</summary><div style="font-size:11.5px; color:var(--text-muted); margin-top:2px; line-height:1.5;">' + lens + '</div></details></div>';
 }
+// ===== 업종 (DART 기업개황의 업종코드 = 한국표준산업분류 KSIC) =====
+// 코드는 DART 값을 그대로 저장하고, 화면에는 앞 2자리(중분류)로 묶어 이름을 붙인다. 이름표는 KSIC 중분류를 요약한 것이며 거래소·네이버의 업종 분류와는 다르다.
+// 표에 없는 코드는 "KSIC 코드"로 그대로 보여 준다(틀린 이름을 붙이지 않는다).
+const IND_NAMES = { '01': '농업', '02': '임업', '03': '어업', '05': '석탄·원유·가스 광업', '06': '금속 광업', '07': '비금속광물 광업', '08': '광업 지원', '10': '식료품', '11': '음료', '12': '담배', '13': '섬유제품', '14': '의복·모피', '15': '가죽·가방·신발', '16': '목재·나무제품', '17': '펄프·종이', '18': '인쇄·기록매체', '19': '코크스·석유정제', '20': '화학물질·화학제품', '21': '의약품', '22': '고무·플라스틱', '23': '비금속 광물제품', '24': '1차 금속', '25': '금속가공제품', '26': '전자부품·컴퓨터·통신장비', '27': '의료·정밀·광학기기', '28': '전기장비', '29': '기타 기계·장비', '30': '자동차·트레일러', '31': '기타 운송장비', '32': '가구', '33': '기타 제품', '34': '산업용 기계 수리', '35': '전기·가스·증기 공급', '36': '수도', '37': '하수·폐수 처리', '38': '폐기물·원료재생', '39': '환경 정화', '41': '종합 건설', '42': '전문직별 공사', '45': '자동차 판매·수리', '46': '도매·상품중개', '47': '소매', '49': '육상·파이프라인 운송', '50': '수상 운송', '51': '항공 운송', '52': '창고·운송 서비스', '55': '숙박', '56': '음식점·주점', '58': '출판', '59': '영상·오디오 제작·배급', '60': '방송', '61': '통신', '62': '컴퓨터 프로그래밍·SI', '63': '정보서비스', '64': '금융', '65': '보험·연금', '66': '금융·보험 관련 서비스', '68': '부동산', '70': '연구개발', '71': '전문 서비스', '72': '건축기술·엔지니어링', '73': '기타 과학기술 서비스', '74': '사업시설 관리·조경', '75': '사업지원 서비스', '76': '임대', '84': '공공행정', '85': '교육', '86': '보건', '87': '사회복지', '90': '창작·예술·여가', '91': '스포츠·오락', '94': '협회·단체', '95': '개인·소비용품 수리', '96': '기타 개인 서비스' };
+const IND = { map: {}, tried: {}, busy: false };
+function indGroup(code) { return code ? String(code).replace(/[^0-9]/g, '').slice(0, 2) : ''; }
+function indLabel(code) { const g = indGroup(code); if (!g) return ''; return IND_NAMES[g] || ('KSIC ' + String(code)); }
+function indPaint() {
+  Array.prototype.forEach.call(document.querySelectorAll('[data-ind]'), function (e) { const c = e.getAttribute('data-ind'); const l = indLabel(IND.map[c]); e.textContent = l ? ' · ' + l : ''; });
+}
+// 저장된 업종을 읽는다(80개씩). 결과가 없는 코드는 빈 문자열로 기억해 다시 묻지 않는다.
+async function indLookup(codes) {
+  const need = codes.filter(function (c) { return c && IND.map[c] === undefined; });
+  for (let i = 0; i < need.length; i += 80) {
+    const part = need.slice(i, i + 80);
+    try {
+      const res = await fetch('/api/industry/lookup?codes=' + encodeURIComponent(part.join(','))); const d = await res.json(); if (!res.ok) break;
+      part.forEach(function (c) { IND.map[c] = (d.map && d.map[c]) || ''; });
+    } catch (e) { break; }
+  }
+}
+// 저장된 업종이 없는 종목을 DART에서 3개씩 받아 저장한다(종목당 1회뿐). 실패한 종목은 이번 접속에서 다시 시도하지 않는다.
+async function indFill(codes, onStep) {
+  const miss = codes.filter(function (c) { return c && !IND.map[c] && !IND.tried[c]; });
+  for (let i = 0; i < miss.length; i += 3) {
+    const part = miss.slice(i, i + 3); part.forEach(function (c) { IND.tried[c] = 1; });
+    try {
+      const res = await fetch('/api/industry/fill', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ codes: part }) });
+      const d = await res.json(); if (!res.ok) break;
+      Object.keys(d.saved || {}).forEach(function (c) { IND.map[c] = d.saved[c]; });
+    } catch (e) { break; }
+    if (onStep) onStep(Math.min(i + 3, miss.length), miss.length);
+  }
+}
+async function indEnsure(codes, onStep) {
+  await indLookup(codes); indPaint();
+  if (IND.busy) return; IND.busy = true;
+  try { await indFill(codes, function (a, b) { indPaint(); if (onStep) onStep(a, b); }); } finally { IND.busy = false; }
+  indPaint();
+}
+function indEnsureScreen() { const codes = []; Array.prototype.forEach.call(document.querySelectorAll('[data-ind]'), function (e) { const c = e.getAttribute('data-ind'); if (codes.indexOf(c) < 0) codes.push(c); }); if (codes.length) indEnsure(codes.slice(0, 60)); }
+// ===== /업종 =====
+
     // ===== 재무 스크리닝 (재무가 저장된 종목 안에서 ROIC·성장·FCF·가치로 거르기) =====
     // 자료: 저장된 재무(financial_raw) + 시장 DB의 최신 종가. 점수를 합산하지 않고 조건별 통과 수와 지표를 그대로 보여준다.
     // 시세가 없는 종목은 PER·PBR·FCF수익률이 N/A이며, 그 조건을 켜면 제외된다(대체값을 만들지 않는다).
@@ -4593,7 +4637,7 @@ function anChapter(no, title, ask, lens) {
           const d = await res.json(); if (!res.ok) throw new Error(d.error || '불러오기 실패');
           (d.rows || []).forEach(function (r) { (by[r.corp_code] = by[r.corp_code] || []).push(r); });
         }
-        FSC.stocks = comps.map(function (c) { return { code: c.corp_code, name: c.corp_name, stock: c.stock_code || '', accMt: c.acc_mt, rows: by[c.corp_code] || [] }; }).filter(function (s) { return s.rows.length; });
+        FSC.stocks = comps.map(function (c) { return { code: c.corp_code, name: c.corp_name, stock: c.stock_code || '', accMt: c.acc_mt, ind: c.ind || '', rows: by[c.corp_code] || [] }; }).filter(function (s) { return s.rows.length; });
         fscMsg('최신 시세를 확인하는 중...');
         const px = {}; FSC.priceDate = null;
         const codes = FSC.stocks.map(function (s) { return s.stock; }).filter(Boolean);
@@ -4603,6 +4647,10 @@ function anChapter(no, title, ask, lens) {
           if (d.date) FSC.priceDate = d.date; Object.keys(d.prices || {}).forEach(function (k) { px[k] = d.prices[k]; });
         }
         FSC.px = px; fscRun(true);
+        FSC.stocks.forEach(function (s) { if (s.ind) IND.map[s.stock] = s.ind; });
+        fscIndOptions(); fscRender();
+        const miss = FSC.stocks.map(function (s) { return s.stock; }).filter(function (c) { return c && !IND.map[c]; });
+        if (miss.length) { fscMsg('업종을 받는 중... 0 / ' + miss.length + ' (종목당 1회만 받습니다)'); await indFill(miss, function (a, b) { fscMsg('업종을 받는 중... ' + a + ' / ' + b); fscIndOptions(); fscRender(); }); fscIndOptions(); fscRender(); }
       } catch (e) { fscMsg('오류: ' + (e.message || e)); } finally { FSC.loading = false; }
     }
     function fscRun(recompute) {
@@ -4623,22 +4671,25 @@ function anChapter(no, title, ask, lens) {
     function fscPass(r, a) { const v = r[a.f.k]; if (!anFin(v)) return null; return a.f.op === '>=' ? v >= a.th : v <= a.th; }
     function fscRender() {
       const out = document.getElementById('fscOut'); if (!FSC.rows) return;
+      FSC.rows.forEach(function (r) { r.indTxt = indLabel(IND.map[r.stock]) || '(미확인)'; });
       const act = fscActive();
       // 필터를 하나씩 순서대로 적용하며 남는 종목 수와 자료 없음으로 빠진 수를 센다.
       let cur = FSC.rows.slice(); const funnel = [{ t: '재무가 저장된 종목', n: cur.length, miss: 0 }];
+      const indSel = document.getElementById('fscInd') ? document.getElementById('fscInd').value : '';
+      if (indSel) { cur = cur.filter(function (r) { const g = indGroup(IND.map[r.stock]); return indSel === 'none' ? !g : g === indSel; }); funnel.push({ t: '업종: ' + (indSel === 'none' ? '미확인' : (IND_NAMES[indSel] || indSel)), n: cur.length, miss: 0 }); }
       act.forEach(function (a) {
         let miss = 0; const next = [];
         cur.forEach(function (r) { const p = fscPass(r, a); if (p === null) miss++; else if (p) next.push(r); });
         funnel.push({ t: a.f.label + ' ' + a.raw + a.f.unit, n: next.length, miss: miss }); cur = next;
       });
       const key = FSC.sortKey, dir = FSC.sortDir;
-      cur.sort(function (x, y) { const a = x[key], b = y[key]; const fa = anFin(a), fb = anFin(b); if (!fa && !fb) return 0; if (!fa) return 1; if (!fb) return -1; return dir * (a - b) || (x.name < y.name ? -1 : 1); });
+      cur.sort(function (x, y) { const a = x[key], b = y[key]; if (typeof a === 'string' || typeof b === 'string') { const c = String(a).localeCompare(String(b), 'ko'); return c ? dir * c : (x.name < y.name ? -1 : 1); } const fa = anFin(a), fb = anFin(b); if (!fa && !fb) return 0; if (!fa) return 1; if (!fb) return -1; return dir * (a - b) || (x.name < y.name ? -1 : 1); });
       FSC.result = cur;
       let h = '<div class="meta-line">시세 기준일 ' + (FSC.priceDate ? fmtYmd(FSC.priceDate) : '없음') + ' · 시세가 있는 종목 ' + FSC.nPrice + ' / ' + FSC.rows.length + '개 (없는 종목은 PER·PBR·FCF수익률이 N/A)</div>';
       h += '<div class="tscroll"><table class="an-tbl"><thead><tr><th class="an-first">단계</th><th>남은 종목</th><th>자료 없어 제외</th></tr></thead><tbody>' +
         funnel.map(function (s) { return '<tr><td class="an-first">' + s.t + '</td><td>' + s.n + '</td><td>' + (s.miss || '') + '</td></tr>'; }).join('') + '</tbody></table></div>';
       if (!act.length) h += '<div class="meta-line">조건을 하나도 켜지 않아 저장된 종목 전체를 보여줍니다.</div>';
-      const cols = [['name', '종목', null], ['basisTxt', '최신 기준', null], ['roic3', 'ROIC 3Y평균', 'pct'], ['roicL', 'ROIC 최신', 'pct'], ['opm', '영업이익률', 'pct'], ['revG3', '매출 3Y CAGR', 'pct'], ['ebitG3', '영업이익 3Y CAGR', 'pct'],
+      const cols = [['name', '종목', null], ['indTxt', '업종', null], ['basisTxt', '최신 기준', null], ['roic3', 'ROIC 3Y평균', 'pct'], ['roicL', 'ROIC 최신', 'pct'], ['opm', '영업이익률', 'pct'], ['revG3', '매출 3Y CAGR', 'pct'], ['ebitG3', '영업이익 3Y CAGR', 'pct'],
         ['fcfm', 'FCF 마진', 'pct'], ['fcfni', 'FCF/순이익', 'x2'], ['fcfPos', 'FCF 흑자(5년)', 'num0'], ['fscore', 'F-Score', 'num0'], ['fcfy', 'FCF 수익률', 'pct'], ['per', 'PER', 'x1'], ['pbr', 'PBR', 'x2']];
       h += '<div class="row" style="margin:8px 0;"><span class="meta-line">조건을 통과한 종목 <b>' + cur.length + '</b>개 · 열 제목을 누르면 정렬 · 종목을 누르면 아래에 모든 항목(연도별+TTM)</span> <button onclick="fscCsv()">CSV 저장</button></div>';
       h += '<div class="tscroll" style="max-height:70vh;"><table class="an-tbl" id="fscTbl"><thead><tr>' + cols.map(function (c) {
@@ -4647,6 +4698,7 @@ function anChapter(no, title, ask, lens) {
         h += '<tr data-code="' + r.code + '" style="cursor:pointer;" onclick="fscToggle(\\'' + r.code + '\\')">' + cols.map(function (c, i) {
           if (i === 0) return '<td class="an-first">' + escHtml(r.name) + (r.accMt && r.accMt !== 12 ? ' <span title="12월 결산이 아님">⚠</span>' : '') + '</td>';
           if (c[0] === 'basisTxt') return '<td>' + r.basisTxt + '</td>';
+          if (c[0] === 'indTxt') return '<td title="한국표준산업분류(KSIC) 중분류 기준. 거래소·네이버 업종과 다릅니다">' + escHtml(r.indTxt) + '</td>';
           return '<td>' + fscFmt(c[2], r[c[0]]) + '</td>'; }).join('') + '</tr>';
         if (FSC.open === r.code) h += '<tr><td colspan="' + cols.length + '" style="background:var(--card-bg, #fff); padding:8px 4px;">' + fscDetailHtml(r) + '</td></tr>';
       });
@@ -4655,7 +4707,15 @@ function anChapter(no, title, ask, lens) {
       out.innerHTML = h;
       fscMsg('');
     }
-    function fscSort(k) { if (FSC.sortKey === k) FSC.sortDir = -FSC.sortDir; else { FSC.sortKey = k; FSC.sortDir = (k === 'per' || k === 'pbr' || k === 'name') ? 1 : -1; } fscRender(); }
+    function fscIndOptions() {
+      const sel = document.getElementById('fscInd'); if (!sel || !FSC.rows) return;
+      const cur = sel.value, cnt = {};
+      FSC.rows.forEach(function (r) { if (r.stock && IND.map[r.stock]) IND.map[r.stock] = IND.map[r.stock]; const g = indGroup(IND.map[r.stock]); if (g) cnt[g] = (cnt[g] || 0) + 1; });
+      const un = FSC.rows.filter(function (r) { return !indGroup(IND.map[r.stock]); }).length;
+      sel.innerHTML = '<option value="">업종: 전체</option>' + Object.keys(cnt).sort(function (a, b) { return cnt[b] - cnt[a] || (a < b ? -1 : 1); }).map(function (g) { return '<option value="' + g + '">' + escHtml(IND_NAMES[g] || ('KSIC ' + g)) + ' (' + cnt[g] + ')</option>'; }).join('') + (un ? '<option value="none">업종 미확인 (' + un + ')</option>' : '');
+      sel.value = cur && Array.prototype.some.call(sel.options, function (o) { return o.value === cur; }) ? cur : '';
+    }
+    function fscSort(k) { if (FSC.sortKey === k) FSC.sortDir = -FSC.sortDir; else { FSC.sortKey = k; FSC.sortDir = (k === 'per' || k === 'pbr' || k === 'name' || k === 'indTxt') ? 1 : -1; } fscRender(); }
     function fscToggle(code) { FSC.open = FSC.open === code ? null : code; fscRender(); }
     const FSC_DETAIL = [
       ['revenue', '매출액', 'eok'], ['ebit', '영업이익', 'eok'], ['ni', '순이익', 'eok'], ['opm', '영업이익률', 'pct'], ['gm', '매출총이익률', 'pct'],
@@ -4667,7 +4727,7 @@ function anChapter(no, title, ask, lens) {
       const cols = r.list.slice(-8).concat(r.ttm ? [r.ttm] : []);
       const th = function (d) { return d.isTTM ? '<th style="background:#b45309;" title="최근 4개 분기 합산(손익·현금흐름), 재무상태표는 해당 분기말">' + d.label + '</th>' : '<th>' + d.year + '</th>'; };
       const body = FSC_DETAIL.map(function (df) { return '<tr><td class="an-first">' + df[1] + '</td>' + cols.map(function (d) { return '<td' + (d.isTTM ? ' style="background:#fffbeb;"' : '') + '>' + anFmt(df[2], d[df[0]]) + '</td>'; }).join('') + '</tr>'; }).join('');
-      return '<div class="row" style="margin-bottom:6px;"><b>' + escHtml(r.name) + '</b> <span class="meta-line">' + r.stock + ' · 최신 기준 ' + r.basisTxt + (r.price ? ' · 종가 ' + anWon(r.price) : ' · 시세 없음') + '</span> ' +
+      return '<div class="row" style="margin-bottom:6px;"><b>' + escHtml(r.name) + '</b> <span class="meta-line">' + r.stock + ' · 업종 ' + escHtml(r.indTxt) + ' · 최신 기준 ' + r.basisTxt + (r.price ? ' · 종가 ' + anWon(r.price) : ' · 시세 없음') + '</span> ' +
         '<button class="primary" onclick="fscGoAnalyze(\\'' + r.code + '\\')">종목분석 ›</button></div>' +
         '<div class="tscroll" style="max-height:55vh;"><table class="an-tbl"><thead><tr><th class="an-first">항목 (금액 단위 억원)</th>' + cols.map(th).join('') + '</tr></thead><tbody>' + body + '</tbody></table></div>' +
         '<div class="meta-line">연결/별도 기준은 저장된 값 그대로입니다. TTM 열은 사업보고서보다 새로운 분기가 저장돼 있고 4개 분기가 모두 있을 때만 나옵니다.</div>';
@@ -4679,7 +4739,7 @@ function anChapter(no, title, ask, lens) {
     }
     function fscCsv() {
       if (!FSC.result) return;
-      const cols = ['name', 'stock', 'basisTxt', 'roic3', 'roicL', 'opm', 'revG3', 'ebitG3', 'fcfm', 'fcfni', 'fcfPos', 'fscore', 'fcfy', 'per', 'pbr'];
+      const cols = ['name', 'stock', 'indTxt', 'basisTxt', 'roic3', 'roicL', 'opm', 'revG3', 'ebitG3', 'fcfm', 'fcfni', 'fcfPos', 'fscore', 'fcfy', 'per', 'pbr'];
       const lines = [cols.join(',')];
       FSC.result.forEach(function (r) { lines.push(cols.map(function (k) { const v = r[k]; return '"' + (anFin(v) ? String(Math.round(v * 10000) / 10000) : v == null ? '' : String(v).split('"').join('""')) + '"'; }).join(',')); });
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\\n')], { type: 'text/csv;charset=utf-8' })); a.download = 'fin_screening.csv'; a.click();
@@ -6639,7 +6699,7 @@ async function pfuExport() {
         const hot = r.hot ? ' <span class="sc-warn" title="최근 1개월 수익률이 후보 중 상위 5%: 단기 과열·반전 위험">⚠</span>' : '';
         const comp = newFmt ? sCell(r.rw == null ? 'N/A' : (r.rw * 100).toFixed(1), kc('rw')) : ret(r.rw, 'rw');
         return '<tr><td class="f f1">' + (i + 1) + '</td>' +
-          '<td class="f f2"><a href="javascript:void(0)" onclick="goAnalyzeCode(&quot;' + r.stock_code + '&quot;)" title="클릭하면 종목분석으로 이동" style="color:var(--primary-dark); font-weight:700; text-decoration:none;">' + escHtml(r.corp_name) + '</a>' + hot + '<br /><span style="color:var(--text-muted); font-size:11px;">' + r.stock_code + '</span>' + (r.corp_name !== r.stock_code ? '<div class="sc-ctl"><label class="sc-fin-s" title="재무데이터 받기 선택(최대 20개)"><input type="checkbox" data-finsel="' + escHtml(r.corp_name) + '"' + (finSel.indexOf(r.corp_name) >= 0 ? ' checked' : '') + ' /><span>재무</span></label><button class="sc-cmp-s" onclick="goAnalyzeCode(&quot;' + r.stock_code + '&quot;)" title="종목분석으로 이동">분석 ›</button><button class="sc-cmp-s" data-cmp="' + escHtml(r.corp_name) + '" title="비교에 담기">⚖</button></div>' : '') + '<div class="mini"><b>' + sN(r.c0) + '원</b><br />시총 ' + sN(r.mcapEok) + '억 · 대금 ' + sN(r.tvEok) + '억<br />영업이익 ' + (r.op ? sN(r.op.v) + '억' : (opFillRunning ? '조회 중…' : 'N/A')) + '</div></td>' +
+          '<td class="f f2"><a href="javascript:void(0)" onclick="goAnalyzeCode(&quot;' + r.stock_code + '&quot;)" title="클릭하면 종목분석으로 이동" style="color:var(--primary-dark); font-weight:700; text-decoration:none;">' + escHtml(r.corp_name) + '</a>' + hot + '<br /><span style="color:var(--text-muted); font-size:11px;">' + r.stock_code + '</span><span class="ind" data-ind="' + r.stock_code + '" style="color:var(--text-muted); font-size:11px;"></span>' + (r.corp_name !== r.stock_code ? '<div class="sc-ctl"><label class="sc-fin-s" title="재무데이터 받기 선택(최대 20개)"><input type="checkbox" data-finsel="' + escHtml(r.corp_name) + '"' + (finSel.indexOf(r.corp_name) >= 0 ? ' checked' : '') + ' /><span>재무</span></label><button class="sc-cmp-s" onclick="goAnalyzeCode(&quot;' + r.stock_code + '&quot;)" title="종목분석으로 이동">분석 ›</button><button class="sc-cmp-s" data-cmp="' + escHtml(r.corp_name) + '" title="비교에 담기">⚖</button></div>' : '') + '<div class="mini"><b>' + sN(r.c0) + '원</b><br />시총 ' + sN(r.mcapEok) + '억 · 대금 ' + sN(r.tvEok) + '억<br />영업이익 ' + (r.op ? sN(r.op.v) + '억' : (opFillRunning ? '조회 중…' : 'N/A')) + '</div></td>' +
           '<td class="f f3">' + sN(r.c0) + '</td><td class="f f4">' + sN(r.mcapEok) + '</td><td class="f f5">' + sN(r.tvEok) + '</td>' + opCell +
           ret(r.r21, 'r21') + ret(r.r20, 'r20') + ret(r.r60, 'r60') + ret(r.r120, 'r120') + comp + ret(r.m16, 'm16') + rs(r.rs1, 'rs1') + rs(r.rs3, 'rs3') + rs(r.rs6, 'rs6') + sCell(r.z10 == null ? 'N/A' : sX(r.z10, 1), kc('z10')) + sCell(r.z20 == null ? 'N/A' : sX(r.z20, 1), kc('z20')) + extraCells(r) +
           sCell((overlap[r.stock_code] || 0) + '/' + SCREEN_LISTS.filter((L) => !L.attn).length, overlap[r.stock_code] >= 4 ? 'sc-good' : '') + '</tr>';
@@ -6656,7 +6716,7 @@ async function pfuExport() {
         const canCmp = r.corp_name !== r.stock_code;
         const op = r.op ? sN(r.op.v) + '억' + (r.op.year ? ' (' + r.op.year + ')' : '') : (opFillRunning ? '조회 중…' : 'N/A');
         const nSel = SCREEN_LISTS.filter(function (L) { return !L.attn; }).length;
-        return '<div class="sc-card"><div class="sc-h"><span class="sc-rk">' + (i + 1) + '</span><div><span class="sc-nm" onclick="goAnalyzeCode(&quot;' + r.stock_code + '&quot;)">' + escHtml(r.corp_name) + '</span>' + (r.hot ? ' <span class="sc-warn" title="최근 1개월 수익률 상위 5%: 단기 과열·반전 위험">⚠</span>' : '') + '<div class="sc-cd">' + escHtml(r.stock_code) + ' · 중복 ' + (overlap[r.stock_code] || 0) + '/' + nSel + '</div></div>' +
+        return '<div class="sc-card"><div class="sc-h"><span class="sc-rk">' + (i + 1) + '</span><div><span class="sc-nm" onclick="goAnalyzeCode(&quot;' + r.stock_code + '&quot;)">' + escHtml(r.corp_name) + '</span>' + (r.hot ? ' <span class="sc-warn" title="최근 1개월 수익률 상위 5%: 단기 과열·반전 위험">⚠</span>' : '') + '<div class="sc-cd">' + escHtml(r.stock_code) + '<span class="ind" data-ind="' + escHtml(r.stock_code) + '"></span> · 중복 ' + (overlap[r.stock_code] || 0) + '/' + nSel + '</div></div>' +
           '<div class="sc-big"><b>' + keyTxt(r) + '</b><small>' + (curL ? escHtml(curL.label.replace(/\(.*\)/, '')) : '') + '</small></div></div>' +
           '<div class="sc-grid"><div><small>1개월</small>' + pc(r.r21).replace('<div', '<span').replace('</div>', '</span>') + '</div><div><small>20일</small>' + pc(r.r20).replace('<div', '<span').replace('</div>', '</span>') + '</div><div><small>60일</small>' + pc(r.r60).replace('<div', '<span').replace('</div>', '</span>') + '</div><div><small>120일</small>' + pc(r.r120).replace('<div', '<span').replace('</div>', '</span>') + '</div></div>' +
           '<div class="sc-sub">현재가 ' + sN(r.c0) + '원 · 시총 ' + sN(r.mcapEok) + '억 · 거래대금(20일평균) ' + sN(r.tvEok) + '억<br />영업이익 ' + op + '</div>' +
@@ -6664,7 +6724,7 @@ async function pfuExport() {
           '<div class="sc-act"><button class="primary" onclick="goAnalyzeCode(&quot;' + r.stock_code + '&quot;)">분석 →</button>' + (canCmp ? '<button class="sc-cmp" data-cmp="' + escHtml(r.corp_name) + '">⚖ 비교 담기</button><label class="sc-fin"><input type="checkbox" data-finsel="' + escHtml(r.corp_name) + '"' + (finSel.indexOf(r.corp_name) >= 0 ? ' checked' : '') + ' />재무 받기</label>' : '') + '</div></div>';
       }).join('');
       document.getElementById('screenCards').innerHTML = cards || '<div class="meta-line">표시할 종목이 없습니다.</div>';
-      applyScrView(); cmpTrayRender();
+      applyScrView(); cmpTrayRender(); indPaint(); indEnsureScreen();
     }
 
     // 내가 고른 종목(최대 FIN_SEL_MAX개)의 재무데이터를 서버 대기열에 등록한다(서버가 1분에 약 1개 기간씩 DART에서 받아 저장).
@@ -7014,6 +7074,7 @@ async function pfuExport() {
       if (seq !== analyzeSeq) return;
       rawRows = data.rows;
       AN_ACCMT = data.acc_mt != null ? data.acc_mt : null;
+      AN_STOCK = { code: data.stock_code || '', ind: data.induty_code || '' }; if (AN_STOCK.code && AN_STOCK.ind) IND.map[AN_STOCK.code] = AN_STOCK.ind;
       if (rawRows.filter(isUsable).length === 0) {
         statusEl.textContent = '"' + data.corp_name + '"은(는) 저장된 재무데이터가 없어 DART에서 새로 받아옵니다(약 1~2분, 화면을 켜두세요).';
         await fetchAndSave();
@@ -7048,7 +7109,17 @@ async function pfuExport() {
       if (!usable.length) { el.innerHTML = ''; return; }
       const first = usable[0], last = usable[usable.length - 1];
       el.innerHTML = '저장된 재무데이터: <b>' + escHtml(first.period_label) + ' ~ ' + escHtml(last.period_label) + '</b> (' + usable.length + '개 기간) ' +
-        '<button onclick="updateLatest()" style="padding:4px 10px; font-size:12.5px;" title="최근 2년 치를 DART에서 다시 받아 최신 공시를 반영합니다(약 10~20초)">최신 공시 업데이트</button>';
+        '<button onclick="updateLatest()" style="padding:4px 10px; font-size:12.5px;" title="최근 2년 치를 DART에서 다시 받아 최신 공시를 반영합니다(약 10~20초)">최신 공시 업데이트</button>' +
+        '<div id="anIndMeta" style="margin-top:3px;"></div>';
+      anIndMeta();
+    }
+    function anIndMeta() {
+      const el = document.getElementById('anIndMeta'); if (!el) return;
+      const code = AN_STOCK.code, ind = (code && IND.map[code]) || AN_STOCK.ind;
+      if (ind) { el.innerHTML = '업종: <b>' + escHtml(indLabel(ind)) + '</b> <span style="color:var(--text-muted);" title="DART 기업개황의 업종코드(한국표준산업분류). 거래소·네이버 업종과 다릅니다">(KSIC ' + escHtml(ind) + ')</span>'; return; }
+      if (!code) { el.textContent = '업종: 종목코드가 없어 확인할 수 없습니다'; return; }
+      el.textContent = '업종: 확인 중...';
+      indEnsure([code]).then(function () { const v = IND.map[code]; if (v) AN_STOCK.ind = v; const e2 = document.getElementById('anIndMeta'); if (!e2) return; if (v) anIndMeta(); else e2.textContent = '업종: 확인하지 못했습니다(DART 응답에 업종코드 없음)'; });
     }
     async function updateLatest() {
       const usable = rawRows.filter(isUsable);
@@ -9967,10 +10038,10 @@ async function handleRequest(request, env) {
 
     if (pathname === "/api/db/companies") {
       // financial_raw의 PK 인덱스(corp_code, bsns_year, reprt_code)만으로 집계되는 쿼리라 테이블 본문을 읽지 않는다.
-      await ensureFiscalTable(env.DB);
+      await ensureFiscalTable(env.DB); await ensureIndustryTable(env.DB);
       const { results } = await env.DB.prepare(
-        "SELECT f.corp_code AS corp_code, m.corp_name AS corp_name, m.stock_code AS stock_code, x.acc_mt AS acc_mt, COUNT(*) AS n, MIN(f.bsns_year) AS first_year, MAX(f.bsns_year) AS last_year " +
-        "FROM financial_raw f LEFT JOIN corp_master m ON m.corp_code = f.corp_code LEFT JOIN corp_fiscal x ON x.corp_code = f.corp_code GROUP BY f.corp_code ORDER BY m.corp_name"
+        "SELECT f.corp_code AS corp_code, m.corp_name AS corp_name, m.stock_code AS stock_code, x.acc_mt AS acc_mt, i.induty_code AS ind, COUNT(*) AS n, MIN(f.bsns_year) AS first_year, MAX(f.bsns_year) AS last_year " +
+        "FROM financial_raw f LEFT JOIN corp_master m ON m.corp_code = f.corp_code LEFT JOIN corp_fiscal x ON x.corp_code = f.corp_code LEFT JOIN corp_industry i ON i.corp_code = f.corp_code GROUP BY f.corp_code ORDER BY m.corp_name"
       ).all();
       const companies = results.filter((r) => r.corp_name);
       return new Response(JSON.stringify({ companies }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "private, max-age=30" } });
@@ -9978,7 +10049,7 @@ async function handleRequest(request, env) {
 
     if (pathname === "/api/financial-history-db") {
       const corpName = searchParams.get("corp_name");
-      const corpRow = await env.DB.prepare("SELECT corp_code, corp_name FROM corp_master WHERE corp_name = ?").bind(corpName).first();
+      const corpRow = await env.DB.prepare("SELECT corp_code, corp_name, stock_code FROM corp_master WHERE corp_name = ?").bind(corpName).first();
       if (!corpRow) return Response.json({ error: `'${corpName}' 종목을 corp_master에서 찾을 수 없습니다.` }, { status: 404 });
 
       const { results } = await env.DB
@@ -9987,7 +10058,8 @@ async function handleRequest(request, env) {
         .all();
 
       let accMt = null; try { accMt = await getAccMt(env.DB, corpRow.corp_code); } catch (e) { /* 표시용이라 실패해도 진행 */ }
-      return Response.json({ corp_name: corpRow.corp_name, corp_code: corpRow.corp_code, acc_mt: accMt, rows: results });
+      let indCode = null; try { await ensureIndustryTable(env.DB); const ir = await env.DB.prepare("SELECT induty_code FROM corp_industry WHERE corp_code = ?").bind(corpRow.corp_code).first(); indCode = ir ? ir.induty_code : null; } catch (e) { /* 표시용이라 실패해도 진행 */ }
+      return Response.json({ corp_name: corpRow.corp_name, corp_code: corpRow.corp_code, stock_code: corpRow.stock_code || null, induty_code: indCode, acc_mt: accMt, rows: results });
     }
 
     if (pathname === "/api/fiscal/refresh") {
@@ -10116,6 +10188,17 @@ async function handleRequest(request, env) {
 
     // 데이터 관리 화면의 현황판: 가벼운 집계만(각 쿼리는 PK 인덱스로 처리되는 작은 표).
     // 화면 맨 위 "데이터 기준일" 줄용 아주 가벼운 조회: 기본키 앞 열의 MAX 두 개만 읽는다(행 몇 건).
+    if (pathname === "/api/industry/lookup") {
+      const codes = (searchParams.get("codes") || "").split(",").map((x) => x.trim()).filter((x) => /^[0-9A-Za-z]{6}$/.test(x)).slice(0, 80);
+      return new Response(JSON.stringify({ map: await industryLookup(env, codes) }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "private, max-age=60" } });
+    }
+    if (pathname === "/api/industry/fill" && request.method === "POST") {
+      let body = {}; try { body = await request.json(); } catch (e) { body = {}; }
+      const codes = (Array.isArray(body.codes) ? body.codes : []).map((x) => String(x).trim()).filter((x) => /^[0-9A-Za-z]{6}$/.test(x)).slice(0, 3);
+      if (!codes.length) return Response.json({ saved: {}, failed: {} });
+      if (!env.DART_PROXY_URL) return Response.json({ error: "DART 프록시 주소(DART_PROXY_URL)가 설정되어 있지 않습니다." }, { status: 500 });
+      return Response.json(await industryFill(env, codes));
+    }
     if (pathname === "/api/fin/auto-status") {
       await ensureFinAutoTable(env.DB);
       const [lg, q] = await Promise.all([
@@ -11093,6 +11176,50 @@ async function runDailyCatchUp(env, hourUtc) {
   return log;
 }
 // ===== /일일 갱신 보완 =====
+
+// ===== 업종 저장 (DART 기업개황 induty_code) =====
+let industryReady = false;
+async function ensureIndustryTable(db) {
+  if (industryReady) return;
+  await db.prepare("CREATE TABLE IF NOT EXISTS corp_industry (corp_code TEXT PRIMARY KEY, stock_code TEXT, induty_code TEXT, checked_at TEXT)").run();
+  await db.prepare("CREATE INDEX IF NOT EXISTS idx_corp_industry_stock ON corp_industry (stock_code)").run();
+  industryReady = true;
+}
+function parseIndutyCode(j) {
+  if (!j || j.status !== "000") return null;
+  const c = String(j.induty_code == null ? "" : j.induty_code).replace(/[^0-9]/g, "");
+  return c.length >= 2 ? c : null;
+}
+// 종목코드(6자리) 목록 → 저장된 업종코드. corp_industry의 stock_code 인덱스만 읽는다.
+async function industryLookup(env, codes) {
+  await ensureIndustryTable(env.DB);
+  const map = {};
+  if (!codes.length) return map;
+  const { results } = await env.DB.prepare("SELECT stock_code, induty_code FROM corp_industry WHERE stock_code IN (" + codes.map(() => "?").join(",") + ")").bind(...codes).all();
+  results.forEach((r) => { if (r.induty_code) map[r.stock_code] = r.induty_code; });
+  return map;
+}
+// 업종이 없는 종목을 DART에서 받아 저장(요청당 최대 3종목: subrequest 한도 보호). 같은 응답의 결산월도 함께 저장한다.
+async function industryFill(env, codes) {
+  await ensureIndustryTable(env.DB); await ensureFiscalTable(env.DB);
+  const saved = {}, failed = {};
+  for (const sc of codes.slice(0, 3)) {
+    try {
+      const m = await env.DB.prepare("SELECT corp_code FROM corp_master WHERE stock_code = ?").bind(sc).first();
+      if (!m) { failed[sc] = "corp_master에 없음"; continue; }
+      const j = await fetchDartCompany(m.corp_code, env.DART_PROXY_URL);
+      const ind = parseIndutyCode(j);
+      if (!ind) { failed[sc] = "업종코드 없음: " + String((j && (j.message || j.status)) || "응답 없음").slice(0, 40); continue; }
+      const now = new Date().toISOString();
+      await env.DB.prepare("INSERT OR REPLACE INTO corp_industry (corp_code, stock_code, induty_code, checked_at) VALUES (?, ?, ?, ?)").bind(m.corp_code, sc, ind, now).run();
+      const am = parseAccMt(j);
+      if (am != null) await env.DB.prepare("INSERT OR REPLACE INTO corp_fiscal (corp_code, acc_mt, checked_at) VALUES (?, ?, ?)").bind(m.corp_code, am, now).run();
+      saved[sc] = ind;
+    } catch (e) { failed[sc] = String((e && e.message) || e).slice(0, 60); }
+  }
+  return { saved, failed };
+}
+// ===== /업종 저장 =====
 
 // ===== 새 공시 자동 반영 =====
 // 재무가 저장된 종목(12월 결산)에 대해, 이미 공시됐을 법한 최근 보고서 중 값이 비어 있는 기간을 fetch_queue에 등록한다.
