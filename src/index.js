@@ -76,7 +76,7 @@ const CF_CUMULATIVE_KEYS = ["ocf", "capex", "fcf", "depreciation", "amortization
 
 const ACCOUNT_ITEMS = [
   // 금융업(은행/보험/증권/지주 등)은 "매출액/매출원가" 대신 "영업수익/영업비용"으로 공시하는 경우가 많아 이름 폴백에 추가
-  { key: "revenue", ids: ["ifrs-full_Revenue", "ifrs_Revenue", "ifrs-full_RevenueFromContractsWithCustomers"], names: ["매출액", "수익(매출액)", "영업수익"] },
+  { key: "revenue", ids: ["ifrs-full_Revenue", "ifrs_Revenue", "ifrs-full_RevenueFromContractsWithCustomers"], names: ["매출액", "수익(매출액)", "영업수익", "보험수익"] }, // "보험수익": IFRS17 이후 보험사 손익계산서의 최상단 수익(앞의 이름이 없을 때만 사용). 실제 공시로 재확인 필요
   // 계정ID(CostOfSales)는 "영업비용"만 공시하는 회사에서 영업비용 전체에 붙는 경우가 있어(더블유게임즈) 이름이 "매출원가"일 때만 인정한다
   { key: "cogs", ids: [], names: ["매출원가"] },
   { key: "operating_income", ids: ["dart_OperatingIncomeLoss"], names: ["영업이익"] },
@@ -814,7 +814,7 @@ const HTML_PAGE = `<!doctype html>
     <details class="card"><summary style="cursor:pointer; font-weight:600;">지표 정의와 읽는 법</summary>
       <div style="font-size:12.5px; line-height:1.6; margin-top:6px;">
         ① <b>회기말(FY)</b> = 가장 최근 사업보고서(연간) 값. <b>TTM</b> = 최근 4개 분기 합(재무상태표 항목은 최근 분기말). 최근 사업보고서가 가장 새로운 보고서이면 TTM = 회기말이고, 더 새로운 분기가 있는데 4개 분기가 모이지 않았으면 TTM은 N/A입니다(옛 값을 TTM인 척 쓰지 않습니다).<br />
-        ② <b>종가</b>는 시장 DB의 가장 최근 거래일 값입니다(공표 지연으로 보통 직전 거래일). 수정주가가 아니라서 액면분할·병합이 있으면 52주 위치가 틀릴 수 있어, 가격 이력이 200거래일 미만이거나 하루 ±30% 넘게 변한 날이 있으면 52주 항목은 N/A로 둡니다.<br />
+        ② <b>종가</b>는 시장 DB의 가장 최근 거래일 값입니다(시장 DB에 없는 종목은 공공데이터포털에서 직접 받은 최근 시세·시가총액을 쓰며, 이 경우 52주 값은 N/A)(공표 지연으로 보통 직전 거래일). 수정주가가 아니라서 액면분할·병합이 있으면 52주 위치가 틀릴 수 있어, 가격 이력이 200거래일 미만이거나 하루 ±30% 넘게 변한 날이 있으면 52주 항목은 N/A로 둡니다.<br />
         ③ <b>52주 고가 대비</b> = 종가 ÷ 52주 최고 종가 − 1(0%면 신고가). <b>52주 범위 내 위치</b> = 최저~최고 사이 어디인지(0% 저점·100% 고점). 가격이 싸다/비싸다의 판정이 아니라 추세 확인용입니다.<br />
         ④ <b>성장률</b>: 회기말 = 전년 대비, TTM = 1년 전 같은 분기 TTM 대비, CAGR = 연간(사업보고서) 기준 N년 연평균. CAGR은 시작·끝 값 중 하나라도 0 이하면 N/A, 전년 대비 성장률은 전년 값이 0 이하면 N/A입니다(적자 구간에서 억지로 계산하지 않음). 흑자에서 적자로 바뀐 해의 영업이익·EPS 성장률은 −100%를 넘는 큰 하락 값으로 나오니 값 자체보다 부호와 이익률을 함께 보세요. EPS는 주식수가 30% 넘게 변한 해(분할·증자)가 있으면 N/A. 「영업이익률」의 CAGR은 의미가 없어 대신 N년간 영업이익률 변화(%p)를 넣었습니다.<br />
         ⑤ <b>EPS</b> = 지배주주순이익 ÷ 주식수(해당 기간 기준). <b>PER·PBR</b> = 시가총액 ÷ 지배주주순이익·지배주주지분이며, 회기말 열은 사업보고서 값, TTM 열은 TTM·최근 분기말 값으로 계산합니다(같은 현재 시가총액 사용). 순이익·자본이 0 이하면 N/A. 시가총액이 시장 DB에 없으면 종가 × 주식수로 대신하고 * 를 붙입니다.<br />
@@ -1862,6 +1862,7 @@ const HTML_PAGE = `<!doctype html>
     })();
 
     let rawRows = [];      // DB/DART에서 받아온, 가공 안 된 원본 기간별 데이터
+    let AN_CAP = null; // 현재 종목의 시장 시가총액 {stock, cap, close, src, date} (DART 주식수가 없을 때 PER·PBR 계산에 사용)
     let AN_STOCK = { code: '', ind: '', name: '' }; // 현재 종목의 종목코드·업종코드(업종은 DART 기업개황에서 받아 저장한 값)
     let AN_ACCMT = null;   // 현재 종목의 결산월(모르면 null). 12월이 아니면 날짜 기반 값이 부정확하다는 경고를 띄운다.
     let currentRows = [];  // 현재 화면에 표시 중인 데이터 (분기별 변환 or 연간 그대로)
@@ -2538,7 +2539,9 @@ const HTML_PAGE = `<!doctype html>
 
     // rows: 한 종목의 원본 기간 데이터, priceInput: 현재 주가(없으면 null)
     // 반환값은 순수 데이터(숫자/문자열)만 담아서, 단일종목 요약/비교 화면 양쪽에서 재사용한다.
-    function computeSummaryMetrics(rows, priceInput) {
+    // capIn(선택): 시장 시세에서 받은 시가총액 {cap(원), close(그 시가총액 기준일 종가), src, date}. DART 주식수(발행−자기주식)가 없을 때
+    // 상장주식수 = cap ÷ close 로 대신 구해 EPS·BPS·PER·PBR을 만든다(추정값이므로 sharesEst=true로 표시). 주식수가 있으면 기존 계산 그대로.
+    function computeSummaryMetrics(rows, priceInput, capIn) {
       const annualRows = toAnnualRows(rows);
       if (annualRows.length === 0) return null;
 
@@ -2568,7 +2571,10 @@ const HTML_PAGE = `<!doctype html>
 
       // BPS/유통주식수/EPS는 "가장 최근 사업보고서"가 아니라 실제로 가장 최근 조회된 시점(분기 포함) 기준
       const latest = latestSnapshotRow(rows) || annualRows[annualRows.length - 1];
-      const outstandingShares = shareOut(latest);
+      const outstandingShares0 = shareOut(latest);
+      const listedShares = (capIn && capIn.cap > 0 && capIn.close > 0) ? capIn.cap / capIn.close : null; // 시장 기준 상장주식수(자기주식 포함)
+      const sharesEst = !outstandingShares0 && !!listedShares;
+      const outstandingShares = outstandingShares0 || listedShares;
       const equityForBps = latest.parent_equity != null ? latest.parent_equity : latest.total_equity;
       const bpsBasis = latest.parent_equity != null ? '지배주주지분' : (latest.fs_div === 'OFS' ? '총자본(개별재무제표)' : '총자본(지배주주지분 자료 없음)');
       const bps = (outstandingShares && equityForBps != null) ? equityForBps / outstandingShares : null;
@@ -2588,7 +2594,8 @@ const HTML_PAGE = `<!doctype html>
       const earningsSrcBasis = earningsRow.parent_net_income != null ? '지배주주순이익' : (earningsRow.fs_div === 'OFS' ? '순이익(별도재무제표)' : '연결순이익');
       const eps = (outstandingShares && earnings != null) ? earnings / outstandingShares : null;
 
-      const marketCap = (priceInput && outstandingShares) ? priceInput * outstandingShares : null;
+      const marketCap = (priceInput && listedShares) ? priceInput * listedShares : ((priceInput && outstandingShares) ? priceInput * outstandingShares : null);
+      const marketCapSrc = (priceInput && listedShares) ? ('시장 시가총액(' + (capIn.src || '시세') + ') ÷ 종가 = 상장주식수 × 현재가') : ((priceInput && outstandingShares) ? '현재가 × DART 유통주식수' : null);
       const per = (priceInput && eps) ? priceInput / eps : null;
       const pbr = (priceInput && bps) ? priceInput / bps : null;
       const earningsYield = eps && priceInput ? eps / priceInput : null; // = 1/PER, 요구수익률 관점
@@ -2632,7 +2639,7 @@ const HTML_PAGE = `<!doctype html>
         avgROIC, roicN: roics.length, avgROE, roeN: roes.length, consolCnt,
         avgPayout, payoutN: payoutKnownResults.length, avgAdjustedROE,
         latestLabel: latest.period_label, bpsBasis, bps, projected,
-        priceInput, marketCap, expectedMultiple, annualizedReturn,
+        priceInput, marketCap, marketCapSrc, sharesEst, expectedMultiple, annualizedReturn,
         eps, epsBasis: earningsBasis + '·' + earningsSrcBasis, per, pbr, earningsYield,
         debtRatio, interestCoverage, noDebt, revenueGrowth, netIncomeGrowth,
         totalAssets, grossProfit, grossMargin, assetTurnover, grossProfitability,
@@ -2776,7 +2783,7 @@ const HTML_PAGE = `<!doctype html>
     function renderSummary() { return guardedRender('요약·분석', 'summary', renderSummaryImpl); }
     function renderSummaryImpl() {
       const priceInput = Number(document.getElementById('currentPrice').value) || null;
-      const m = computeSummaryMetrics(rawRows, priceInput);
+      const m = computeSummaryMetrics(rawRows, priceInput, (AN_CAP && AN_CAP.stock === (AN_STOCK && AN_STOCK.code)) ? AN_CAP : null);
       if (!m) {
         const el0 = document.getElementById('summary');
         el0.style.display = 'block';
@@ -5359,7 +5366,7 @@ function guideOpen(id) {
     // ===== 재무 스크리닝 (재무가 저장된 종목 안에서 ROIC·성장·FCF·가치로 거르기) =====
     // 자료: 저장된 재무(financial_raw) + 시장 DB의 최신 종가. 점수를 합산하지 않고 조건별 통과 수와 지표를 그대로 보여준다.
     // 시세가 없는 종목은 PER·PBR·FCF수익률이 N/A이며, 그 조건을 켜면 제외된다(대체값을 만들지 않는다).
-    const FSC = { stocks: null, rows: null, priceDate: null, nPrice: 0, sortKey: 'roic3', sortDir: -1, shown: 100, open: null, loading: false };
+    const FSC = { stocks: null, rows: null, priceDate: null, nPrice: 0, caps: {}, q: {}, qErr: {}, nLive: 0, sortKey: 'roic3', sortDir: -1, shown: 100, open: null, loading: false };
     const FSC_FILTERS = [
       { k: 'roic3', g: '품질', label: 'ROIC(최근 3년 평균) ≥', unit: '%', def: 10, fmt: 'pct', op: '>=', tip: '투하자본 대비 세후영업이익. 업종·회계기준에 따라 수준이 크게 다름' },
       { k: 'roe3', g: '품질', label: 'ROE(최근 3년 평균) ≥', unit: '%', def: 8, fmt: 'pct', op: '>=', tip: '지배주주순이익 ÷ 평균 지배주주지분. 금융업은 ROIC 대신 이것으로 봅니다' },
@@ -5383,6 +5390,7 @@ function guideOpen(id) {
     };
     function fscFmt(kind, v) {
       if (!anFin(v)) return 'N/A';
+      if (kind === 'won' || kind === 'big') return ftFmt(kind, v);
       return kind === 'pct' ? (v * 100).toFixed(1) + '%' : kind === 'x1' ? v.toFixed(1) + '배' : kind === 'x2' ? v.toFixed(2) + '배' : kind === 'num0' ? String(Math.round(v)) : String(v);
     }
     function fscMsg(t) { const e = document.getElementById('fscMsg'); if (e) e.textContent = t || ''; }
@@ -5410,7 +5418,7 @@ function guideOpen(id) {
       fscRun();
     }
     // 한 종목의 지표를 계산한다. basis: 'ttm'이면 사업보고서보다 새로운 분기가 있을 때 최근 4분기 합산(TTM)을 최신 값으로 쓴다.
-    function fscCompute(s, price, basis) {
+    function fscCompute(s, price, basis, capObj) {
       const list = anBuildSeries(s.rows);
       if (!list.length) return null;
       let ttm = null; try { ttm = anBuildTtmPoint(s.rows); } catch (e) { ttm = null; }
@@ -5423,10 +5431,17 @@ function guideOpen(id) {
       const w5 = list.filter(function (d) { return d.year > list[list.length - 1].year - 5 && anFin(d.fcf); });
       out.fcfPos = w5.length >= 3 ? w5.filter(function (d) { return d.fcf > 0; }).length : null; out.fcfN = w5.length;
       const pio = anPiotroski(list); out.fscore = (pio && pio.known >= 8) ? pio.score : null;
-      out.price = price; out.mcap = (price > 0 && anFin(P.shares) && P.shares > 0) ? price * P.shares : null;
+      // 시가총액: ① 시장 시가총액 ÷ 그날 종가 = 상장주식수 → × 종가 (DART 주식수가 비어도 계산됨, 금융업·지주회사 포함)
+      //           ② 없으면 종가 × DART 유통주식수. 둘 다 없으면 N/A(만들어 채우지 않음)
+      const lst = (capObj && capObj.cap > 0 && capObj.close > 0) ? capObj.cap / capObj.close : null;
+      const hasSh = anFin(P.shares) && P.shares > 0;
+      out.price = price > 0 ? price : null;
+      out.mcap = (price > 0 && lst) ? price * lst : ((price > 0 && hasSh) ? price * P.shares : null);
+      out.mcapSrc = (price > 0 && lst) ? ('시장 시가총액(' + (capObj.src || '시세') + ')') : ((price > 0 && hasSh) ? '종가 × DART 유통주식수' : '');
       out.per = (out.mcap && P.ni > 0) ? out.mcap / P.ni : null;
       out.pbr = (out.mcap && P.equity > 0) ? out.mcap / P.equity : null;
       out.fcfy = (out.mcap && anFin(P.fcf)) ? P.fcf / out.mcap : null;
+      out.chk = { price: !!out.price, mcap: !!out.mcap, shares: hasSh, ni: anFin(P.ni), equity: anFin(P.equity), revenue: anFin(P.revenue), ebit: anFin(P.ebit) };
       return out;
     }
     // 저장된 종목 목록과 재무 원천 행을 받아 FSC.stocks에 넣는다(재무 스크리닝·재무 표 공용). 저장된 종목이 없으면 FSC.stocks를 건드리지 않고 null을 돌려준다.
@@ -5445,6 +5460,27 @@ function guideOpen(id) {
       FSC.stocks = comps.map(function (c) { return { code: c.corp_code, name: c.corp_name, stock: c.stock_code || '', accMt: c.acc_mt, ind: c.ind || '', rows: by[c.corp_code] || [] }; }).filter(function (s) { return s.rows.length; });
       return FSC.stocks;
     }
+    // 시장 DB에 시세가 없는 종목(유니버스 하한 미달·신규 등)의 최근 시세·시가총액을 공공데이터포털에서 직접 받는다(6종목씩). 이미 시도한 종목은 다시 받지 않는다.
+    async function fscFetchQuotes(codes, msg) {
+      const todo = codes.filter(function (c) { return c && !FSC.q[c] && !FSC.qErr[c]; });
+      const LIMIT = 150; // 한 번 누를 때 직접 조회할 최대 종목 수(나머지는 다시 누르면 이어서)
+      const run = todo.slice(0, LIMIT);
+      for (let i = 0; i < run.length; i += 6) {
+        msg('시장 DB에 없는 종목의 시세를 직접 받는 중... ' + Math.min(i + 6, run.length) + ' / ' + run.length + '개' + (todo.length > LIMIT ? ' (총 ' + todo.length + '개 중 먼저 ' + LIMIT + '개)' : ''));
+        try {
+          const res = await fetch('/api/fin/quotes?codes=' + encodeURIComponent(run.slice(i, i + 6).join(',')));
+          const d = await res.json();
+          if (!res.ok) { run.slice(i, i + 6).forEach(function (c) { FSC.qErr[c] = d.error || '조회 실패'; }); continue; }
+          Object.keys(d.quotes || {}).forEach(function (c) { FSC.q[c] = d.quotes[c]; });
+          Object.keys(d.errs || {}).forEach(function (c) { FSC.qErr[c] = d.errs[c]; });
+        } catch (e) { run.slice(i, i + 6).forEach(function (c) { FSC.qErr[c] = String((e && e.message) || e).slice(0, 50); }); }
+      }
+      return { tried: run.length, left: Math.max(0, todo.length - run.length) };
+    }
+    function fscCapOf(code) {
+      if (FSC.caps[code]) return FSC.caps[code];
+      const q = FSC.q[code]; return (q && q[2] > 0) ? { cap: q[2], close: q[1], src: '공공데이터포털(실시간)' } : null;
+    }
     async function fscLoad() {
       if (FSC.loading) return;
       FSC.loading = true;
@@ -5457,7 +5493,11 @@ function guideOpen(id) {
           const res = await fetch('/api/fin/last-price?codes=' + encodeURIComponent(codes.slice(i, i + 80).join(',')));
           const d = await res.json(); if (!res.ok) throw new Error(d.error || '시세 조회 실패');
           if (d.date) FSC.priceDate = d.date; Object.keys(d.prices || {}).forEach(function (k) { px[k] = d.prices[k]; });
+          Object.keys(d.caps || {}).forEach(function (k) { FSC.caps[k] = { cap: d.caps[k].cap, close: d.caps[k].close, src: '시장 DB' }; });
         }
+        const qInfo = await fscFetchQuotes(codes.filter(function (c) { return !px[c]; }), fscMsg);
+        codes.forEach(function (c) { if (!px[c] && FSC.q[c]) px[c] = FSC.q[c][1]; });
+        FSC.nLive = codes.filter(function (c) { return FSC.q[c]; }).length; FSC.qLeft = qInfo.left;
         FSC.px = px; fscRun(true);
         FSC.stocks.forEach(function (s) { if (s.ind) IND.map[s.stock] = s.ind; });
         fscIndOptions(); fscRender();
@@ -5469,7 +5509,7 @@ function guideOpen(id) {
       if (!FSC.stocks) return;
       const basis = document.getElementById('fscBasis').value;
       if (recompute || FSC.basisUsed !== basis) {
-        FSC.rows = FSC.stocks.map(function (s) { try { return fscCompute(s, FSC.px[s.stock] || null, basis); } catch (e) { return null; } }).filter(Boolean);
+        FSC.rows = FSC.stocks.map(function (s) { try { return fscCompute(s, FSC.px[s.stock] || null, basis, fscCapOf(s.stock)); } catch (e) { return null; } }).filter(Boolean);
         FSC.basisUsed = basis; FSC.nPrice = FSC.rows.filter(function (r) { return r.price > 0; }).length;
       }
       FSC.shown = 100; FSC.open = null; fscRender();
@@ -5504,11 +5544,11 @@ function guideOpen(id) {
       const key = FSC.sortKey, dir = FSC.sortDir;
       cur.sort(function (x, y) { const a = x[key], b = y[key]; if (typeof a === 'string' || typeof b === 'string') { const c = String(a).localeCompare(String(b), 'ko'); return c ? dir * c : (x.name < y.name ? -1 : 1); } const fa = anFin(a), fb = anFin(b); if (!fa && !fb) return 0; if (!fa) return 1; if (!fb) return -1; return dir * (a - b) || (x.name < y.name ? -1 : 1); });
       FSC.result = cur;
-      let h = '<div class="meta-line">시세 기준일 ' + (FSC.priceDate ? fmtYmd(FSC.priceDate) : '없음') + ' · 시세가 있는 종목 ' + FSC.nPrice + ' / ' + FSC.rows.length + '개 (없는 종목은 PER·PBR·FCF수익률이 N/A)</div>';
+      let h = '<div class="meta-line">시세 기준일 ' + (FSC.priceDate ? fmtYmd(FSC.priceDate) : '없음') + ' · 시세가 있는 종목 ' + FSC.nPrice + ' / ' + FSC.rows.length + '개' + (FSC.nLive ? ' (그중 ' + FSC.nLive + '개는 시장 DB에 없어 공공데이터포털에서 직접 받음)' : '') + (FSC.qLeft ? ' · 아직 못 받은 종목 ' + FSC.qLeft + '개: 다시 「불러오기」를 누르면 이어서 받습니다' : '') + ' · 시세가 없는 종목은 PER·PBR·FCF수익률이 N/A</div>';
       h += '<div class="tscroll"><table class="an-tbl"><thead><tr><th class="an-first">단계</th><th>남은 종목</th><th>자료 없어 제외</th></tr></thead><tbody>' +
         funnel.map(function (s) { return '<tr><td class="an-first">' + s.t + '</td><td>' + s.n + '</td><td>' + (s.miss || '') + '</td></tr>'; }).join('') + '</tbody></table></div>';
       if (!act.length) h += '<div class="meta-line">조건을 하나도 켜지 않아 저장된 종목 전체를 보여줍니다.</div>';
-      const cols = [['name', '종목', null], ['indTxt', '업종', null], ['secTxt', '유형', null], ['basisTxt', '최신 기준', null], ['roe3', 'ROE 3Y평균', 'pct'], ['roa', 'ROA', 'pct'], ['roic3', 'ROIC 3Y평균', 'pct'], ['roicL', 'ROIC 최신', 'pct'], ['opm', '영업이익률', 'pct'], ['revG3', '매출 3Y CAGR', 'pct'], ['ebitG3', '영업이익 3Y CAGR', 'pct'],
+      const cols = [['name', '종목', null], ['indTxt', '업종', null], ['secTxt', '유형', null], ['basisTxt', '최신 기준', null], ['price', '종가', 'won'], ['mcap', '시가총액', 'big'], ['roe3', 'ROE 3Y평균', 'pct'], ['roa', 'ROA', 'pct'], ['roic3', 'ROIC 3Y평균', 'pct'], ['roicL', 'ROIC 최신', 'pct'], ['opm', '영업이익률', 'pct'], ['revG3', '매출 3Y CAGR', 'pct'], ['ebitG3', '영업이익 3Y CAGR', 'pct'],
         ['fcfm', 'FCF 마진', 'pct'], ['fcfni', 'FCF/순이익', 'x2'], ['fcfPos', 'FCF 흑자(5년)', 'num0'], ['fscore', 'F-Score', 'num0'], ['fcfy', 'FCF 수익률', 'pct'], ['per', 'PER', 'x1'], ['pbr', 'PBR', 'x2']];
       h += '<div class="row" style="margin:8px 0;"><span class="meta-line">조건을 통과한 종목 <b>' + cur.length + '</b>개 · 열 제목을 누르면 정렬 · 종목을 누르면 아래에 모든 항목(연도별+TTM)</span> <button onclick="fscCsv()">CSV 저장</button></div>';
       h += '<div class="tscroll" style="max-height:70vh;"><table class="an-tbl" id="fscTbl"><thead><tr>' + cols.map(function (c) {
@@ -5519,13 +5559,34 @@ function guideOpen(id) {
           if (c[0] === 'basisTxt') return '<td>' + r.basisTxt + '</td>';
           if (c[0] === 'secTxt') return '<td title="업종코드(KSIC)와 이름으로 분류. 이름으로 추정한 경우 물음표(?)가 붙습니다. 금융업·지주회사는 ROIC·FCF 대신 ROE·PBR로 봅니다">' + escHtml(r.secTxt) + '</td>';
           if (c[0] === 'indTxt') return '<td title="한국표준산업분류(KSIC) 중분류 기준. 거래소·네이버 업종과 다릅니다">' + escHtml(r.indTxt) + '</td>';
+          if (c[0] === 'mcap') return '<td' + (r.mcapSrc ? ' title="' + escHtml(r.mcapSrc) + '"' : '') + '>' + fscFmt(c[2], r[c[0]]) + (r.mcapSrc && r.mcapSrc.indexOf('DART') >= 0 ? '*' : '') + '</td>';
           return '<td>' + fscFmt(c[2], r[c[0]]) + '</td>'; }).join('') + '</tr>';
         if (FSC.open === r.code) h += '<tr><td colspan="' + cols.length + '" style="background:var(--card-bg, #fff); padding:8px 4px;">' + fscDetailHtml(r) + '</td></tr>';
       });
       h += '</tbody></table></div>';
       if (cur.length > FSC.shown) h += '<button onclick="FSC.shown += 100; fscRender();" style="margin-top:6px;">더 보기 (' + (cur.length - FSC.shown) + '개 남음)</button>';
+      h += fscAuditHtml();
       out.innerHTML = h;
       fscMsg('');
+    }
+    // 자료 점검: 저장된 종목마다 PER·PBR·시총에 필요한 값이 무엇이 비었는지 유형(일반/금융/지주 등)별로 센다. 값을 만들어 채우지 않고 빈 곳을 드러낸다.
+    const FSC_CHK = [['price', '종가'], ['mcap', '시가총액'], ['shares', 'DART 주식수'], ['ni', '순이익'], ['equity', '자본'], ['revenue', '매출/영업수익'], ['ebit', '영업이익']];
+    const FSC_CHK_HINT = { price: '시장 DB와 공공데이터포털 모두에 시세 없음(거래정지·상장폐지·코드 불일치)', mcap: '시세는 있으나 시가총액·주식수를 모두 못 받음', shares: 'DART 주식총수 조회 실패 → 시장 시가총액으로 대체 계산(EPS·BPS는 추정)', ni: '당기순이익 계정을 못 찾음 → 데이터 관리에서 재조회·원본 확인', equity: '자본총계 계정을 못 찾음', revenue: '매출액/영업수익 계정 없음(은행·보험은 정상일 수 있음)', ebit: '영업이익 계정 없음(은행·보험은 정상일 수 있음)' };
+    function fscAuditHtml() {
+      const rows = FSC.rows || []; if (!rows.length) return '';
+      const grp = {};
+      rows.forEach(function (r) { const k = r.sec ? r.sec.n : '일반'; const g = grp[k] = grp[k] || { n: 0, miss: {} }; g.n++; FSC_CHK.forEach(function (c) { if (!r.chk || !r.chk[c[0]]) g.miss[c[0]] = (g.miss[c[0]] || 0) + 1; }); });
+      let h = '<details class="card" style="margin-top:8px;"><summary style="cursor:pointer; font-weight:600;">자료 점검 — 값이 비어 있는 종목 수 (유형별)</summary><div class="meta-line">빈 항목은 N/A로 남고 지표가 계산되지 않습니다. 매출·영업이익은 은행·보험·증권에서 계정 자체가 없을 수 있습니다.</div>';
+      h += '<div class="tscroll"><table class="an-tbl"><thead><tr><th class="an-first">유형</th><th>종목 수</th>' + FSC_CHK.map(function (c) { return '<th>' + c[1] + ' 없음</th>'; }).join('') + '</tr></thead><tbody>' +
+        Object.keys(grp).map(function (k) { const g = grp[k]; return '<tr><td class="an-first">' + escHtml(k) + '</td><td>' + g.n + '</td>' + FSC_CHK.map(function (c) { return '<td>' + (g.miss[c[0]] || '') + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table></div>';
+      const bad = rows.filter(function (r) { return r.chk && (!r.chk.price || !r.chk.mcap || !r.chk.ni || !r.chk.equity); }).slice(0, 60);
+      if (bad.length) {
+        h += '<div class="meta-line" style="margin-top:6px;">PER·PBR에 직접 영향을 주는 항목(종가·시가총액·순이익·자본)이 빈 종목 (최대 60개)</div><div class="tscroll" style="max-height:40vh;"><table class="an-tbl"><thead><tr><th class="an-first">종목</th><th>유형</th><th>빈 항목과 원인</th></tr></thead><tbody>' +
+          bad.map(function (r) {
+            const why = ['price', 'mcap', 'ni', 'equity'].filter(function (k) { return !r.chk[k]; }).map(function (k) { return (FSC_CHK.filter(function (c) { return c[0] === k; })[0][1]) + ': ' + FSC_CHK_HINT[k] + (k === 'price' && FSC.qErr[r.stock] ? ' [' + escHtml(FSC.qErr[r.stock]) + ']' : ''); }).join('<br/>');
+            return '<tr><td class="an-first">' + escHtml(r.name) + ' <span class="meta-line">' + escHtml(r.stock) + '</span></td><td>' + escHtml(r.secTxt || '') + '</td><td style="text-align:left; font-size:12px;">' + why + '</td></tr>'; }).join('') + '</tbody></table></div>';
+      } else h += '<div class="meta-line" style="margin-top:6px;">종가·시가총액·순이익·자본이 모두 있는 종목만 남아 있습니다.</div>';
+      return h + '</details>';
     }
     function fscIndOptions() {
       const sel = document.getElementById('fscInd'); if (!sel || !FSC.rows) return;
@@ -5559,7 +5620,7 @@ function guideOpen(id) {
     }
     function fscCsv() {
       if (!FSC.result) return;
-      const cols = ['name', 'stock', 'indTxt', 'secTxt', 'basisTxt', 'roe3', 'roa', 'roic3', 'roicL', 'opm', 'revG3', 'ebitG3', 'fcfm', 'fcfni', 'fcfPos', 'fscore', 'fcfy', 'per', 'pbr'];
+      const cols = ['name', 'stock', 'indTxt', 'secTxt', 'basisTxt', 'price', 'mcap', 'roe3', 'roa', 'roic3', 'roicL', 'opm', 'revG3', 'ebitG3', 'fcfm', 'fcfni', 'fcfPos', 'fscore', 'fcfy', 'per', 'pbr'];
       const lines = [cols.join(',')];
       FSC.result.forEach(function (r) { lines.push(cols.map(function (k) { const v = r[k]; return '"' + (anFin(v) ? String(Math.round(v * 10000) / 10000) : v == null ? '' : String(v).split('"').join('""')) + '"'; }).join(',')); });
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\\n')], { type: 'text/csv;charset=utf-8' })); a.download = 'fin_screening.csv'; a.click();
@@ -5645,7 +5706,7 @@ function guideOpen(id) {
       o.hiOk = !!(snap && n252 >= 200 && !jump && hi > 0);
       o.fromHi = (o.hiOk && o.price) ? o.price / Math.max(hi, o.price) - 1 : null;
       o.rangePos = (o.hiOk && o.price && hi > lo) ? Math.min(1, Math.max(0, (o.price - lo) / (hi - lo))) : null;
-      o.hiNote = !snap ? '시세 없음' : (jump ? '가격 불연속 의심(±30%/일)' : (n252 < 200 ? '가격 이력 부족(' + n252 + '일)' : ''));
+      o.hiNote = !snap ? '시세 없음' : (snap[10] === 'live' ? '시장 DB에 없는 종목: 52주 값 없음(최근 시세만 직접 조회)' :  (jump ? '가격 불연속 의심(±30%/일)' : (n252 < 200 ? '가격 이력 부족(' + n252 + '일)' : '')));
       o.tv0 = snap ? snap[6] : null; o.tv20 = snap ? snap[7] : null; o.vol0 = snap ? snap[5] : null;
       const sh = anFin(P.shares) && P.shares > 0 ? P.shares : (anFin(L.shares) && L.shares > 0 ? L.shares : null);
       o.mcapDb = !!(snap && snap[8] > 0);
@@ -5672,6 +5733,8 @@ function guideOpen(id) {
         const res = await fetch('/api/fin/market-snap' + (fresh ? '?fresh=1' : ''));
         const d = await res.json(); if (!res.ok) throw new Error(d.error || '시세 요약 조회 실패');
         FT.snap = d;
+        const qInfo = await fscFetchQuotes(FSC.stocks.map(function (s) { return s.stock; }).filter(function (c) { return c && !(FT.snap.rows && FT.snap.rows[c]); }), ftMsg);
+        FT.nLive = FSC.stocks.filter(function (s) { return s.stock && !(FT.snap.rows && FT.snap.rows[s.stock]) && FSC.q[s.stock]; }).length; FT.qLeft = qInfo.left;
         FSC.stocks.forEach(function (s) { if (s.ind) IND.map[s.stock] = s.ind; });
         ftRun(true); ftIndOptions(); ftRender();
         const miss = FSC.stocks.map(function (s) { return s.stock; }).filter(function (c) { return c && !IND.map[c]; });
@@ -5679,12 +5742,17 @@ function guideOpen(id) {
         ftMsg('');
       } catch (e) { ftMsg('오류: ' + (e.message || e)); } finally { FT.loading = false; }
     }
+    // 시장 DB에 없는 종목: 직접 받은 최근 시세로 [거래일, 종가, 52주고가, 52주저가, 일수, 거래량, 거래대금, 20일평균, 시가총액, 불연속, 'live'] 모양을 만든다(52주 값은 없음).
+    function ftLiveSnap(code) {
+      const q = FSC.q[code]; if (!q) return null;
+      return [q[0], q[1], null, null, 0, q[3], q[4], null, q[2], 0, 'live'];
+    }
     function ftRun(recompute) {
       if (!FSC.stocks || !FT.snap) return;
       const basis = document.getElementById('ftBasis').value, nY = Number(document.getElementById('ftN').value) || 3;
       const key = basis + '|' + nY;
       if (recompute || FT.key !== key) {
-        FT.rows = FSC.stocks.map(function (s) { try { return ftCompute(s, FT.snap.rows[s.stock] || null, FT.snap.date, basis, nY); } catch (e) { return null; } }).filter(Boolean);
+        FT.rows = FSC.stocks.map(function (s) { try { return ftCompute(s, (FT.snap.rows && FT.snap.rows[s.stock]) || ftLiveSnap(s.stock), FT.snap.date, basis, nY); } catch (e) { return null; } }).filter(Boolean);
         FT.key = key;
       }
       FT.shown = 100; ftRender();
@@ -7110,7 +7178,8 @@ function renderAnalysisImpl() {
         if (document.getElementById('corpName').value.trim() !== corpName) return false; // 그 사이 다른 종목으로 바뀌었으면 이 응답은 버린다(남의 종가가 들어오는 것 방지)
         if (!res.ok) throw new Error(data.error || '조회 실패');
         document.getElementById('currentPrice').value = data.close;
-        noteEl.textContent = data.corp_name + ' ' + data.date + ' 종가 ' + data.close.toLocaleString() + '원을 현재 주가로 사용했습니다(직접 고쳐서 다시 계산할 수 있습니다).';
+        AN_CAP = (data.mcap > 0 && data.mcap_close > 0) ? { stock: (AN_STOCK && AN_STOCK.code) || '', cap: data.mcap, close: data.mcap_close, src: data.mcap_src || '시세', date: data.mcap_date || '' } : null;
+        noteEl.textContent = data.corp_name + ' ' + data.date + ' 종가 ' + data.close.toLocaleString() + '원을 현재 주가로 사용했습니다(직접 고쳐서 다시 계산할 수 있습니다).' + (AN_CAP ? ' 시가총액 ' + Math.round(AN_CAP.cap / 1e8).toLocaleString() + '억(' + AN_CAP.src + (AN_CAP.date ? ' ' + AN_CAP.date : '') + ').' : ' 시장 시가총액은 확인하지 못해 DART 주식수로 계산합니다.');
         return true;
       } catch (e) {
         if (document.getElementById('corpName').value.trim() !== corpName) return false;
@@ -8363,6 +8432,7 @@ async function pfuExport() {
       document.getElementById('stockBody').style.display = 'none'; document.getElementById('cmpPanel').style.display = 'none'; document.getElementById('searchCard').style.display = '';
       document.getElementById('stockMeta').innerHTML = '';
       document.getElementById('currentPrice').value = '';
+      AN_CAP = null;
       document.getElementById('priceNote').textContent = '';
       statusEl.textContent = '"' + corpName + '" 조회 중...';
       let data;
@@ -9377,7 +9447,10 @@ function pickStockCounts(dart) {
   const norm = (s) => (s || "").replace(/\s/g, "");
   const list = dart.list || [];
   // 구분명이 정확히 "보통주"가 아니어도("보통주식", "보통주(의결권…)" 등) '보통'이 들어가고 합계·우선이 아닌 첫 행을 보통주로 본다
-  const row = list.find((r) => norm(r.se) === "보통주") || list.find((r) => /보통/.test(norm(r.se)) && !/합계|우선/.test(norm(r.se)));
+  // 보통주 행이 없고 우선주도 없는 경우("합계"·"의결권 있는 주식" 등으로만 공시하는 일부 금융·지주회사)는 합계 행을 보통주 전체로 본다
+  const hasPref = list.some((r) => /우선/.test(norm(r.se)));
+  const row = list.find((r) => norm(r.se) === "보통주") || list.find((r) => /보통/.test(norm(r.se)) && !/합계|우선/.test(norm(r.se)))
+    || (!hasPref ? list.find((r) => /합계|계$/.test(norm(r.se)) && parseAmount(r.istc_totqy) != null) : null);
   if (!row) return none("보통주 행 없음(구분: " + list.map((r) => norm(r.se)).filter(Boolean).slice(0, 5).join("/") + ")");
   // 이 기간에 "보통주" 공시 행 자체는 존재함 → 그 안의 개별 값이 "-"/빈칸이면
   // "미공시"가 아니라 "0주"라는 뜻(DART 표기 관행, 특히 자기주식이 없는 대다수 기업).
@@ -11139,7 +11212,23 @@ async function handleRequest(request, env) {
       if (prices.length === 0) return Response.json({ error: "최근 시세를 가져오지 못했습니다." }, { status: 502 });
       const latest = prices.slice().sort((a, b) => b.date.localeCompare(a.date))[0];
 
-      return Response.json({ corp_name: corpRow.corp_name, date: latest.date, close: latest.close });
+      // 시가총액: 시장 DB의 가장 최근 거래일 한 줄(기본키 조회) → 없으면 공공데이터포털 실시간 조회. 둘 다 실패해도 종가는 돌려준다.
+      let mcap = null, mcapClose = null, mcapDate = null, mcapSrc = null;
+      try {
+        const dRow = await env.DB.prepare("SELECT MAX(market_date) AS d FROM market_raw_daily").first();
+        if (dRow && dRow.d) {
+          const m = await env.DB.prepare("SELECT market_date, close_price, market_cap FROM market_raw_daily WHERE market_date = ? AND stock_code = ?").bind(dRow.d, corpRow.stock_code).first();
+          if (m && m.market_cap > 0 && m.close_price > 0) { mcap = m.market_cap; mcapClose = m.close_price; mcapDate = m.market_date; mcapSrc = "시장 DB"; }
+        }
+      } catch (e) { /* 시가총액만 비우고 계속 */ }
+      if (!mcap && env.DATA_GO_KR_KEY) {
+        try {
+          const h = await fetchKrxStockHistory(corpRow.stock_code, addDaysStr(kstTodayStr(), -10), kstTodayStr(), env.DATA_GO_KR_KEY);
+          const l = h.length ? h[h.length - 1] : null;
+          if (l && Number(l.marketCap) > 0 && Number(l.close) > 0) { mcap = Number(l.marketCap); mcapClose = Number(l.close); mcapDate = l.date; mcapSrc = "공공데이터포털"; }
+        } catch (e) { /* 시가총액만 비우고 계속 */ }
+      }
+      return Response.json({ corp_name: corpRow.corp_name, date: latest.date, close: latest.close, mcap, mcap_close: mcapClose, mcap_date: mcapDate, mcap_src: mcapSrc });
     }
 
     // 재무분석 화면용: 한 종목의 1M/3M/6M 수익률과 20D/60D/120D RS(코스피 대비). D1 쓰기 없음(읽기 1회 + data.go.kr 1~2회).
@@ -11552,12 +11641,29 @@ async function handleRequest(request, env) {
       if (!codes.length) return Response.json({ date: null, prices: {} });
       const dRow = await env.DB.prepare("SELECT MAX(market_date) AS d FROM market_raw_daily").first();
       const date = dRow ? dRow.d : null;
-      const prices = {};
+      const prices = {}, caps = {};
       if (date) {
-        const { results } = await env.DB.prepare("SELECT stock_code, close_price FROM market_raw_daily WHERE market_date = ? AND stock_code IN (" + codes.map(() => "?").join(",") + ")").bind(date, ...codes).all();
-        results.forEach((r) => { if (r.close_price > 0) prices[r.stock_code] = r.close_price; });
+        const { results } = await env.DB.prepare("SELECT stock_code, close_price, market_cap FROM market_raw_daily WHERE market_date = ? AND stock_code IN (" + codes.map(() => "?").join(",") + ")").bind(date, ...codes).all();
+        results.forEach((r) => { if (r.close_price > 0) { prices[r.stock_code] = r.close_price; if (r.market_cap > 0) caps[r.stock_code] = { cap: r.market_cap, close: r.close_price }; } });
       }
-      return new Response(JSON.stringify({ date, prices }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "private, max-age=60" } });
+      return new Response(JSON.stringify({ date, prices, caps }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "private, max-age=60" } });
+    }
+    // 시장 DB(유니버스 하한을 통과한 종목만 저장)에 없는 종목의 최근 시세를 공공데이터포털에서 직접 받는다. 한 번에 최대 6종목(서브리퀘스트 한도 보호).
+    // 값 배열: [거래일, 종가, 시가총액(원, 없으면 null), 거래량, 거래대금]. 못 받은 종목은 errs에 사유. D1 쓰기 없음.
+    if (pathname === "/api/fin/quotes") {
+      if (!env.DATA_GO_KR_KEY) return Response.json({ error: "DATA_GO_KR_KEY 미설정", quotes: {}, errs: {} }, { status: 500 });
+      const codes = (searchParams.get("codes") || "").split(",").map((x) => x.trim()).filter((x) => /^[0-9A-Za-z]{6}$/.test(x)).slice(0, 6);
+      const end = kstTodayStr(), start = addDaysStr(end, -10);
+      const quotes = {}, errs = {};
+      await Promise.all(codes.map(async (c) => {
+        try {
+          const h = await fetchKrxStockHistory(c, start, end, env.DATA_GO_KR_KEY);
+          const l = h.length ? h[h.length - 1] : null;
+          if (l && Number(l.close) > 0) quotes[c] = [l.date, Number(l.close), Number(l.marketCap) > 0 ? Number(l.marketCap) : null, Number.isFinite(Number(l.volume)) ? Number(l.volume) : null, Number.isFinite(Number(l.tradingValue)) ? Number(l.tradingValue) : null];
+          else errs[c] = "최근 10일 시세 없음(거래정지·상장폐지·코드 불일치 가능)";
+        } catch (e) { errs[c] = String((e && e.message) || e).slice(0, 60); }
+      }));
+      return new Response(JSON.stringify({ quotes, errs }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "private, max-age=300" } });
     }
     // 재무 표용: 저장된 전 종목의 시세 요약(최근 종가·52주 고저·거래대금·거래량·시가총액). 52주 구간을 훑는 쿼리라 하루(시세 기준일) 한 번만 계산해
     // market_job 표에 저장해 두고(행 1개), 같은 기준일에는 그 한 줄만 읽어 돌려준다(D1 읽기 한도 보호). ?fresh=1이면 다시 계산한다.

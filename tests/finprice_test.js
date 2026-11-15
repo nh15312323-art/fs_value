@@ -6,9 +6,9 @@ const i = text.indexOf('    if (pathname === "/api/fin/last-price") {'), j = tex
 if (i < 0 || j < 0) throw new Error('구간 없음');
 const handler = new Function('env', 'searchParams', 'pathname', 'return (async () => {\n' + text.slice(i, j) + '\n return null; })()');
 const db = new DatabaseSync(':memory:');
-db.exec('CREATE TABLE market_raw_daily (market_date TEXT, stock_code TEXT, close_price REAL, PRIMARY KEY (market_date, stock_code))');
-const ins = db.prepare('INSERT INTO market_raw_daily VALUES (?,?,?)');
-ins.run('20261022', '000001', 100); ins.run('20261023', '000001', 110); ins.run('20261023', '000002', 0); ins.run('20261023', '000004', 400); ins.run('20261022', '000003', 300);
+db.exec('CREATE TABLE market_raw_daily (market_date TEXT, stock_code TEXT, close_price REAL, market_cap REAL, PRIMARY KEY (market_date, stock_code))');
+const ins = db.prepare('INSERT INTO market_raw_daily VALUES (?,?,?,?)');
+ins.run('20261022', '000001', 100, 1000); ins.run('20261023', '000001', 110, 1100); ins.run('20261023', '000002', 0, 5); ins.run('20261023', '000004', 400, null); ins.run('20261022', '000003', 300, 3000);
 let maxBinds = 0;
 const DB = { prepare: (sql) => { const st = db.prepare(sql); return { bind: (...b) => (maxBinds = Math.max(maxBinds, b.length), { first: async () => st.get(...b) || null, all: async () => ({ results: st.all(...b) }) }), first: async () => st.get() || null }; } };
 let fail = 0; const check = (n, ok, d) => { if (!ok) fail++; console.log((ok ? 'PASS' : 'FAIL') + '  ' + n + (d !== undefined ? '  ' + d : '')); };
@@ -21,6 +21,7 @@ let fail = 0; const check = (n, ok, d) => { if (!ok) fail++; console.log((ok ? '
   const many = Array.from({ length: 150 }, (_, k) => String(100000 + k)).join(',');
   await run(many);
   check('D1 한도(바인딩 변수 100개) 안: 코드를 아무리 많이 보내도 요청당 변수 ≤ 100', maxBinds <= 100 && maxBinds > 1, 'max=' + maxBinds);
+  check('시가총액도 함께 반환(없으면 빠짐)', JSON.stringify(a.caps) === JSON.stringify({ '000001': { cap: 1100, close: 110 } }), JSON.stringify(a.caps));
   const b = await run('zz,!!'); check('유효한 코드가 없으면 빈 결과', b.date === null && Object.keys(b.prices).length === 0);
   console.log(fail ? 'FAILED ' + fail : 'ALL PASS'); process.exit(fail ? 1 : 0);
 })();
