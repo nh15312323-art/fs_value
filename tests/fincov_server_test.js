@@ -1,0 +1,61 @@
+// 서버 쪽: (1) /api/fin/quotes (시장 DB에 없는 종목의 실시간 시세) (2) /api/latest-price의 시가총액 (3) DART 주식총수 파싱(합계 행만 있는 경우 포함)
+const fs = require('fs'), path = require('path');
+const { DatabaseSync } = require('node:sqlite');
+const text = fs.readFileSync(path.join(__dirname, '..', 'src', 'index.js'), 'utf8');
+let fail = 0; const check = (n, ok, d) => { if (!ok) fail++; console.log((ok ? 'PASS' : 'FAIL') + '  ' + n + (d !== undefined ? '  ' + d : '')); };
+const between = (a, b) => { const i = text.indexOf(a), j = text.indexOf(b, i); if (i < 0 || j < 0) throw new Error('구간 없음: ' + a); return text.slice(i, j); };
+const db = new DatabaseSync(':memory:');
+db.exec("CREATE TABLE corp_master (corp_code TEXT, corp_name TEXT, stock_code TEXT); INSERT INTO corp_master VALUES ('A','모의은행','000002'),('B','모의지주','000003'),('C','시세없음','000009');");
+db.exec('CREATE TABLE market_raw_daily (market_date TEXT, stock_code TEXT, close_price REAL, market_cap REAL, PRIMARY KEY (market_date, stock_code));');
+db.exec("INSERT INTO market_raw_daily VALUES ('20261113','000002',50000,8000),('20261113','000001',1,1)");
+const DB = { prepare: (sql) => { const st = db.prepare(sql); return { bind: (...b) => ({ first: async () => st.get(...b) || null, all: async () => ({ results: st.all(...b) }) }), first: async () => st.get() || null, all: async () => ({ results: st.all() }) }; } };
+const addDaysStr = (s, n) => { const d = new Date(Date.UTC(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8) + n)); return d.toISOString().slice(0, 10).replace(/-/g, ''); };
+const kstTodayStr = () => '20261113';
+let krxMode = 'ok'; const krxCalls = [];
+const fetchKrxStockHistory = async (code) => { krxCalls.push(code);
+  if (krxMode === 'throw') throw new Error('data.go.kr 오류');
+  if (code === '000003') return [{ date: '20261112', close: 29000, volume: 10, tradingValue: 290000, marketCap: '2900' }, { date: '20261113', close: 30000, volume: 20, tradingValue: 600000, marketCap: '3000' }];
+  if (code === '000004') return [{ date: '20261113', close: 40000, volume: 5, tradingValue: 200000, marketCap: 0 }];
+  return []; };
+const fetchNaverPrices = async (code) => code === '000009' ? [] : [{ date: '20261112', close: 49000 }, { date: '20261113', close: 50000 }];
+(async () => {
+  // ---- /api/fin/quotes
+  const q = text.indexOf('    if (pathname === "/api/fin/quotes") {'), qe = text.indexOf('    // 재무 표용: 저장된 전 종목의 시세 요약', q);
+  const hq = new Function('env', 'searchParams', 'pathname', 'fetchKrxStockHistory', 'kstTodayStr', 'addDaysStr', 'return (async () => {\n' + text.slice(q, qe) + '\n return null; })()');
+  const runQ = async (codes, env) => { const r = await hq(env || { DB, DATA_GO_KR_KEY: 'k' }, new URLSearchParams({ codes }), '/api/fin/quotes', fetchKrxStockHistory, kstTodayStr, addDaysStr); return { st: r.status, j: await r.json() }; };
+  let a = await runQ('000003,000004,000008,abc,;;x,1234567,000001,000002,000010,000011,000012');
+  check('quotes: 가장 최근 거래일의 종가·시총(원)·거래량·거래대금', JSON.stringify(a.j.quotes['000003']) === JSON.stringify(['20261113', 30000, 3000, 20, 600000]), JSON.stringify(a.j.quotes['000003']));
+  check('quotes: 시가총액이 0이면 null(만들지 않음)', a.j.quotes['000004'][2] === null && a.j.quotes['000004'][1] === 40000);
+  check('quotes: 시세 없는 종목은 errs에 사유, 잘못된 코드는 무시', /시세 없음/.test(a.j.errs['000008']) && !('abc' in a.j.errs));
+  check('quotes: 한 번에 최대 6종목만 조회(서브리퀘스트 보호)', krxCalls.length === 6, 'calls=' + krxCalls.length);
+  krxMode = 'throw'; a = await runQ('000003');
+  check('quotes: 조회 오류는 종목별 사유로(전체 실패 아님)', a.st === 200 && /data.go.kr 오류/.test(a.j.errs['000003']), JSON.stringify(a.j));
+  a = await runQ('000003', { DB });
+  check('quotes: DATA_GO_KR_KEY 없으면 명확한 오류', a.st === 500 && /DATA_GO_KR_KEY/.test(a.j.error));
+  krxMode = 'ok';
+  // ---- /api/latest-price
+  const l = text.indexOf('    if (pathname === "/api/latest-price") {'), le = text.indexOf('    // 재무분석 화면용: 한 종목의 1M/3M/6M', l);
+  const hl = new Function('env', 'searchParams', 'pathname', 'fetchKrxStockHistory', 'kstTodayStr', 'addDaysStr', 'fetchNaverPrices', 'return (async () => {\n' + text.slice(l, le) + '\n return null; })()');
+  const runL = async (nm, env) => { const r = await hl(env || { DB, DATA_GO_KR_KEY: 'k', DART_PROXY_URL: 'x' }, new URLSearchParams({ corp_name: nm }), '/api/latest-price', fetchKrxStockHistory, kstTodayStr, addDaysStr, fetchNaverPrices); return { st: r.status, j: await r.json() }; };
+  let r = await runL('모의은행');
+  check('latest-price: 시장 DB에 있으면 DB 시가총액(기본키 조회) 사용', r.j.close === 50000 && r.j.mcap === 8000 && r.j.mcap_close === 50000 && r.j.mcap_src === '시장 DB', JSON.stringify(r.j));
+  r = await runL('모의지주');
+  check('latest-price: 시장 DB에 없으면 공공데이터포털 실시간 시총', r.j.mcap === 3000 && r.j.mcap_close === 30000 && r.j.mcap_src === '공공데이터포털', JSON.stringify(r.j));
+  krxMode = 'throw'; r = await runL('모의지주');
+  check('latest-price: 시총 조회가 실패해도 종가는 돌려줌(시총만 null)', r.st === 200 && r.j.close === 50000 && r.j.mcap === null, JSON.stringify(r.j));
+  r = await runL('시세없음'); check('latest-price: 종가가 없으면 기존처럼 502', r.st === 502);
+  krxMode = 'ok';
+  // ---- pickStockCounts
+  const code = between('function pickStockCounts', 'function pickDividendPerShare');
+  const pk = new Function('parseAmount', code + '\nreturn pickStockCounts;')((v) => { const n = Number(String(v == null ? '' : v).replace(/,/g, '')); return Number.isFinite(n) && String(v).trim() !== '' && v !== '-' ? n : null; });
+  const L = (rows) => ({ status: '000', list: rows });
+  let c = pk(L([{ se: '보통주', istc_totqy: '1,000', tesstk_co: '100' }, { se: '우선주', istc_totqy: '50', tesstk_co: '-' }, { se: '합계', istc_totqy: '1,050', tesstk_co: '100' }]));
+  check('주식수: 보통주·우선주 행이 있으면 기존대로(1000/100/우선 50)', c.total_shares === 1000 && c.treasury_shares === 100 && c.preferred_shares === 50, JSON.stringify(c));
+  c = pk(L([{ se: '합계', istc_totqy: '2,000', tesstk_co: '-' }]));
+  check('주식수: 합계 행만 공시한 경우(금융·지주 일부) 합계를 보통주 전체로 사용(자기주식 "-"는 0주)', c.total_shares === 2000 && c.treasury_shares === 0, JSON.stringify(c));
+  c = pk(L([{ se: '우선주', istc_totqy: '10', tesstk_co: '0' }, { se: '합계', istc_totqy: '10', tesstk_co: '0' }]));
+  check('주식수: 우선주만 있는 경우는 합계로 대체하지 않음(보통주 수를 오인 방지)', c.total_shares === null, JSON.stringify(c));
+  c = pk(L([]));
+  check('주식수: 행이 없으면 null + 사유', c.total_shares === null && /보통주 행 없음/.test(c.reason || ''));
+  console.log(fail ? 'FAILED ' + fail : 'ALL PASS'); process.exit(fail ? 1 : 0);
+})();
