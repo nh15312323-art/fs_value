@@ -248,6 +248,63 @@ const HTML_PAGE = `<!doctype html>
     /* 모든 결과 표 공용: 세로 스크롤 영역을 주어 머리글 행(th)이 위에 고정되게 한다(position: sticky는 스크롤되는 부모가 있어야 동작). */
     .tscroll { overflow: auto; max-height: 70vh; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; margin-top: 8px; }
     .tscroll table { margin: 0; }
+    /* ---- 경제 상황 화면(시범 디자인): 밝은 톤, 토큰 + 공통 틀. 다른 화면은 아직 옛 스타일이다. ---- */
+    .ec {
+      --ec-bg: #f8fafc; --ec-surface: #ffffff; --ec-line: #e2e8f0; --ec-line-strong: #cbd5e1;
+      --ec-text: #0f172a; --ec-sub: #475569; --ec-mute: #64748b; --ec-accent: #2563eb; --ec-accent-soft: #eff6ff;
+      --ec-good: #047857; --ec-good-bg: #ecfdf5; --ec-warn: #b45309; --ec-warn-bg: #fffbeb; --ec-bad: #b91c1c; --ec-bad-bg: #fef2f2; --ec-neu: #475569; --ec-neu-bg: #f1f5f9;
+      --ec-s1: 4px; --ec-s2: 8px; --ec-s3: 12px; --ec-s4: 16px; --ec-s5: 24px; --ec-r1: 8px; --ec-r2: 12px; --ec-r3: 16px;
+      color: var(--ec-text);
+    }
+    .ec * { box-sizing: border-box; }
+    .ec-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--ec-s3); margin: 4px 0 var(--ec-s4); }
+    .ec-title { font-size: 22px; font-weight: 800; letter-spacing: -.02em; line-height: 1.2; }
+    .ec-title small { display: block; font-size: 13px; font-weight: 500; color: var(--ec-mute); letter-spacing: 0; margin-top: 4px; }
+    .ec-sec { margin: var(--ec-s5) 0 var(--ec-s3); display: flex; align-items: baseline; justify-content: space-between; gap: var(--ec-s2); flex-wrap: wrap; }
+    .ec-sec h3 { font-size: 16px; font-weight: 700; margin: 0; }
+    .ec-sec span { font-size: 12.5px; color: var(--ec-mute); }
+    .ec-card { background: var(--ec-surface); border: 1px solid var(--ec-line); border-radius: var(--ec-r2); padding: var(--ec-s4); box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+    .ec-grid { display: grid; gap: var(--ec-s3); }
+    .ec-kpis { grid-template-columns: repeat(3, 1fr); }
+    @media (max-width: 760px) { .ec-kpis { grid-template-columns: repeat(2, 1fr); } }
+    .ec-two { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+    .ec-charts { grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); }
+    .ec-kl { font-size: 12.5px; color: var(--ec-mute); font-weight: 600; }
+    .ec-kv { font-size: 24px; font-weight: 800; letter-spacing: -.02em; margin-top: 2px; font-variant-numeric: tabular-nums; }
+    .ec-kv small { font-size: 12px; font-weight: 600; color: var(--ec-mute); margin-left: 4px; letter-spacing: 0; }
+    .ec-kd { font-size: 12.5px; color: var(--ec-sub); margin: 2px 0 var(--ec-s2); font-variant-numeric: tabular-nums; }
+    .ec-spark { display: block; width: 100%; height: 30px; margin-top: var(--ec-s2); }
+    .ec-b { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+    .ec-b.good { color: var(--ec-good); background: var(--ec-good-bg); } .ec-b.warn { color: var(--ec-warn); background: var(--ec-warn-bg); }
+    .ec-b.bad { color: var(--ec-bad); background: var(--ec-bad-bg); } .ec-b.neutral { color: var(--ec-neu); background: var(--ec-neu-bg); }
+    .ec-pills { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .ec button.ec-pill { font-size: 13px; padding: 6px 13px; border-radius: 999px; border: 1px solid var(--ec-line-strong); background: var(--ec-surface); color: var(--ec-sub); font-weight: 600; }
+    .ec button.ec-pill.on { background: var(--ec-text); color: #fff; border-color: var(--ec-text); }
+    .ec button.ec-btn { font-size: 13.5px; padding: 8px 14px; border-radius: var(--ec-r1); border: 1px solid var(--ec-line-strong); background: var(--ec-surface); color: var(--ec-text); font-weight: 600; }
+    .ec-sep { width: 1px; height: 20px; background: var(--ec-line-strong); margin: 0 4px; }
+    .ec-tbl-wrap { overflow-x: auto; border: 1px solid var(--ec-line); border-radius: var(--ec-r2); background: var(--ec-surface); }
+    .ec-tbl { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 560px; }
+    .ec-tbl th { text-align: right; font-size: 12px; color: var(--ec-mute); font-weight: 600; padding: 9px 10px; border-bottom: 1px solid var(--ec-line); background: var(--ec-bg); white-space: nowrap; }
+    .ec-tbl th:first-child { text-align: left; }
+    .ec-tbl td { padding: 9px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; font-variant-numeric: tabular-nums; }
+    .ec-tbl td.r { text-align: right; white-space: nowrap; }
+    .ec-tbl tr.ec-grp td { background: var(--ec-bg); font-weight: 700; font-size: 12.5px; color: var(--ec-sub); padding: 7px 10px; }
+    .ec-tbl .ec-d { display: block; font-size: 11.5px; color: var(--ec-mute); }
+    .ec-tbl .ec-d.old { color: var(--ec-warn); }
+    .ec-pos { color: var(--ec-text); } .ec-dim { color: var(--ec-mute); }
+    .ec-note { margin-top: var(--ec-s3); font-size: 12.5px; color: var(--ec-sub); line-height: 1.6; }
+    .ec-note > summary { cursor: pointer; font-weight: 600; color: var(--ec-accent); }
+    .ec-note > div { margin-top: var(--ec-s2); }
+    .ec-chart-t { font-size: 13px; font-weight: 700; margin-bottom: 2px; } .ec-chart-t span { font-weight: 500; color: var(--ec-mute); margin-left: 6px; }
+    .ec-prob { display: flex; height: 26px; border-radius: 8px; overflow: hidden; margin: 4px 0 var(--ec-s3); background: var(--ec-neu-bg); }
+    .ec-prob div { display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 700; overflow: hidden; white-space: nowrap; }
+    .ec-pl { font-size: 12px; color: var(--ec-mute); font-weight: 600; }
+    .ec-flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: var(--ec-s2); margin: var(--ec-s3) 0; }
+    .ec-step { display: flex; gap: var(--ec-s2); align-items: flex-start; background: var(--ec-bg); border: 1px solid var(--ec-line); border-radius: var(--ec-r1); padding: var(--ec-s2) var(--ec-s3); font-size: 13px; }
+    .ec-sn { flex: 0 0 22px; height: 22px; border-radius: 50%; background: var(--ec-accent); color: #fff; font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+    .ec-sd { font-size: 12.5px; color: var(--ec-sub); margin-top: 2px; line-height: 1.5; }
+    .ec-empty { color: var(--ec-mute); font-size: 13px; padding: var(--ec-s3) 0; }
+    @media (max-width: 560px) { .ec-title { font-size: 20px; } .ec-kv { font-size: 21px; } }
     @media (max-width: 560px) { .nav button { font-size: 12.5px; padding: 9px 2px; } }
     .card {
       background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
@@ -825,15 +882,16 @@ const HTML_PAGE = `<!doctype html>
     </details>
   </div><!-- /tabFt -->
 
-  <div id="tabEcon" style="display:none;">
-    <div class="card">
-      <div class="card-title">경제 상황 — 한국·미국 거시 지표 현황과 시계열</div>
-      <p class="meta-line" style="margin-top:0;">금리(미국 2년·10년 포함)·유동성(M2 증가율, 연준 TGA·역레포·순유동성)·위험선호·물가·환율을 지표별로 보여줍니다. 종목과의 상관이 아니라 경제 지표만으로 현재 국면을 읽는 용도이며, 여러 지표를 하나의 점수로 합치지 않습니다. 값이 비어 있으면 데이터 관리 탭에서 "거시경제 데이터 갱신"을 먼저 눌러주세요.</p>
-      <div class="row"><button onclick="econLoad(true)">새로고침</button></div>
-      <div id="econStatus" class="meta-line"></div>
-      <div id="econModelOut"></div>
-      <div id="econOut"></div>
+  <div id="tabEcon" class="ec" style="display:none;">
+    <div class="ec-head">
+      <div class="ec-title">경제 상황<small>한국·미국 거시 지표 현황, 시계열, 지수 방향 확률</small></div>
+      <button class="ec-btn" onclick="econLoad(true)">새로고침</button>
     </div>
+    <details class="ec-note" style="margin:-4px 0 12px;"><summary>이 화면은 무엇을 보여주나요?</summary><div>금리(미국 2년·10년 포함)·유동성(M2 증가율, 연준 TGA·역레포·순유동성)·위험선호·물가·환율을 지표별로 보여줍니다. 종목과의 상관이 아니라 경제 지표만으로 현재 국면을 읽는 용도이며, 여러 지표를 하나의 점수로 합치지 않습니다. 값이 비어 있으면 데이터 관리 탭에서 "거시경제 데이터 갱신"을 먼저 눌러주세요.</div></details>
+    <div id="econStatus" class="ec-note" style="margin:0 0 8px;"></div>
+    <div id="econKpi"></div>
+    <div id="econModelOut"></div>
+    <div id="econOut"></div>
   </div><!-- /tabEcon -->
 
   <div id="tabMacro" style="display:none;">
@@ -9106,54 +9164,196 @@ async function pfuExport() {
       let d = ''; dp.forEach(function (p, i) { d += (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p.value).toFixed(1); });
       let zero = '';
       if (mn < 0 && mx > 0) zero = '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + y(0).toFixed(1) + '" y2="' + y(0).toFixed(1) + '" stroke="#94a3b8" stroke-dasharray="3 3" stroke-width="1"/>';
-      const col = ind.c === 'KR' ? '#2563eb' : '#dc2626';
+      const col = ind.c === 'KR' ? '#2563eb' : '#7c3aed';
       const lastP = dp[dp.length - 1];
       return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="' + escHtml(ind.n) + ' 시계열">' + zero +
         '<path d="' + d + '" fill="none" stroke="' + col + '" stroke-width="1.6"/>' +
         '<circle cx="' + x(dp.length - 1).toFixed(1) + '" cy="' + y(lastP.value).toFixed(1) + '" r="3" fill="' + col + '"/>' +
         '<text x="' + pl + '" y="' + (H - 3) + '" font-size="9" fill="#64748b">' + econYmdTxt(dp[0].date) + '</text>' +
         '<text x="' + (W - pr) + '" y="' + (H - 3) + '" font-size="9" fill="#64748b" text-anchor="end">' + econYmdTxt(lastP.date) + '</text>' +
-        '<text x="' + (W - pr) + '" y="10" font-size="9" fill="#64748b" text-anchor="end">최고 ' + escHtml(econFmt(mx, ind)) + '</text>' +
-        '<text x="' + (W - pr) + '" y="' + (H - 14) + '" font-size="9" fill="#64748b" text-anchor="end">최저 ' + escHtml(econFmt(mn, ind)) + '</text></svg>';
+        '<text x="' + pl + '" y="10" font-size="9" fill="#64748b">최고 ' + escHtml(econFmt(mx, ind)) + '</text>' +
+        '<text x="' + pl + '" y="' + (H - 14) + '" font-size="9" fill="#64748b">최저 ' + escHtml(econFmt(mn, ind)) + '</text></svg>';
     }
-    function econRender() { return guardedRender('경제 상황', 'econOut', econRenderImpl); }
+    function econRender() { econKpiRender(); return guardedRender('경제 상황', 'econOut', econRenderImpl); }
+    function econSpark(ind, s) {
+      if (!s || s.length < 2) return '';
+      const from = econShift(s[s.length - 1].date, 12); let pts = s.filter(function (p) { return p.date >= from; });
+      if (pts.length < 2) pts = s.slice(-24);
+      const stepN = Math.max(1, Math.ceil(pts.length / 60)); const dp = [];
+      for (let i = 0; i < pts.length; i += stepN) dp.push(pts[i]);
+      if (dp[dp.length - 1] !== pts[pts.length - 1]) dp.push(pts[pts.length - 1]);
+      let mn = Infinity, mx = -Infinity; dp.forEach(function (p) { if (p.value < mn) mn = p.value; if (p.value > mx) mx = p.value; });
+      if (mx === mn) { mx += 1; mn -= 1; }
+      let d = ''; dp.forEach(function (p, i) { d += (i ? 'L' : 'M') + (i * 120 / (dp.length - 1)).toFixed(1) + ' ' + (3 + (mx - p.value) * 22 / (mx - mn)).toFixed(1); });
+      return '<svg class="ec-spark" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true"><path d="' + d + '" fill="none" stroke="' + (ind.c === 'KR' ? '#2563eb' : '#7c3aed') + '" stroke-width="1.6" vector-effect="non-scaling-stroke"/></svg>';
+    }
+    // ===== 겹쳐보기: 지표를 최대 5개 골라 한 그래프에 =====
+    // 단위가 다른 지표를 한 축에 그리려면 값을 같은 척도로 바꿔야 한다: (1) 표준화(z): 선택 기간의 평균 0·표준편차 1로 맞춤(어떤 지표든 가능),
+    // (2) 시작=100: 선택 기간 첫 값을 100으로(값이 모두 양수인 지표만). 실제 값은 범례와 마우스를 올렸을 때 보인다.
+    const ECON_OV_MAX = 5, ECON_OV_COLORS = ['#2563eb', '#d97706', '#059669', '#7c3aed', '#db2777'];
+    const ECON_OV_PRESETS = [
+      { n: '한국·미국 증시 + 불안·환율', k: ['kospi', 'sp500', 'usvix', 'usdkrw'] },
+      { n: '미국 금리 (2년·10년·금리차)', k: ['us2y', 'us10y', 'us10m2'] },
+      { n: '미국 유동성 (순유동성·M2·S&P500)', k: ['usnl', 'usm2yoy', 'sp500'] },
+      { n: '한국 금리·환율·코스피', k: ['krbase', 'ktb3y', 'ktb10y', 'usdkrw', 'kospi'] },
+    ];
+    let econOv = ['kospi', 'sp500', 'usvix', 'usdkrw'], econOvMode = 'z', econOvGeo = null;
+    function econOvToggle(k) {
+      const i = econOv.indexOf(k);
+      if (i >= 0) econOv.splice(i, 1);
+      else if (econOv.length >= ECON_OV_MAX) { const m = document.getElementById('econOvMsg'); if (m) m.textContent = '최대 ' + ECON_OV_MAX + '개까지 고를 수 있습니다. 하나를 먼저 해제해 주세요.'; return; }
+      else econOv.push(k);
+      econRender();
+    }
+    function econOvToggleAttr(el) { econOvToggle(el.getAttribute('data-k')); }
+    function econOvPreset(n) { econOv = ECON_OV_PRESETS[n].k.slice(0, ECON_OV_MAX); econRender(); }
+    function econOvClear() { econOv = []; econRender(); }
+    function econOvSetMode(m) { econOvMode = m; econRender(); }
+    function econYmdMs(y) { return Date.UTC(Number(y.slice(0, 4)), Number(y.slice(4, 6)) - 1, Number(y.slice(6, 8))); }
+    function econOvBuild() {
+      // 선택 지표별로 기간 자르기 + 척도 변환. 변환 불가(시작=100인데 0 이하 값)는 skipped에 사유와 함께 담는다.
+      const out = [], skipped = [];
+      econOv.forEach(function (k, idx) {
+        const ind = ECON_INDS.filter(function (x) { return x.k === k; })[0], s = econSer[k];
+        if (!ind) return;
+        if (!s || s.length < 2) { skipped.push(ind.n + ': 자료 없음'); return; }
+        let pts = s; if (econRange > 0) { const from = econShift(s[s.length - 1].date, econRange * 12); pts = s.filter(function (p) { return p.date >= from; }); }
+        if (pts.length < 2) { skipped.push(ind.n + ': 선택 기간에 자료 부족'); return; }
+        let f;
+        if (econOvMode === 'idx') {
+          if (pts.some(function (p) { return !(p.value > 0); }) ) { skipped.push(ind.n + ': 0 이하 값이 있어 "시작=100"으로 못 그림(표준화로 보세요)'); return; }
+          const b = pts[0].value; f = function (v) { return v / b * 100; };
+        } else {
+          let m = 0; pts.forEach(function (p) { m += p.value; }); m /= pts.length;
+          let v = 0; pts.forEach(function (p) { v += (p.value - m) * (p.value - m); }); const sd = Math.sqrt(v / pts.length);
+          if (!(sd > 0)) { skipped.push(ind.n + ': 값이 변하지 않아 표준화 불가'); return; }
+          f = function (x) { return (x - m) / sd; };
+        }
+        out.push({ k: k, ind: ind, color: ECON_OV_COLORS[idx % ECON_OV_COLORS.length], pts: pts.map(function (p) { return { t: econYmdMs(p.date), date: p.date, y: f(p.value), raw: p.value }; }) });
+      });
+      return { lines: out, skipped: skipped };
+    }
+    function econOvSvg(B) {
+      if (!B.lines.length) return '';
+      const W = 640, H = 270, pl = 40, pr = 10, pt = 10, pb = 22;
+      let t0 = Infinity, t1 = -Infinity, mn = Infinity, mx = -Infinity;
+      B.lines.forEach(function (L) { L.pts.forEach(function (p) { if (p.t < t0) t0 = p.t; if (p.t > t1) t1 = p.t; if (p.y < mn) mn = p.y; if (p.y > mx) mx = p.y; }); });
+      if (mx === mn) { mx += 1; mn -= 1; }
+      const padY = (mx - mn) * 0.06; mn -= padY; mx += padY;
+      const x = function (t) { return pl + (t - t0) * (W - pl - pr) / (t1 - t0 || 1); };
+      const y = function (v) { return pt + (mx - v) * (H - pt - pb) / (mx - mn); };
+      let g = '';
+      for (let i = 0; i <= 4; i++) { const v = mn + (mx - mn) * i / 4, yy = y(v); g += '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + yy.toFixed(1) + '" y2="' + yy.toFixed(1) + '" stroke="#e2e8f0" stroke-width="1"/><text x="' + (pl - 5) + '" y="' + (yy + 3).toFixed(1) + '" font-size="10" fill="#64748b" text-anchor="end">' + (econOvMode === 'idx' ? v.toFixed(0) : v.toFixed(1)) + '</text>'; }
+      if (econOvMode === 'z' && mn < 0 && mx > 0) g += '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + y(0).toFixed(1) + '" y2="' + y(0).toFixed(1) + '" stroke="#94a3b8" stroke-dasharray="4 3" stroke-width="1"/>';
+      let paths = '';
+      B.lines.forEach(function (L) {
+        const stepN = Math.max(1, Math.ceil(L.pts.length / 260)); let d = '';
+        L.pts.forEach(function (p, i) { if (i % stepN === 0 || i === L.pts.length - 1) d += (d ? 'L' : 'M') + x(p.t).toFixed(1) + ' ' + y(p.y).toFixed(1); });
+        paths += '<path d="' + d + '" fill="none" stroke="' + L.color + '" stroke-width="1.8" stroke-linejoin="round"/>';
+        const lp = L.pts[L.pts.length - 1]; paths += '<circle cx="' + x(lp.t).toFixed(1) + '" cy="' + y(lp.y).toFixed(1) + '" r="3" fill="' + L.color + '"/>';
+      });
+      const d0 = new Date(t0).toISOString().slice(0, 10), d1 = new Date(t1).toISOString().slice(0, 10);
+      econOvGeo = { pl: pl, pr: pr, W: W, t0: t0, t1: t1 };
+      return '<svg id="econOvSvg" viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="touch-action:pan-y; display:block;" role="img" aria-label="선택한 지표 겹쳐보기" onmousemove="econOvHover(event)" ontouchmove="econOvHover(event)" onmouseleave="econOvLeave()">' + g + paths +
+        '<line id="econOvLine" x1="0" x2="0" y1="' + pt + '" y2="' + (H - pb) + '" stroke="#0f172a" stroke-width="1" style="display:none;"/>' +
+        '<text x="' + pl + '" y="' + (H - 6) + '" font-size="10" fill="#64748b">' + d0 + '</text><text x="' + (W - pr) + '" y="' + (H - 6) + '" font-size="10" fill="#64748b" text-anchor="end">' + d1 + '</text></svg>';
+    }
+    function econOvHover(ev) {
+      const svg = document.getElementById('econOvSvg'), tip = document.getElementById('econOvTip'); if (!svg || !econOvGeo || !tip) return;
+      const pt = ev.touches && ev.touches.length ? ev.touches[0] : ev; const r = svg.getBoundingClientRect(); if (!r.width) return;
+      const vx = (pt.clientX - r.left) / r.width * econOvGeo.W;
+      const fr = Math.max(0, Math.min(1, (vx - econOvGeo.pl) / (econOvGeo.W - econOvGeo.pl - econOvGeo.pr)));
+      const tms = econOvGeo.t0 + fr * (econOvGeo.t1 - econOvGeo.t0);
+      const ln = document.getElementById('econOvLine'); if (ln) { const xx = econOvGeo.pl + fr * (econOvGeo.W - econOvGeo.pl - econOvGeo.pr); ln.setAttribute('x1', xx); ln.setAttribute('x2', xx); ln.style.display = ''; }
+      const dt = new Date(tms).toISOString().slice(0, 10).replace(/-/g, '');
+      let h = '<b>' + econYmdTxt(dt) + '</b> ';
+      econOvLast.lines.forEach(function (L) {
+        const v = macroValueAsOf(econSer[L.k], dt, L.ind.f === 'M' ? 45 : L.ind.f === 'W' ? 12 : 10);
+        h += '<span style="margin-left:10px; white-space:nowrap;"><span style="color:' + L.color + ';">●</span> ' + escHtml(L.ind.n) + ' <b>' + (v == null ? '-' : econFmt(v, L.ind)) + '</b></span>';
+      });
+      tip.innerHTML = h;
+    }
+    function econOvLeave() { const ln = document.getElementById('econOvLine'); if (ln) ln.style.display = 'none'; }
+    let econOvLast = { lines: [], skipped: [] };
+    function econOvHtml() {
+      const pill = function (on, fn, label, extra) { return '<button class="ec-pill' + (on ? ' on' : '') + '" ' + (extra || '') + ' onclick="' + fn + '">' + label + '</button>'; };
+      let h = '<div class="ec-card" style="margin-bottom:12px;"><div style="font-weight:800; font-size:15px;">겹쳐보기 <span class="ec-dim" style="font-weight:500; font-size:12.5px;">지표 최대 ' + ECON_OV_MAX + '개 · 선택 ' + econOv.length + '개</span></div>';
+      h += '<div class="ec-pills" style="margin:8px 0;"><span class="ec-pl">바로 고르기</span>' + ECON_OV_PRESETS.map(function (p, i) { return pill(false, 'econOvPreset(' + i + ')', escHtml(p.n)); }).join('') + pill(false, 'econOvClear()', '모두 해제') + '</div>';
+      h += '<details open class="ec-note" style="margin-top:0;"><summary>지표 고르기</summary><div>';
+      ECON_GROUPS.forEach(function (g) {
+        const items = ECON_INDS.filter(function (i) { return i.g === g[0]; });
+        h += '<div class="ec-pl" style="margin:8px 0 4px;">' + g[1] + '</div><div class="ec-pills">' + items.map(function (i) {
+          const on = econOv.indexOf(i.k) >= 0, ci = econOv.indexOf(i.k);
+          return '<button class="ec-pill' + (on ? ' on' : '') + '" data-k="' + i.k + '" onclick="econOvToggleAttr(this)"' + (on ? ' style="background:' + ECON_OV_COLORS[ci % 5] + '; border-color:' + ECON_OV_COLORS[ci % 5] + ';"' : '') + '>' + (i.c === 'KR' ? '🇰🇷 ' : '🇺🇸 ') + escHtml(i.n) + '</button>';
+        }).join('') + '</div>';
+      });
+      h += '</div></details><div id="econOvMsg" class="ec-note" style="color:var(--ec-warn); margin-top:6px;"></div>';
+      h += '<div class="ec-pills" style="margin:8px 0;"><span class="ec-pl">값 맞추기</span>' + pill(econOvMode === 'z', "econOvSetMode('z')", '표준화(z-점수)') + pill(econOvMode === 'idx', "econOvSetMode('idx')", '시작=100') + '</div>';
+      const B = econOvBuild(); econOvLast = B;
+      if (!econOv.length) h += '<div class="ec-empty">위에서 지표를 1~' + ECON_OV_MAX + '개 골라주세요.</div>';
+      else if (!B.lines.length) h += '<div class="ec-empty">그릴 수 있는 지표가 없습니다.</div>';
+      else {
+        h += econOvSvg(B) + '<div id="econOvTip" class="ec-note" style="margin-top:6px; min-height:20px;">그래프 위에 마우스를 올리거나 손가락을 대면 그날의 실제 값이 보입니다.</div>';
+        h += '<div class="ec-pills" style="margin-top:6px; gap:12px;">' + B.lines.map(function (L) { const lp = L.pts[L.pts.length - 1]; return '<span style="font-size:12.5px; white-space:nowrap;"><span style="color:' + L.color + ';">●</span> ' + escHtml(L.ind.n) + ' <b>' + econFmt(lp.raw, L.ind) + '</b> <span class="ec-dim">' + escHtml(L.ind.u) + ' (' + econYmdTxt(lp.date) + ')</span></span>'; }).join('') + '</div>';
+      }
+      if (B.skipped.length) h += '<div class="ec-note" style="color:var(--ec-warn);">그리지 못한 지표: ' + B.skipped.map(escHtml).join(' / ') + '</div>';
+      h += '<div class="ec-note">' + (econOvMode === 'z' ? '표준화: 선택 기간의 평균을 0, 표준편차를 1로 맞춥니다. 선의 높낮이는 "그 지표의 이 기간 평균 대비 위치"이며 서로 다른 단위를 비교할 수 있습니다.' : '시작=100: 선택 기간 첫날 값을 100으로 놓은 상대 변화입니다.') + ' 월·주별 지표는 발표 기준일에만 점이 있고 사이는 직선으로 이었습니다. 두 선이 함께 움직인다고 한쪽이 다른 쪽의 원인이라는 뜻은 아닙니다.</div></div>';
+      return h;
+    }
+
+    const ECON_KPI_KEYS = ['us10m2', 'usnl', 'usvix', 'ushy', 'kr10m3', 'usdkrw'];
+    function econKpiRender() {
+      const box = document.getElementById('econKpi'); if (!box) return;
+      if (!econSer) { box.innerHTML = ''; return; }
+      let h = '<div class="ec-sec"><h3>핵심 지표</h3><span>3개월 변화 · 최근 1년 흐름</span></div><div class="ec-grid ec-kpis">';
+      ECON_KPI_KEYS.forEach(function (k) {
+        const i = ECON_INDS.filter(function (x) { return x.k === k; })[0]; if (!i) return;
+        const s = econSer[k], st = econStats(i, s);
+        h += '<div class="ec-card"><div class="ec-kl">' + (i.c === 'KR' ? '🇰🇷 ' : '🇺🇸 ') + escHtml(i.n) + '</div>';
+        if (!st) { h += '<div class="ec-empty">자료 없음<br>데이터 관리에서 갱신</div></div>'; return; }
+        const sg = econSignal(i, st, s);
+        h += '<div class="ec-kv">' + econFmt(st.last, i) + '<small>' + escHtml(i.u) + '</small></div><div class="ec-kd">3개월 ' + econChgTxt(st.c3, i) + '<br><span class="ec-dim">' + econYmdTxt(st.date) + (i.f === 'M' ? ' 기준월' : '') + '</span></div>' +
+          (sg ? '<span class="ec-b ' + sg[1] + '" title="' + escHtml(sg[2]) + '">' + escHtml(sg[0]) + '</span>' : '<span class="ec-b neutral">신호 규칙 없음</span>') + econSpark(i, s) + '</div>';
+      });
+      box.innerHTML = h + '</div>';
+    }
     function econRenderImpl() {
       const box = document.getElementById('econOut'); if (!box) return;
       if (!econSer) { box.innerHTML = ''; return; }
-      const TONE = { good: '#16a34a', warn: '#d97706', bad: '#dc2626', neutral: '#64748b' };
-      const btn = function (on, fn, label) { return '<button class="' + (on ? 'toggle-active' : '') + '" onclick="' + fn + '" style="padding:5px 10px; font-size:13px;">' + label + '</button>'; };
-      let h = '<div class="row" style="gap:6px; flex-wrap:wrap; align-items:center;">' +
-        btn(econCountry === 'ALL', "econSetCountry('ALL')", '한국+미국') + btn(econCountry === 'KR', "econSetCountry('KR')", '한국') + btn(econCountry === 'US', "econSetCountry('US')", '미국') +
-        '<span style="width:8px;"></span>' + btn(econGroup === 'all', "econSetGroup('all')", '전체 분야') +
-        ECON_GROUPS.map(function (g) { return btn(econGroup === g[0], "econSetGroup('" + g[0] + "')", g[1]); }).join('') + '</div>';
+      const pill = function (on, fn, label) { return '<button class="ec-pill' + (on ? ' on' : '') + '" onclick="' + fn + '">' + label + '</button>'; };
+      let h = '<div class="ec-sec"><h3>전체 지표</h3><span>필터는 아래 표와 그래프에 함께 적용됩니다</span></div><div class="ec-pills">' +
+        pill(econCountry === 'ALL', "econSetCountry('ALL')", '한국+미국') + pill(econCountry === 'KR', "econSetCountry('KR')", '한국') + pill(econCountry === 'US', "econSetCountry('US')", '미국') +
+        '<span class="ec-sep"></span>' + pill(econGroup === 'all', "econSetGroup('all')", '전체 분야') +
+        ECON_GROUPS.map(function (g) { return pill(econGroup === g[0], "econSetGroup('" + g[0] + "')", g[1]); }).join('') + '</div>';
       const list = ECON_INDS.filter(function (i) { return (econCountry === 'ALL' || i.c === econCountry) && (econGroup === 'all' || i.g === econGroup); });
       const rows = []; let missing = 0;
+      const flag = function (i) { return (i.c === 'KR' ? '🇰🇷 ' : '🇺🇸 ') + escHtml(i.n); };
       ECON_GROUPS.forEach(function (g) {
         const items = list.filter(function (i) { return i.g === g[0]; });
         if (!items.length) return;
-        rows.push('<tr><td colspan="6" style="background:var(--bg); font-weight:700;">' + g[1] + '</td></tr>');
+        rows.push('<tr class="ec-grp"><td colspan="6">' + g[1] + '</td></tr>');
         items.forEach(function (i) {
           const s = econSer[i.k], st = econStats(i, s);
-          if (!st) { missing++; rows.push('<tr><td>' + (i.c === 'KR' ? '🇰🇷 ' : '🇺🇸 ') + escHtml(i.n) + '</td><td colspan="5" style="color:var(--text-muted);">자료 없음 — 데이터 관리에서 "거시경제 데이터 갱신"을 눌러주세요</td></tr>'); return; }
+          if (!st) { missing++; rows.push('<tr><td>' + flag(i) + '</td><td colspan="5" class="ec-dim">자료 없음 — 데이터 관리에서 "거시경제 데이터 갱신"을 눌러주세요</td></tr>'); return; }
           const sg = econSignal(i, st, s), sl = econStale(i, st.date);
-          const cell = function (v) { return '<td style="text-align:right; white-space:nowrap;">' + econChgTxt(v, i) + '</td>'; };
-          rows.push('<tr><td>' + (i.c === 'KR' ? '🇰🇷 ' : '🇺🇸 ') + escHtml(i.n) + '</td>' +
-            '<td style="text-align:right; white-space:nowrap;"><b>' + econFmt(st.last, i) + '</b> <span style="color:var(--text-muted); font-size:11px;">' + escHtml(i.u) + '</span><br><span style="font-size:11px; color:' + (sl.old ? '#d97706' : 'var(--text-muted)') + ';">' + econYmdTxt(st.date) + (i.f === 'M' ? ' 기준월' : '') + (sl.old ? ' · 오래됨' : '') + '</span></td>' +
+          const cell = function (v) { return '<td class="r">' + econChgTxt(v, i) + '</td>'; };
+          rows.push('<tr><td>' + flag(i) + '</td>' +
+            '<td class="r"><b>' + econFmt(st.last, i) + '</b> <span class="ec-dim" style="font-size:11px;">' + escHtml(i.u) + '</span><span class="ec-d' + (sl.old ? ' old' : '') + '">' + econYmdTxt(st.date) + (i.f === 'M' ? ' 기준월' : '') + (sl.old ? ' · 오래됨' : '') + '</span></td>' +
             cell(st.c1) + cell(st.c3) + cell(st.c12) +
-            '<td style="white-space:nowrap;">' + (st.pct == null ? '-' : '하위 ' + st.pct + '%') + (sg ? '<br><span title="' + escHtml(sg[2]) + '" style="font-size:12px; font-weight:700; color:' + TONE[sg[1]] + ';">' + escHtml(sg[0]) + '</span>' : '') + '</td></tr>');
+            '<td class="r">' + (st.pct == null ? '-' : '하위 ' + st.pct + '%') + (sg ? '<span class="ec-d"><span class="ec-b ' + sg[1] + '" title="' + escHtml(sg[2]) + '">' + escHtml(sg[0]) + '</span></span>' : '') + '</td></tr>');
         });
       });
-      h += '<div class="tbl-wrap" style="overflow-x:auto; margin-top:8px;"><table style="width:100%; font-size:13px;"><thead><tr><th>지표</th><th>최신값(기준일)</th><th>1개월</th><th>3개월</th><th>12개월</th><th>위치·신호</th></tr></thead><tbody>' + rows.join('') + '</tbody></table></div>';
-      h += '<div class="meta-line">변화는 값이 금리·비율이면 %p 차이, 지수·잔고·가격이면 % 변화입니다. "위치"는 저장된 전체 기간(최대 약 9년, 하이일드 스프레드 등은 더 짧을 수 있음) 중 현재값이 아래에서 몇 % 지점인지입니다. 신호 글자를 누르면(마우스를 올리면) 규칙이 보입니다. 임계값은 실무 관행이거나 해외 연구에서 온 것으로, 한국 주식시장에서 수익이 검증된 매매 규칙이 아닙니다.' + (missing ? ' 자료가 없는 ' + missing + '개 지표는 갱신 후 나타납니다.' : '') + '</div>';
-      h += '<div class="card-title" style="margin-top:16px;">시계열 그래프</div><div class="row" style="gap:6px; flex-wrap:wrap; align-items:center;"><span class="meta-line" style="margin:0;">기간</span>' +
-        [[1, '1년'], [3, '3년'], [5, '5년'], [0, '전체']].map(function (r) { return btn(econRange === r[0], 'econSetRange(' + r[0] + ')', r[1]); }).join('') + '</div>';
-      h += '<div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:10px; margin-top:8px;">';
+      h += '<div class="ec-tbl-wrap" style="margin-top:12px;"><table class="ec-tbl"><thead><tr><th>지표</th><th>최신값(기준일)</th><th>1개월</th><th>3개월</th><th>12개월</th><th>위치·신호</th></tr></thead><tbody>' + rows.join('') + '</tbody></table></div>';
+      h += '<details class="ec-note"><summary>표 읽는 법과 한계</summary><div>변화는 값이 금리·비율이면 %p 차이, 지수·잔고·가격이면 % 변화입니다. "위치"는 저장된 전체 기간(최대 약 9년, 하이일드 스프레드 등은 더 짧을 수 있음) 중 현재값이 아래에서 몇 % 지점인지입니다. 신호 배지에 마우스를 올리면 규칙이 보입니다. 임계값은 실무 관행이거나 해외 연구에서 온 것으로, 한국 주식시장에서 수익이 검증된 매매 규칙이 아닙니다.' + (missing ? ' 자료가 없는 ' + missing + '개 지표는 갱신 후 나타납니다.' : '') + '</div></details>';
+      h += '<div class="ec-sec"><h3>시계열 그래프</h3><div class="ec-pills"><span class="ec-pl">기간</span>' +
+        [[1, '1년'], [3, '3년'], [5, '5년'], [0, '전체']].map(function (r) { return pill(econRange === r[0], 'econSetRange(' + r[0] + ')', r[1]); }).join('') + '</div></div>';
+      h += econOvHtml();
+      h += '<div class="ec-sec" style="margin-top:8px;"><h3>지표별 그래프</h3><span>위 필터 기준</span></div><div class="ec-grid ec-charts">';
       list.forEach(function (i) {
         const s = econSer[i.k], st = econStats(i, s);
-        h += '<div style="border:1px solid var(--border); border-radius:8px; padding:8px; background:var(--card);"><div style="font-size:13px; font-weight:600;">' + (i.c === 'KR' ? '🇰🇷 ' : '🇺🇸 ') + escHtml(i.n) +
-          (st ? ' <span style="font-weight:400; color:var(--text-muted);">' + econFmt(st.last, i) + ' ' + escHtml(i.u) + '</span>' : '') + '</div>' + econChartSvg(i, s) + '</div>';
+        h += '<div class="ec-card" style="padding:12px;"><div class="ec-chart-t">' + flag(i) + (st ? '<span>' + econFmt(st.last, i) + ' ' + escHtml(i.u) + '</span>' : '') + '</div>' + econChartSvg(i, s) + '</div>';
       });
-      h += '</div><div class="meta-line">그래프는 지표마다 세로축 범위를 따로 잡습니다(서로 크기를 직접 비교하는 용도가 아님). 점선은 0선, 점은 최신값입니다.</div>';
+      h += '</div><div class="ec-note">지표마다 세로축 범위를 따로 잡습니다(서로 크기를 직접 비교하는 용도가 아님). 점선은 0선, 점은 최신값입니다. 파란색은 한국, 보라색은 미국 지표입니다.</div>';
       box.innerHTML = h;
     }
 
@@ -9228,7 +9428,8 @@ async function pfuExport() {
     function econBrier(p, y) { let s = 0; for (let c = 0; c < 3; c++) { const d = p[c] - (y === c ? 1 : 0); s += d * d; } return s; }
     function econRunModel(spec, S) {
       const out = { spec: spec };
-      if (!S[spec.k] || S[spec.k].length < 400 || !S.usvix || !S.usvix.length) { out.err = '필요한 자료(지수·VIX)가 아직 충분하지 않습니다. 데이터 관리에서 거시경제 데이터를 갱신해 주세요.'; return out; }
+      if (!S[spec.k] || S[spec.k].length < 400 || !S.usvix || !S.usvix.length) { const need = [[spec.k, spec.n, 400], ['usvix', 'VIX', 1]].filter(function (q) { return !S[q[0]] || S[q[0]].length < q[2]; }).map(function (q) { return q[1] + ' ' + ((S[q[0]] || []).length) + '개'; });
+        out.err = '필요한 자료가 아직 충분하지 않습니다(부족: ' + need.join(', ') + '). 데이터 관리에서 "거시경제 데이터 갱신"을 눌러 모두 받은 뒤(여러 회차) 새로고침해 주세요.'; return out; }
       // 선택 변수(수출·M2)는 표본이 너무 줄면 빼고 기본 변수만 쓴다.
       let feats = spec.feats, rows = econSamples(spec.k, S, feats), dropped = null;
       let lab = rows.filter(function (r) { return r.y != null; });
@@ -9257,31 +9458,52 @@ async function pfuExport() {
       out.useModel = out.bss != null && out.bss > 0.02 && out.nEff >= 20;
       return out;
     }
+    function econModelIntro() {
+      const step = function (n, t, d) { return '<div class="ec-step"><div class="ec-sn">' + n + '</div><div><b>' + t + '</b><div class="ec-sd">' + d + '</div></div></div>'; };
+      return '<div class="ec-card" style="margin-bottom:12px;"><div style="font-weight:800; font-size:15px;">이 확률은 무엇이고, 어떻게 만들어지나요?</div>' +
+        '<div class="ec-note" style="margin-top:6px;"><b>한 줄 요약</b> — "지금과 비슷한 경제 상황(금리차·시장 불안·환율·최근 지수 흐름)이었던 과거 달들에서, 3개월 뒤 지수가 오른 경우·제자리였던 경우·내린 경우가 각각 얼마나 많았는지"를 계산해 확률처럼 보여주는 통계 모델입니다. 미래를 맞히는 예언이 아니라 <b>과거 비슷한 상황의 비율</b>입니다.</div>' +
+        '<div class="ec-flow">' + step('1', '재료 모으기', '매달 말, 그날까지 알 수 있던 지표 5~6개를 기록합니다.') + step('2', '정답 붙이기', '3개월 뒤 +3% 이상이면 상승, -3% 이하면 하락, 그 사이면 중립.') +
+        step('3', '규칙 배우기', '재료 조합별로 어떤 정답이 많았는지 계산식(로지스틱 회귀)으로 배웁니다.') + step('4', '오늘 적용', '지금의 재료 값을 넣어 상승·중립·하락 확률을 계산합니다.') +
+        step('5', '시험 보기', '과거 각 달로 돌아가 "그때까지 자료만" 보고 예측해 채점합니다.') + '</div>' +
+        '<div class="ec-note"><b>화면 읽는 법</b> — 막대는 상승(초록)·중립(회색)·하락(빨강) 확률입니다. "주 확률"이 이 화면이 권하는 숫자이고, 옆의 "참고"는 다른 방식의 숫자입니다. <b>기준선</b>은 재료 없이 "과거에 세 결과가 각각 몇 %였나"만 쓴 가장 단순한 예측입니다. 모델이 시험(5번)에서 기준선보다 확실히 잘 맞히지 못하면, 이 화면은 기준선을 주 확률로 보여줍니다. 그건 오류가 아니라 "이 자료로는 기준선보다 나은 예측을 만들지 못했다"는 정직한 결과입니다.</div>' +
+        '<div class="ec-note"><b>예를 들어</b> — 주 확률이 "상승 30% · 중립 50% · 하락 20%"라면, 비슷한 상황의 과거 100번 중 30번은 3개월 뒤 +3% 이상 올랐다는 뜻입니다. 오를 것이라는 예측도, 내릴 것이라는 예측도 아닙니다.</div>' +
+        '<details class="ec-note"><summary>쓰는 지표와 근거 수준</summary><div><table class="ec-tbl" style="min-width:0;"><thead><tr><th>지표</th><th style="text-align:left;">왜 넣었나</th><th style="text-align:left;">근거 수준</th></tr></thead><tbody>' +
+        '<tr><td>12개월 수익률(최근 1개월 제외)</td><td style="text-align:left;">오른 지수가 한동안 더 오르는 경향(모멘텀). 최근 1개월은 되돌림이 잦아 뺍니다.</td><td style="text-align:left;">유력: Jegadeesh &amp; Titman(1993) 등. 한국·지수 단위 적용은 약함</td></tr>' +
+        '<tr><td>최근 3개월 수익률</td><td style="text-align:left;">단기 추세의 방향</td><td style="text-align:left;">실무 관행</td></tr>' +
+        '<tr><td>장기-단기 금리차</td><td style="text-align:left;">마이너스(역전)면 경기 둔화 우려</td><td style="text-align:left;">유력: Estrella &amp; Mishkin(1998)은 미국 경기침체 예측. 주가 방향 예측력은 약함</td></tr>' +
+        '<tr><td>VIX(시장 불안 정도)</td><td style="text-align:left;">불안이 클 때 이후 수익·변동 패턴이 달라지는지 반영</td><td style="text-align:left;">실무 관행</td></tr>' +
+        '<tr><td>원/달러·달러지수 3개월 변화</td><td style="text-align:left;">달러 강세는 위험자산·신흥국에 부담이라는 가설</td><td style="text-align:left;">가설(검증 필요)</td></tr>' +
+        '<tr><td>한국 수출 증가율 / 미국 M2 증가율</td><td style="text-align:left;">경기(수출)·유동성(M2) 흐름. 발표가 늦어 2개월 지연 적용</td><td style="text-align:left;">가설(검증 필요)</td></tr></tbody></table></div></details></div>';
+    }
+
     function econModelRender() {
       const box = document.getElementById('econModelOut'); if (!box) return;
       if (!econSer) { box.innerHTML = ''; return; }
-      let h = '';
       const pct = function (v) { return (v * 100).toFixed(0) + '%'; };
+      const intro = econModelIntro();
       const bar = function (p, label) {
-        const C = ['#16a34a', '#64748b', '#dc2626'], N = ['상승', '중립', '하락'];
-        return '<div style="margin:4px 0;"><div style="font-size:12px; color:var(--text-muted);">' + label + '</div><div style="display:flex; height:22px; border-radius:5px; overflow:hidden;">' +
-          [0, 1, 2].map(function (c) { return '<div title="' + N[c] + ' ' + pct(p[c]) + '" style="width:' + (p[c] * 100).toFixed(1) + '%; background:' + C[c] + '; color:#fff; font-size:11px; display:flex; align-items:center; justify-content:center; overflow:hidden; white-space:nowrap;">' + (p[c] >= 0.12 ? N[c] + ' ' + pct(p[c]) : '') + '</div>'; }).join('') + '</div></div>';
+        const C = ['#059669', '#94a3b8', '#dc2626'], N = ['상승', '중립', '하락'];
+        return '<div class="ec-pl">' + label + '</div><div class="ec-prob">' +
+          [0, 1, 2].map(function (c) { return '<div title="' + N[c] + ' ' + pct(p[c]) + '" style="width:' + (p[c] * 100).toFixed(1) + '%; background:' + C[c] + ';">' + (p[c] >= 0.12 ? N[c] + ' ' + pct(p[c]) : '') + '</div>'; }).join('') + '</div>';
       };
+      let h = '<div class="ec-sec"><h3>지수 방향 확률 <span style="font-weight:500;">실험적 · 앞으로 3개월, ±3% 기준</span></h3></div>' + intro + '<div class="ec-grid ec-two">';
       ECON_MODELS.forEach(function (spec) {
         let m; try { m = econRunModel(spec, econSer); } catch (e) { m = { spec: spec, err: '계산 오류: ' + e.message }; }
-        h += '<div style="border:1px solid var(--border); border-radius:8px; padding:10px; margin-top:8px; background:var(--card);"><div style="font-weight:700;">' + escHtml(spec.n) + ' — 앞으로 3개월(±3% 기준)</div>';
-        if (m.err) { h += '<div class="meta-line">' + escHtml(m.err) + '</div></div>'; return; }
+        h += '<div class="ec-card"><div style="font-weight:800; font-size:16px;">' + escHtml(spec.n) + '</div>';
+        if (m.err) { h += '<div class="ec-empty">' + escHtml(m.err) + '</div></div>'; return; }
         const main = m.useModel ? m.pModel : m.pBase;
-        h += '<div class="meta-line" style="margin-top:2px;">기준일 ' + econYmdTxt(m.asOf) + ' · 학습 월말 표본 ' + m.nTrain + '개(' + m.first.slice(0, 4) + '년~)</div>';
-        h += bar(main, m.useModel ? '주 확률 = 모델 (과거 채점에서 기준선을 이김)' : '주 확률 = 과거 비율(기준선) — 모델이 과거 채점에서 기준선을 확실히 이기지 못함');
+        h += '<div class="ec-kd" style="margin:2px 0 10px;">기준일 ' + econYmdTxt(m.asOf) + ' · 학습 월말 표본 ' + m.nTrain + '개(' + m.first.slice(0, 4) + '년~)</div>';
+        h += '<span class="ec-b ' + (m.useModel ? 'good' : 'neutral') + '" style="margin-bottom:8px;">' + (m.useModel ? '모델이 과거 채점에서 기준선을 이김' : '모델이 기준선을 확실히 못 이김 → 과거 비율을 주 확률로 표시') + '</span>';
+        h += bar(main, m.useModel ? '주 확률 (모델)' : '주 확률 (과거 비율, 기준선)');
         h += bar(m.useModel ? m.pBase : m.pModel, m.useModel ? '참고: 과거 비율(기준선)' : '참고: 모델 확률(신뢰 낮음)');
-        h += '<div class="meta-line"><b>과거 채점</b>(매달 그때까지 자료만으로 예측, ' + m.nOos + '회·사실상 독립 표본 약 ' + m.nEff + '개): 확률 점수(Brier, 낮을수록 좋음) 모델 ' + m.bsM.toFixed(3) + ' vs 기준선 ' + m.bsB.toFixed(3) + ' → 개선 ' + (m.bss * 100).toFixed(1) + '% · 가장 높게 본 쪽이 맞은 비율 모델 ' + pct(m.accM) + ' vs 기준선 ' + pct(m.accB) + '. ' +
+        h += '<div class="ec-note" style="margin-top:0;"><b>과거 채점</b> ' + m.nOos + '회(사실상 독립 표본 약 ' + m.nEff + '개) · 확률 점수(Brier, 낮을수록 좋음) 모델 ' + m.bsM.toFixed(3) + ' vs 기준선 ' + m.bsB.toFixed(3) + ' (개선 ' + (m.bss * 100).toFixed(1) + '%) · 가장 높게 본 쪽 적중률 모델 ' + pct(m.accM) + ' vs 기준선 ' + pct(m.accB) + '. ' +
           (m.useModel ? '기준선보다 낫지만 표본이 적어 우연일 수 있습니다.' : '기준선을 이긴다고 말할 수 없습니다(표본이 적고 3개월 구간이 겹쳐 판단이 어렵습니다).') + '</div>';
-        h += '<details><summary style="cursor:pointer; font-size:13px;">쓴 변수와 현재 값 (모델이 "상승 쪽"으로 읽는 방향)</summary><ul class="meta-line" style="margin:4px 0 0 18px;">' +
+        h += '<details class="ec-note"><summary>쓴 변수와 현재 값</summary><div><ul style="margin:0 0 0 18px; padding:0;">' +
           m.feats.map(function (f) { return '<li>' + escHtml(f.n) + ': ' + f.v.toFixed(3) + ' · 높을수록 ' + (f.dir > 0.02 ? '상승 쪽' : f.dir < -0.02 ? '하락 쪽' : '영향 거의 없음') + '</li>'; }).join('') +
-          '</ul><div class="meta-line">변수끼리 비슷하게 움직이면 방향 해석이 흔들립니다. 참고용입니다.' + (m.dropped ? ' 자료가 짧아 제외한 변수: ' + escHtml(m.dropped.join(', ')) + '.' : '') + '</div></details></div>';
+          '</ul>변수끼리 비슷하게 움직이면 방향 해석이 흔들립니다. 참고용입니다.' + (m.dropped ? ' 자료가 짧아 제외한 변수: ' + escHtml(m.dropped.join(', ')) + '.' : '') + '</div></details></div>';
       });
-      h += '<details style="margin-top:10px;"><summary style="cursor:pointer; font-weight:700;">이 모델은 어떻게 돌아가나요? (아주 쉬운 설명)</summary><div class="meta-line">' +
+      h += '</div>';
+      h += '<details class="ec-note"><summary>더 자세히: 수학적 구조와 한계(꼭 읽어주세요)</summary><div>' +
         '<b>1. 재료 모으기</b> — 매달 말, 그날까지 알 수 있던 숫자 몇 개를 적어 둡니다: 지수의 최근 오름·내림(모멘텀), 장기-단기 금리 차이, 시장 불안 정도(VIX), 환율·달러 흐름, 수출(한국) 또는 통화량(미국).<br />' +
         '<b>2. 정답 붙이기</b> — 그 달 말로부터 3개월 뒤 지수가 +3% 이상 올랐으면 "상승", -3% 이하로 내렸으면 "하락", 그 사이면 "중립"이라고 정답표를 만듭니다.<br />' +
         '<b>3. 규칙 배우기</b> — 로지스틱 회귀라는 방법이 "이런 재료 조합일 땐 뒤에 어떤 결과가 많았나"를 확률 계산식으로 배웁니다. 너무 꼬불꼬불하게 외우지 않도록 계수를 작게 묶는 규제(릿지)를 걸었습니다. 재료 몇 개를 점수로 바꿔 더하고, 그 점수를 합이 100%가 되는 세 확률로 바꾸는 식이라고 보면 됩니다.<br />' +
@@ -9299,7 +9521,7 @@ async function pfuExport() {
       statusEl.textContent = '거시경제 데이터를 받아오는 중입니다(최근 9년치, 지표 23개 — 처음엔 여러 번에 나눠 자동으로 이어받습니다)...';
       try {
         let total = 0, last = null;
-        for (let round = 1; round <= 30; round++) {
+        for (let round = 1; round <= 80; round++) {
           const res = await fetch('/api/macro/refresh');
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || '갱신 실패');
@@ -10022,23 +10244,33 @@ async function runMacroRefresh(env, explicitStart, endDate, defaultLookbackStart
   if (!env.FRED_API_KEY) throw new Error("FRED_API_KEY 환경변수(시크릿)가 설정되지 않았습니다.");
 
   const summary = {};
-  // Worker 호출 1번에는 무료 플랜 기준 subrequest(외부 fetch + D1 쿼리) 50건 한도가 있다. 한 번에 저장하는 점 수를
-  // 1,000개(INSERT 약 31건)로 제한하고, 남은 건 "partial"로 알려 화면이 이어서 다시 호출하게 한다.
-  let budget = explicitStart ? Infinity : 1000;
-  for (const [seriesKey, def] of Object.entries(MACRO_SERIES)) {
+  // Worker 호출 1번에는 무료 플랜 기준 subrequest(외부 fetch + D1 쿼리) 50건 한도가 있다. 지표가 23개로 늘면서
+  // "지표마다 MAX(date) 조회 1건 + 외부 조회 1건"만으로 46건이 되어 한도를 넘겼고, 그 결과 새 지표가 계속 저장되지
+  // 않았다. 그래서 (1) 마지막 저장일은 한 번의 GROUP BY 쿼리로 가져오고 (2) 호출 안에서 쓴 subrequest 수를 직접 세어
+  // 한도(SUB_CAP) 근처에서 멈추며 (3) 아직 한 번도 받지 못한 지표부터 처리한다. 남은 지표는 partial로 알려 화면이 이어서 다시 호출한다.
+  const SUB_CAP = 40;
+  let sub = 1; // 아래 MAX(date) 조회
+  const lastMap = {};
+  const lastRows = await env.DB.prepare("SELECT series, MAX(date) AS d FROM macro_data GROUP BY series").all();
+  for (const r of (lastRows.results || [])) lastMap[r.series] = r.d;
+  let budget = explicitStart ? Infinity : 1000; // 한 번에 저장하는 점 수(INSERT 약 31건)
+  // 아직 데이터가 없는 지표를 먼저 처리해 최초 백필이 굶지 않게 한다.
+  const keys = Object.keys(MACRO_SERIES).sort((x, y) => (lastMap[x] ? 1 : 0) - (lastMap[y] ? 1 : 0));
+  const defer = (seriesKey, def) => { summary[seriesKey] = { label: def.label, points: 0, partial: true, note: "이번 회차 한도 때문에 다음 회차로 미룸" }; };
+  for (const seriesKey of keys) {
+    const def = MACRO_SERIES[seriesKey];
     let effectiveStart = explicitStart;
     if (!effectiveStart) {
-      const lastRow = await env.DB
-        .prepare("SELECT MAX(date) AS d FROM macro_data WHERE series = ?")
-        .bind(seriesKey)
-        .first();
+      const lastD = lastMap[seriesKey];
       // 일별은 마지막 저장일 다음날부터, 주·월별은 마지막 저장일부터 다시 받아(발표치가 나중에 고쳐지는 경우 덮어쓰기) 값 몇 개만 다시 쓴다.
-      effectiveStart = lastRow && lastRow.d ? (def.freq === "W" || def.freq === "M" ? lastRow.d : addDaysStr(lastRow.d, 1)) : defaultLookbackStart;
+      effectiveStart = lastD ? (def.freq === "W" || def.freq === "M" ? lastD : addDaysStr(lastD, 1)) : defaultLookbackStart;
     }
     if (effectiveStart > endDate) {
       summary[seriesKey] = { label: def.label, points: 0, note: "이미 최신 상태" };
       continue;
     }
+    const fetchCost = def.source === "krxidx" ? 3 : 1;
+    if (!explicitStart && (budget <= 0 || sub + fetchCost + 2 > SUB_CAP)) { defer(seriesKey, def); continue; }
     let points;
     try {
       if (def.source === "ecos") points = await fetchEcosSeries(def.statCode, def.itemCode, effectiveStart, endDate, env.ECOS_API_KEY, 15000, def.expectName || null, def.freq === "M" ? "M" : "D");
@@ -10049,14 +10281,16 @@ async function runMacroRefresh(env, explicitStart, endDate, defaultLookbackStart
           .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)); // 오래된 날짜부터 저장해야 partial 이어받기가 맞다
       } else points = await fetchFredSeries(def.seriesId, effectiveStart, endDate, env.FRED_API_KEY);
     } catch (e) {
+      sub += fetchCost;
       summary[seriesKey] = { error: e.message || String(e) };
       continue;
     }
+    sub += fetchCost;
     let partial = false;
-    if (points.length > budget) {
-      points = points.slice(0, Math.max(0, budget)); // 오래된 날짜부터 저장(다음 호출이 마지막 저장일 다음날부터 이어받음)
-      partial = true;
-    }
+    // 남은 subrequest(INSERT 한 번에 33행)와 점 수 예산 중 작은 쪽까지만 저장한다. 오래된 날짜부터 저장하고 다음 호출이 이어받는다.
+    const room = explicitStart ? Infinity : Math.max(0, (SUB_CAP - sub) * 33);
+    const allow = Math.min(budget, room);
+    if (points.length > allow) { points = points.slice(0, Math.max(0, allow)); partial = true; }
     budget -= points.length;
     if (points.length > 0) {
       await multiRowInsert(
@@ -10066,6 +10300,7 @@ async function runMacroRefresh(env, explicitStart, endDate, defaultLookbackStart
         points,
         (p) => [seriesKey, p.date, p.value]
       );
+      sub += Math.ceil(points.length / 33);
     }
     summary[seriesKey] = { label: def.label, points: points.length, from: effectiveStart, partial };
   }

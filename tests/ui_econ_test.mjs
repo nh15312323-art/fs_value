@@ -19,8 +19,8 @@ const S = {
   us2y: daily(() => 4.5), us10y: daily(() => 4.0), ktb3y: daily(() => 3.0), ktb10y: daily(() => 3.4),
   usrrp: daily(() => 100), ustga: weekly(() => 800000), usbs: weekly(() => 7000000),
   usm2: monthly((i) => 20000 + i * 50), krm2: [], uscpi: monthly((i) => 100 * Math.pow(1.04, i / 12)), krcpi: monthly((i) => 100 + i * 0.2),
-  usunemp: monthly((i) => i >= 115 ? 4.8 : 4.0), ushy: daily(() => 4.0), usvix: daily(() => 32), usdxy: daily(() => 120),
-  krbase: monthly(() => 2.5), kospi: daily((i) => 2000 + i), sp500: daily((i) => 3000 + i), usdkrw: daily(() => 1400), wti: daily(() => 70),
+  usunemp: monthly((i) => i >= 115 ? 4.8 : 4.0), ushy: daily(() => 4.0), usvix: daily((i) => 32 + (i % 50) / 10), usdxy: daily((i) => 120 + (i % 20) / 10),
+  krbase: monthly(() => 2.5), kospi: daily((i) => 2000 + i), sp500: daily((i) => 3000 + i), usdkrw: daily((i) => 1400 + (i % 40)), wti: daily(() => 70),
 };
 const dashKeys = new Set(['us2y', 'us10y', 'usrrp', 'ustga', 'usbs', 'usm2', 'krm2', 'uscpi', 'krcpi', 'usunemp', 'ushy', 'usvix', 'usdxy', 'krbase']);
 let fail500 = false;
@@ -57,7 +57,7 @@ const k10 = await row('국고채 10년-3년'); ok('한국 장단기 금리차 +0
 ok('그래프 SVG가 지표마다 그려짐', (await pg.locator('#econOut svg').count()) >= 20, 'n=' + await pg.locator('#econOut svg').count());
 ok('종합 점수 같은 단일 점수가 없음', !(await pg.innerText('#econOut')).includes('종합 점수'));
 await pg.click('#econOut button >> text="한국"'); await pg.waitForTimeout(100);
-const onlyKr = await pg.evaluate(() => document.getElementById('econOut').innerText);
+const onlyKr = await pg.evaluate(() => document.querySelector('#econOut .ec-tbl-wrap').innerText);
 ok('한국만 보기: 미국 지표 숨김', onlyKr.includes('한국 기준금리') && !onlyKr.includes('미국 국채 2년'));
 await pg.click('#econOut button:has-text("유동성")'); await pg.waitForTimeout(100);
 ok('분야 필터(유동성)', (await pg.innerText('#econOut')).includes('한국 M2') );
@@ -76,10 +76,10 @@ ok('서버 오류 시 안내(빈 화면 아님)', (await pg.innerText('#econStat
 // ---- 지수 방향 확률 모델
 await pg.goto('http://localhost:' + srv.address().port + '/#econ'); await pg.waitForTimeout(1200);
 const mt = await pg.innerText('#econModelOut');
-ok('코스피·S&P500 확률 카드가 나옴', mt.includes('코스피 — 앞으로 3개월') && mt.includes('S&P500 — 앞으로 3개월'));
+ok('코스피·S&P500 확률 카드가 나옴', mt.includes('코스피') && mt.includes('S&P500') && mt.includes('앞으로 3개월'));
 ok('과거 채점(Brier)·기준선 비교 표시', mt.includes('과거 채점') && mt.includes('기준선'));
 const mtc = await pg.evaluate(() => document.getElementById('econModelOut').textContent);
-ok('쉬운 설명과 한계(Welch & Goyal) 포함', mtc.includes('아주 쉬운 설명') && mtc.includes('Welch & Goyal') && mtc.includes('시험 보기'));
+ok('쉬운 설명과 한계(Welch & Goyal) 포함', mtc.includes('더 자세히') && mtc.includes('Welch & Goyal') && mtc.includes('시험 보기'));
 const sums = await pg.evaluate(() => Array.from(document.querySelectorAll('#econModelOut [title]')).map((e) => e.getAttribute('title')));
 ok('막대 3칸(상승·중립·하락)씩 그려짐', sums.length >= 12, 'n=' + sums.length);
 const math = await pg.evaluate(() => {
@@ -100,5 +100,39 @@ ok('모델이 신호 있는 자료에서 방향을 학습', math.upUp && math.dn
 ok('확률 합 = 1', Math.abs(math.sum - 1) < 1e-9);
 ok('특징값에 미래 가격이 새지 않음', math.same);
 await pg.screenshot({ path: path.join(os.tmpdir(), 'fs_value_econ_model.png') });
+
+// ---- 겹쳐보기(최대 5개) + 모델 설명
+await pg.goto('http://localhost:' + srv.address().port + '/#econ'); await pg.waitForTimeout(1200);
+const ovSel = () => pg.evaluate(() => econOv.slice());
+ok('겹쳐보기 그래프가 기본 4개로 그려짐', (await pg.locator('#econOvSvg').count()) === 1 && (await pg.locator('#econOvSvg path').count()) === 4, JSON.stringify(await ovSel()));
+await pg.click('#econOut button[data-k="usdxy"]'); await pg.waitForTimeout(100);
+ok('5번째 선택까지 가능', (await ovSel()).length === 5 && (await pg.locator('#econOvSvg path').count()) === 5);
+await pg.click('#econOut button[data-k="wti"]'); await pg.waitForTimeout(100);
+ok('6번째는 막고 안내 문구 표시', (await ovSel()).length === 5 && (await pg.innerText('#econOvMsg')).includes('최대 5개'));
+await pg.click('#econOut button[data-k="usdxy"]'); await pg.waitForTimeout(100);
+ok('해제하면 다시 4개', (await ovSel()).length === 4);
+await pg.click('#econOut button:has-text("미국 금리 (2년·10년·금리차)")'); await pg.waitForTimeout(100);
+ok('바로 고르기 프리셋 적용', JSON.stringify(await ovSel()) === JSON.stringify(['us2y', 'us10y', 'us10m2']));
+await pg.click('#econOut button:has-text("시작=100")'); await pg.waitForTimeout(100);
+ok('시작=100에서 음수 값 지표(금리차)는 사유와 함께 제외', (await pg.innerText('#econOut')).includes('시작=100') && (await pg.innerText('#econOut')).includes('0 이하 값이 있어'));
+await pg.click('#econOut button:has-text("표준화(z-점수)")'); await pg.waitForTimeout(100);
+const sd = await pg.evaluate(() => { const L = econOvBuild().skipped; return L; });
+ok('표준화 모드에서 상수 지표(값이 안 변함)는 제외 사유 표시', sd.length >= 3 && sd.every((x) => x.includes('표준화 불가')), JSON.stringify(sd));
+await pg.click('#econOut button:has-text("모두 해제")'); await pg.waitForTimeout(100);
+await pg.click('#econOut button[data-k="kospi"]'); await pg.click('#econOut button[data-k="sp500"]'); await pg.waitForTimeout(100);
+await pg.locator('#econOvSvg').scrollIntoViewIfNeeded(); const box2 = await pg.locator('#econOvSvg').boundingBox();
+await pg.mouse.move(box2.x + box2.width * 0.5, box2.y + 60); await pg.waitForTimeout(150);
+const tip = await pg.innerText('#econOvTip');
+ok('마우스를 올리면 날짜와 실제 값이 보임', /\d{4}-\d{2}-\d{2}/.test(tip) && tip.includes('코스피') && tip.includes('S&P500'), tip.replace(/\s+/g, ' '));
+ok('모델 설명이 접지 않고 바로 보임(5단계·읽는 법·근거 수준)', await pg.isVisible('text=이 확률은 무엇이고, 어떻게 만들어지나요?') && await pg.isVisible('text=한 줄 요약') && await pg.isVisible('text=화면 읽는 법'));
+const introTxt = await pg.evaluate(() => document.getElementById('econModelOut').textContent);
+ok('설명에 기준선·시험 보기·근거 수준 포함', introTxt.includes('기준선') && introTxt.includes('시험 보기') && introTxt.includes('Estrella') && introTxt.includes('Jegadeesh'));
+await pg.screenshot({ path: path.join(os.tmpdir(), 'fs_value_econ_ov.png'), fullPage: true });
+const kp = await pg.innerText('#econKpi');
+ok('핵심 지표 카드 6개(금리차·순유동성·VIX·HY·한국 금리차·환율)', (await pg.locator('#econKpi .ec-kpis > .ec-card').count()) === 6 && kp.includes('순유동성') && kp.includes('VIX'));
+await pg.setViewportSize({ width: 1100, height: 1000 }); await pg.waitForTimeout(200);
+await pg.screenshot({ path: path.join(os.tmpdir(), 'fs_value_econ_desktop.png'), fullPage: true });
+await pg.setViewportSize({ width: 390, height: 900 }); await pg.waitForTimeout(200);
+await pg.screenshot({ path: path.join(os.tmpdir(), 'fs_value_econ_mobile.png'), fullPage: true });
 ok('JS 오류 없음', errs.length === 0, errs.join(' | '));
 await b.close(); srv.close(); process.exit(0);
