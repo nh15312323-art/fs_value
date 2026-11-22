@@ -72,5 +72,33 @@ await pg.screenshot({ path: path.join(os.tmpdir(), 'fs_value_econ.png'), fullPag
 // 서버 오류
 fail500 = true; await pg.click('#tabEcon button:has-text("새로고침")'); await pg.waitForTimeout(500);
 ok('서버 오류 시 안내(빈 화면 아님)', (await pg.innerText('#econStatus')).includes('불러오지 못했습니다'));
+
+// ---- 지수 방향 확률 모델
+await pg.goto('http://localhost:' + srv.address().port + '/#econ'); await pg.waitForTimeout(1200);
+const mt = await pg.innerText('#econModelOut');
+ok('코스피·S&P500 확률 카드가 나옴', mt.includes('코스피 — 앞으로 3개월') && mt.includes('S&P500 — 앞으로 3개월'));
+ok('과거 채점(Brier)·기준선 비교 표시', mt.includes('과거 채점') && mt.includes('기준선'));
+const mtc = await pg.evaluate(() => document.getElementById('econModelOut').textContent);
+ok('쉬운 설명과 한계(Welch & Goyal) 포함', mtc.includes('아주 쉬운 설명') && mtc.includes('Welch & Goyal') && mtc.includes('시험 보기'));
+const sums = await pg.evaluate(() => Array.from(document.querySelectorAll('#econModelOut [title]')).map((e) => e.getAttribute('title')));
+ok('막대 3칸(상승·중립·하락)씩 그려짐', sums.length >= 12, 'n=' + sums.length);
+const math = await pg.evaluate(() => {
+  // 1) 신호가 있는 합성 자료: x>0이면 상승(0), x<0이면 하락(2) → 학습 후 확률이 그 방향으로 기울어야 함
+  const rows = []; let seed = 7; const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  for (let i = 0; i < 120; i++) { const x = rnd() * 2 - 1; rows.push({ x: [x], y: x > 0.2 ? 0 : x < -0.2 ? 2 : 1 }); }
+  const m = econFit(rows, 1); const up = econPredict(m, [0.9]), dn = econPredict(m, [-0.9]);
+  // 2) 확률은 합이 1
+  const sum = up[0] + up[1] + up[2];
+  // 3) 미래 누수 없음: D 이후 가격을 바꿔도 D 시점 특징값은 같다
+  const mk = (bump) => { const px = []; for (let i = 0; i < 800; i++) { const d = new Date(Date.UTC(2020, 0, 1 + i)); px.push({ date: d.toISOString().slice(0, 10).replace(/-/g, ''), value: 100 + i * 0.1 + (i > 600 ? bump : 0) }); } return px; };
+  const S1 = { kospi: mk(0), usvix: mk(0), us10m2: mk(0) }, S2 = { kospi: mk(500), usvix: mk(0), us10m2: mk(0) };
+  const D = '20210601'; const f = { id: 'm12_1' }, f3 = { id: 'm3' };
+  const same = econFeatVal('kospi', f, S1, D) === econFeatVal('kospi', f, S2, D) && econFeatVal('kospi', f3, S1, D) === econFeatVal('kospi', f3, S2, D);
+  return { upUp: up[0] > up[2] + 0.2, dnDn: dn[2] > dn[0] + 0.2, sum, same };
+});
+ok('모델이 신호 있는 자료에서 방향을 학습', math.upUp && math.dnDn, JSON.stringify(math));
+ok('확률 합 = 1', Math.abs(math.sum - 1) < 1e-9);
+ok('특징값에 미래 가격이 새지 않음', math.same);
+await pg.screenshot({ path: path.join(os.tmpdir(), 'fs_value_econ_model.png') });
 ok('JS 오류 없음', errs.length === 0, errs.join(' | '));
 await b.close(); srv.close(); process.exit(0);

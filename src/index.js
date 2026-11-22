@@ -831,6 +831,7 @@ const HTML_PAGE = `<!doctype html>
       <p class="meta-line" style="margin-top:0;">금리(미국 2년·10년 포함)·유동성(M2 증가율, 연준 TGA·역레포·순유동성)·위험선호·물가·환율을 지표별로 보여줍니다. 종목과의 상관이 아니라 경제 지표만으로 현재 국면을 읽는 용도이며, 여러 지표를 하나의 점수로 합치지 않습니다. 값이 비어 있으면 데이터 관리 탭에서 "거시경제 데이터 갱신"을 먼저 눌러주세요.</p>
       <div class="row"><button onclick="econLoad(true)">새로고침</button></div>
       <div id="econStatus" class="meta-line"></div>
+      <div id="econModelOut"></div>
       <div id="econOut"></div>
     </div>
   </div><!-- /tabEcon -->
@@ -8953,6 +8954,7 @@ async function pfuExport() {
       { k: 'usvix', c: 'US', g: 'risk', f: 'D', u: '', chg: 'diff', n: 'VIX 변동성지수' },
       { k: 'ushy', c: 'US', g: 'risk', f: 'D', u: '%p', chg: 'diff', n: '미국 하이일드 스프레드' },
       { k: 'krcpiyoy', c: 'KR', g: 'infl', f: 'M', u: '%', chg: 'diff', n: '한국 소비자물가 상승률(전년동월비)', d: 1 },
+      { k: 'krexpyoy', c: 'KR', g: 'infl', f: 'M', u: '%', chg: 'diff', n: '한국 수출 증가율(전년동월비, OECD 계절조정)', d: 1 },
       { k: 'uscpiyoy', c: 'US', g: 'infl', f: 'M', u: '%', chg: 'diff', n: '미국 소비자물가 상승률(전년동월비)', d: 1 },
       { k: 'usunemp', c: 'US', g: 'infl', f: 'M', u: '%', chg: 'diff', n: '미국 실업률' },
       { k: 'usdkrw', c: 'KR', g: 'fx', f: 'D', u: '원', chg: 'pct', n: '원/달러 환율' },
@@ -9004,6 +9006,7 @@ async function pfuExport() {
       S.us10m2 = econSub(raw.us10y, raw.us2y);
       S.usnl = econNetLiq(raw.usbs, raw.ustga, raw.usrrp);
       S.krm2yoy = econYoY(raw.krm2); S.usm2yoy = econYoY(raw.usm2);
+      S.krexpyoy = econYoY(raw.krexp);
       S.krcpiyoy = econYoY(raw.krcpi); S.uscpiyoy = econYoY(raw.uscpi);
       return S;
     }
@@ -9065,7 +9068,7 @@ async function pfuExport() {
     async function econLoad(force) {
       const st = document.getElementById('econStatus');
       if (econLoading) return;
-      if (econRaw && !force) { econRender(); return; }
+      if (econRaw && !force) { econRender(); return; } // 모델 확률은 불러올 때 한 번만 계산해 화면에 그려둠
       econLoading = true; if (st) st.textContent = '불러오는 중...';
       try {
         const rs = await Promise.all([fetch('/api/macro/series?group=dash'), fetch('/api/macro/series')]);
@@ -9082,7 +9085,7 @@ async function pfuExport() {
         if (st) st.textContent = '불러오지 못했습니다: ' + e.message;
         econLoading = false; return;
       }
-      econLoading = false; econRender();
+      econLoading = false; econRender(); setTimeout(econModelRender, 20);
     }
     function econSetCountry(c) { econCountry = c; econRender(); }
     function econSetGroup(g) { econGroup = g; econRender(); }
@@ -9154,12 +9157,146 @@ async function pfuExport() {
       box.innerHTML = h;
     }
 
+    // ===== 지수 방향 확률 (실험적): 코스피·S&P500의 앞으로 3개월 상승/중립/하락 확률 =====
+    // 방법: 다항 로지스틱 회귀(릿지 규제) — 경제 지표 몇 개로 "3개월 뒤 수익률이 +3% 이상 / ±3% 안 / -3% 이하일 확률"을 추정한다.
+    // 채점: 매달 "그 시점까지의 자료만"으로 다시 학습해 다음 3개월을 예측하고(워크포워드), 과거 비율만 쓰는 기준선보다 확률 점수(Brier)가 나은지 본다.
+    // 학술 배경: Welch & Goyal(2008)은 흔한 예측 변수 대부분이 표본 밖에서 과거 평균을 못 이긴다고 보고했고, Campbell & Thompson(2008)은 제약을 두면 아주 작은 개선이 가능하다고 보였다.
+    // 그래서 기준선을 이기지 못하면 화면은 기준선(과거 비율)을 주 확률로 보여준다.
+    const ECON_H = 3, ECON_BAND = 0.03;
+    const ECON_MODELS = [
+      { k: 'kospi', n: '코스피', feats: [
+        { id: 'm12_1', n: '12개월 수익률(최근 1개월 제외)' }, { id: 'm3', n: '최근 3개월 수익률' },
+        { id: 'curve', n: '국고채 10년-3년 금리차', ser: 'kr10m3' }, { id: 'vix', n: 'VIX(로그)' },
+        { id: 'fx', n: '원/달러 3개월 변화율', ser: 'usdkrw' }, { id: 'ext', n: '한국 수출 증가율(2개월 지연)', ser: 'krexpyoy', opt: true } ] },
+      { k: 'sp500', n: 'S&P500', feats: [
+        { id: 'm12_1', n: '12개월 수익률(최근 1개월 제외)' }, { id: 'm3', n: '최근 3개월 수익률' },
+        { id: 'curve', n: '미국 10년-2년 금리차', ser: 'us10m2' }, { id: 'vix', n: 'VIX(로그)' },
+        { id: 'fx', n: '달러지수 3개월 변화율', ser: 'usdxy' }, { id: 'ext', n: '미국 M2 증가율(2개월 지연)', ser: 'usm2yoy', opt: true } ] },
+    ];
+    function econFeatVal(mk, f, S, D) {
+      const px = S[mk];
+      const g = function (ser, ymd, gap) { return macroValueAsOf(ser, ymd, gap); };
+      if (f.id === 'm12_1') { const a = g(px, econShift(D, 1), 10), b = g(px, econShift(D, 12), 10); return a != null && b != null && b > 0 ? a / b - 1 : null; }
+      if (f.id === 'm3') { const a = g(px, D, 10), b = g(px, econShift(D, 3), 10); return a != null && b != null && b > 0 ? a / b - 1 : null; }
+      if (f.id === 'curve') return g(S[f.ser], D, 10);
+      if (f.id === 'vix') { const v = g(S.usvix, D, 10); return v != null && v > 0 ? Math.log(v) : null; }
+      if (f.id === 'fx') { const a = g(S[f.ser], D, 10), b = g(S[f.ser], econShift(D, 3), 10); return a != null && b != null && b > 0 ? a / b - 1 : null; }
+      if (f.id === 'ext') return g(S[f.ser], econShift(D, 2), 75);
+      return null;
+    }
+    // 월말 표본: 각 월의 마지막 거래일 기준 특징 + (3개월 뒤 월말 대비 수익률로 만든) 정답 클래스. 마지막 줄은 "오늘" 표본(정답 없음).
+    function econSamples(mk, S, feats) {
+      const px = S[mk] || []; const me = []; const priceByYm = {};
+      px.forEach(function (p, i) { const ym = p.date.slice(0, 6); if (i === px.length - 1 || px[i + 1].date.slice(0, 6) !== ym) { me.push(p); priceByYm[ym] = p.value; } });
+      const rows = [];
+      me.forEach(function (p) {
+        const x = feats.map(function (f) { return econFeatVal(mk, f, S, p.date); });
+        if (x.some(function (v) { return v == null || !isFinite(v); })) return;
+        const ym = p.date.slice(0, 6), endYm = econShift(p.date, -ECON_H).slice(0, 6), fut = priceByYm[endYm];
+        let y = null; if (fut != null && p.value > 0) { const r = fut / p.value - 1; y = r >= ECON_BAND ? 0 : r <= -ECON_BAND ? 2 : 1; }
+        rows.push({ ym: ym, endYm: endYm, x: x, y: y });
+      });
+      const last = px[px.length - 1];
+      if (last) {
+        const x = feats.map(function (f) { return econFeatVal(mk, f, S, last.date); });
+        if (!x.some(function (v) { return v == null || !isFinite(v); })) rows.push({ ym: last.date.slice(0, 6), endYm: null, x: x, y: null, today: true, date: last.date });
+      }
+      return rows;
+    }
+    function econSoftmax(z) { const m = Math.max(z[0], z[1], z[2]); const e = z.map(function (v) { return Math.exp(v - m); }); const s = e[0] + e[1] + e[2]; return [e[0] / s, e[1] / s, e[2] / s]; }
+    function econFit(rows, p) {
+      const n = rows.length, mu = [], sd = [];
+      for (let j = 0; j < p; j++) { let m = 0; rows.forEach(function (r) { m += r.x[j]; }); m /= n; let v = 0; rows.forEach(function (r) { v += (r.x[j] - m) * (r.x[j] - m); }); mu.push(m); sd.push(Math.sqrt(v / n) || 1); }
+      const Z = rows.map(function (r) { return r.x.map(function (v, j) { return (v - mu[j]) / sd[j]; }); });
+      const W = [0, 1, 2].map(function () { return new Array(p + 1).fill(0); }); const lam = 0.1, lr = 0.2;
+      for (let it = 0; it < 300; it++) {
+        const G = [0, 1, 2].map(function () { return new Array(p + 1).fill(0); });
+        for (let i = 0; i < n; i++) {
+          const z = [0, 1, 2].map(function (c) { let s = W[c][p]; for (let j = 0; j < p; j++) s += W[c][j] * Z[i][j]; return s; });
+          const pr = econSoftmax(z);
+          for (let c = 0; c < 3; c++) { const d = pr[c] - (rows[i].y === c ? 1 : 0); for (let j = 0; j < p; j++) G[c][j] += d * Z[i][j] / n; G[c][p] += d / n; }
+        }
+        for (let c = 0; c < 3; c++) for (let j = 0; j <= p; j++) W[c][j] -= lr * (G[c][j] + (j < p ? lam * W[c][j] : 0));
+      }
+      return { mu: mu, sd: sd, W: W, p: p };
+    }
+    function econPredict(m, x) {
+      const z = [0, 1, 2].map(function (c) { let s = m.W[c][m.p]; for (let j = 0; j < m.p; j++) s += m.W[c][j] * (x[j] - m.mu[j]) / m.sd[j]; return s; });
+      return econSoftmax(z);
+    }
+    function econFreq(rows) { const c = [0, 0, 0]; rows.forEach(function (r) { c[r.y]++; }); const n = rows.length || 1; return [(c[0] + 1) / (n + 3), (c[1] + 1) / (n + 3), (c[2] + 1) / (n + 3)]; }
+    function econBrier(p, y) { let s = 0; for (let c = 0; c < 3; c++) { const d = p[c] - (y === c ? 1 : 0); s += d * d; } return s; }
+    function econRunModel(spec, S) {
+      const out = { spec: spec };
+      if (!S[spec.k] || S[spec.k].length < 400 || !S.usvix || !S.usvix.length) { out.err = '필요한 자료(지수·VIX)가 아직 충분하지 않습니다. 데이터 관리에서 거시경제 데이터를 갱신해 주세요.'; return out; }
+      // 선택 변수(수출·M2)는 표본이 너무 줄면 빼고 기본 변수만 쓴다.
+      let feats = spec.feats, rows = econSamples(spec.k, S, feats), dropped = null;
+      let lab = rows.filter(function (r) { return r.y != null; });
+      if (lab.length < 72 || !rows.some(function (r) { return r.today; })) {
+        const base = spec.feats.filter(function (f) { return !f.opt; }); const opt = spec.feats.filter(function (f) { return f.opt; });
+        const r2 = econSamples(spec.k, S, base); const l2 = r2.filter(function (r) { return r.y != null; });
+        if (l2.length > lab.length || !rows.some(function (r) { return r.today; })) { feats = base; rows = r2; lab = l2; dropped = opt.map(function (f) { return f.n; }); }
+      }
+      if (lab.length < 60 || !rows.some(function (r) { return r.today; })) { out.err = '학습에 쓸 월말 표본이 ' + lab.length + '개뿐이라 모델을 만들지 않았습니다(최소 60개 필요).'; return out; }
+      const p = feats.length;
+      const brM = [], brB = [], hitM = [], hitB = [];
+      for (let i = 0; i < lab.length; i++) {
+        const tr = lab.filter(function (r) { return r.endYm <= lab[i].ym; });
+        if (tr.length < 36) continue;
+        const m = econFit(tr, p), pm = econPredict(m, lab[i].x), pb = econFreq(tr);
+        brM.push(econBrier(pm, lab[i].y)); brB.push(econBrier(pb, lab[i].y));
+        hitM.push(pm.indexOf(Math.max(pm[0], pm[1], pm[2])) === lab[i].y ? 1 : 0); hitB.push(pb.indexOf(Math.max(pb[0], pb[1], pb[2])) === lab[i].y ? 1 : 0);
+      }
+      const avg = function (a) { return a.reduce(function (s, v) { return s + v; }, 0) / (a.length || 1); };
+      const nO = brM.length; out.nOos = nO; out.nEff = Math.floor(nO / ECON_H);
+      out.bsM = nO ? avg(brM) : null; out.bsB = nO ? avg(brB) : null; out.bss = nO ? 1 - avg(brM) / avg(brB) : null;
+      out.accM = nO ? avg(hitM) : null; out.accB = nO ? avg(hitB) : null;
+      const full = econFit(lab, p), today = rows.filter(function (r) { return r.today; })[0];
+      out.pModel = econPredict(full, today.x); out.pBase = econFreq(lab); out.asOf = today.date; out.nTrain = lab.length;
+      out.first = lab[0].ym; out.feats = feats.map(function (f, j) { return { n: f.n, v: today.x[j], dir: full.W[0][j] - full.W[2][j] }; }); out.dropped = dropped;
+      out.useModel = out.bss != null && out.bss > 0.02 && out.nEff >= 20;
+      return out;
+    }
+    function econModelRender() {
+      const box = document.getElementById('econModelOut'); if (!box) return;
+      if (!econSer) { box.innerHTML = ''; return; }
+      let h = '';
+      const pct = function (v) { return (v * 100).toFixed(0) + '%'; };
+      const bar = function (p, label) {
+        const C = ['#16a34a', '#64748b', '#dc2626'], N = ['상승', '중립', '하락'];
+        return '<div style="margin:4px 0;"><div style="font-size:12px; color:var(--text-muted);">' + label + '</div><div style="display:flex; height:22px; border-radius:5px; overflow:hidden;">' +
+          [0, 1, 2].map(function (c) { return '<div title="' + N[c] + ' ' + pct(p[c]) + '" style="width:' + (p[c] * 100).toFixed(1) + '%; background:' + C[c] + '; color:#fff; font-size:11px; display:flex; align-items:center; justify-content:center; overflow:hidden; white-space:nowrap;">' + (p[c] >= 0.12 ? N[c] + ' ' + pct(p[c]) : '') + '</div>'; }).join('') + '</div></div>';
+      };
+      ECON_MODELS.forEach(function (spec) {
+        let m; try { m = econRunModel(spec, econSer); } catch (e) { m = { spec: spec, err: '계산 오류: ' + e.message }; }
+        h += '<div style="border:1px solid var(--border); border-radius:8px; padding:10px; margin-top:8px; background:var(--card);"><div style="font-weight:700;">' + escHtml(spec.n) + ' — 앞으로 3개월(±3% 기준)</div>';
+        if (m.err) { h += '<div class="meta-line">' + escHtml(m.err) + '</div></div>'; return; }
+        const main = m.useModel ? m.pModel : m.pBase;
+        h += '<div class="meta-line" style="margin-top:2px;">기준일 ' + econYmdTxt(m.asOf) + ' · 학습 월말 표본 ' + m.nTrain + '개(' + m.first.slice(0, 4) + '년~)</div>';
+        h += bar(main, m.useModel ? '주 확률 = 모델 (과거 채점에서 기준선을 이김)' : '주 확률 = 과거 비율(기준선) — 모델이 과거 채점에서 기준선을 확실히 이기지 못함');
+        h += bar(m.useModel ? m.pBase : m.pModel, m.useModel ? '참고: 과거 비율(기준선)' : '참고: 모델 확률(신뢰 낮음)');
+        h += '<div class="meta-line"><b>과거 채점</b>(매달 그때까지 자료만으로 예측, ' + m.nOos + '회·사실상 독립 표본 약 ' + m.nEff + '개): 확률 점수(Brier, 낮을수록 좋음) 모델 ' + m.bsM.toFixed(3) + ' vs 기준선 ' + m.bsB.toFixed(3) + ' → 개선 ' + (m.bss * 100).toFixed(1) + '% · 가장 높게 본 쪽이 맞은 비율 모델 ' + pct(m.accM) + ' vs 기준선 ' + pct(m.accB) + '. ' +
+          (m.useModel ? '기준선보다 낫지만 표본이 적어 우연일 수 있습니다.' : '기준선을 이긴다고 말할 수 없습니다(표본이 적고 3개월 구간이 겹쳐 판단이 어렵습니다).') + '</div>';
+        h += '<details><summary style="cursor:pointer; font-size:13px;">쓴 변수와 현재 값 (모델이 "상승 쪽"으로 읽는 방향)</summary><ul class="meta-line" style="margin:4px 0 0 18px;">' +
+          m.feats.map(function (f) { return '<li>' + escHtml(f.n) + ': ' + f.v.toFixed(3) + ' · 높을수록 ' + (f.dir > 0.02 ? '상승 쪽' : f.dir < -0.02 ? '하락 쪽' : '영향 거의 없음') + '</li>'; }).join('') +
+          '</ul><div class="meta-line">변수끼리 비슷하게 움직이면 방향 해석이 흔들립니다. 참고용입니다.' + (m.dropped ? ' 자료가 짧아 제외한 변수: ' + escHtml(m.dropped.join(', ')) + '.' : '') + '</div></details></div>';
+      });
+      h += '<details style="margin-top:10px;"><summary style="cursor:pointer; font-weight:700;">이 모델은 어떻게 돌아가나요? (아주 쉬운 설명)</summary><div class="meta-line">' +
+        '<b>1. 재료 모으기</b> — 매달 말, 그날까지 알 수 있던 숫자 몇 개를 적어 둡니다: 지수의 최근 오름·내림(모멘텀), 장기-단기 금리 차이, 시장 불안 정도(VIX), 환율·달러 흐름, 수출(한국) 또는 통화량(미국).<br />' +
+        '<b>2. 정답 붙이기</b> — 그 달 말로부터 3개월 뒤 지수가 +3% 이상 올랐으면 "상승", -3% 이하로 내렸으면 "하락", 그 사이면 "중립"이라고 정답표를 만듭니다.<br />' +
+        '<b>3. 규칙 배우기</b> — 로지스틱 회귀라는 방법이 "이런 재료 조합일 땐 뒤에 어떤 결과가 많았나"를 확률 계산식으로 배웁니다. 너무 꼬불꼬불하게 외우지 않도록 계수를 작게 묶는 규제(릿지)를 걸었습니다. 재료 몇 개를 점수로 바꿔 더하고, 그 점수를 합이 100%가 되는 세 확률로 바꾸는 식이라고 보면 됩니다.<br />' +
+        '<b>4. 오늘 적용</b> — 지금의 재료 값을 계산식에 넣으면 상승·중립·하락 확률이 나옵니다.<br />' +
+        '<b>5. 시험 보기(가장 중요)</b> — 과거 각 달로 돌아가 "그때까지 자료만" 보고 예측한 뒤 실제 결과와 채점합니다. 비교 대상은 "재료 없이 과거에 상승·중립·하락이 각각 얼마나 있었나"만 쓰는 기준선입니다. 기준선을 못 이기면 화면은 기준선을 주 확률로 보여줍니다.<br />' +
+        '<b>한계(꼭 읽어주세요)</b> — 쓸 수 있는 자료가 약 9년(월말 표본 100개 안팎)이고 3개월 구간이 서로 겹쳐 실제로는 독립 표본이 30개쯤입니다. Welch & Goyal(2008)은 흔히 쓰는 예측 변수 대부분이 표본 밖에서 과거 평균을 못 이겼다고 보고했습니다. Campbell & Thompson(2008)은 제약을 두면 작은 개선이 가능하다고 했지만 효과는 작았습니다. 금리차의 침체 예측력(Estrella & Mishkin 1998)과 시계열 모멘텀(Moskowitz, Ooi & Pedersen 2012)은 연구가 있으나 한국 지수 3개월 방향을 맞힌다는 증명은 아닙니다. 이 확률은 "맞힌다"가 아니라 "과거 비슷한 상황의 분포"이며, 투자 권유나 매매 신호가 아닙니다. 월·주별 지표는 발표가 늦어 2개월 지연을 적용했지만 발표 당시 값과 이후 수정값의 차이는 반영하지 못했습니다.</div></details>';
+      box.innerHTML = h;
+    }
+
     // --- 거시경제 지표(환율·금리·WTI) ---
     let macroSeriesCache = null; // { usdkrw: [{date,value}, ...], ... } — /api/macro/series 결과를 한 번만 받아 재사용
 
     async function refreshMacroData() {
       const statusEl = document.getElementById('macroStatus');
-      statusEl.textContent = '거시경제 데이터를 받아오는 중입니다(최근 9년치, 지표 22개 — 처음엔 여러 번에 나눠 자동으로 이어받습니다)...';
+      statusEl.textContent = '거시경제 데이터를 받아오는 중입니다(최근 9년치, 지표 23개 — 처음엔 여러 번에 나눠 자동으로 이어받습니다)...';
       try {
         let total = 0, last = null;
         for (let round = 1; round <= 30; round++) {
@@ -9814,6 +9951,7 @@ const MACRO_SERIES = {
   usdxy:  { source: "fred", seriesId: "DTWEXBGS", label: "달러지수(광의, 무역가중)", dash: true, freq: "D" },
   uscpi:  { source: "fred", seriesId: "CPIAUCSL", label: "미국 소비자물가지수", dash: true, freq: "M" },
   usunemp:{ source: "fred", seriesId: "UNRATE", label: "미국 실업률(%)", dash: true, freq: "M" },
+  krexp:  { source: "fred", seriesId: "XTEXVA01KRM667S", label: "한국 수출(OECD, 계절조정, 달러)", dash: true, freq: "M" },
   krbase: { source: "ecos", statCode: "722Y001", itemCode: "0101000", label: "한국 기준금리(%)", dash: true, freq: "M", expectName: "기준금리" },
   krcpi:  { source: "ecos", statCode: "901Y009", itemCode: "0", label: "한국 소비자물가지수", dash: true, freq: "M", expectName: "총지수" },
   // M2 통계표 코드는 공식 문서로 아직 확인하지 못했다. 항목 이름에 "M2"가 없으면 저장하지 않고 오류로 알린다(엉뚱한 계열 방지).
