@@ -9535,7 +9535,7 @@ async function pfuExport() {
         macroLoadFailed = false;
         if (rawRows.length > 0) applyView(); // 표의 거시경제 열도 새 데이터로 다시 채움
         const lines = Object.entries(last.summary).map(([key, s]) =>
-          s.error ? key + ': 실패 — ' + s.error : s.label + ': ' + (s.partial ? '일부 저장(다시 눌러 이어받기)' : (s.points + '개 저장(마지막 회차)')));
+          s.error ? key + ': 실패 — ' + s.error : s.label + ': ' + (s.partial ? '일부 저장(다시 눌러 이어받기)' : (s.points === 0 && s.note ? s.note : s.points + '개 저장(마지막 회차)')));
         statusEl.textContent = '완료 — 이번에 총 ' + total.toLocaleString() + '개 저장' + String.fromCharCode(10) + lines.join(String.fromCharCode(10));
       } catch (e) {
         statusEl.textContent = '오류: ' + e.message;
@@ -10198,6 +10198,9 @@ async function fetchEcosSeries(statCode, itemCode, startDate, endDate, apiKey, t
   }
   let json;
   try { json = JSON.parse(text); } catch (e) { throw new Error(`ECOS 응답 파싱 실패(${statCode}/${itemCode}): ${text.slice(0, 200)}`); }
+  // INFO-200 "해당하는 데이터가 없습니다" = 요청한 기간에 새 값이 없다는 뜻이다(주말·휴일이거나 이미 최신). 오류가 아니라 빈 결과로 돌려주고,
+  // 처음 받는 지표인데 비어 있는 경우(코드가 틀린 경우)는 호출한 쪽(runMacroRefresh)이 따로 오류로 알린다.
+  if (json.RESULT && json.RESULT.CODE === "INFO-200") return [];
   if (json.RESULT && json.RESULT.CODE && json.RESULT.CODE !== "INFO-000") {
     throw new Error(`ECOS 오류(${statCode}/${itemCode}): ${json.RESULT.CODE} ${json.RESULT.MESSAGE || ""}`);
   }
@@ -10286,6 +10289,12 @@ async function runMacroRefresh(env, explicitStart, endDate, defaultLookbackStart
       continue;
     }
     sub += fetchCost;
+    if (points.length === 0) {
+      summary[seriesKey] = lastMap[seriesKey]
+        ? { label: def.label, points: 0, note: "새 데이터 없음(이미 최신이거나 휴일·주말)" }
+        : { error: "이 기간에 받은 데이터가 없습니다 — 통계표·항목 코드가 맞는지 확인이 필요합니다(데이터 관리 > /api/macro/ecos-find 로 코드 찾기)" };
+      continue;
+    }
     let partial = false;
     // 남은 subrequest(INSERT 한 번에 33행)와 점 수 예산 중 작은 쪽까지만 저장한다. 오래된 날짜부터 저장하고 다음 호출이 이어받는다.
     const room = explicitStart ? Infinity : Math.max(0, (SUB_CAP - sub) * 33);
@@ -12456,6 +12465,38 @@ async function handleRequest(request, env) {
       const defaultLookbackStart = addDaysStr(end, -9 * 365); // macro_data도 행당 쓰기 2건(PK 인덱스)이라 최초 백필을 9년(≈2.3만 건)으로 제한
       const summary = await runMacroRefresh(env, explicitStart, end, defaultLookbackStart);
       return Response.json({ start: explicitStart || "(지표별 증분)", end, summary, partial: Object.values(summary).some((x) => x && x.partial) });
+    }
+
+    // ECOS 통계표·항목 코드 찾기(읽기 전용 점검용). 예: /api/macro/ecos-find?q=M2 → 이름에 M2가 들어간 통계표 목록,
+    //   /api/macro/ecos-find?item=101Y004 → 그 통계표의 항목 코드 목록. 인증키는 응답에 포함하지 않는다.
+    if (pathname === "/api/macro/ecos-find") {
+      if (!env.ECOS_API_KEY) return Response.json({ error: "ECOS_API_KEY 환경변수(시크릿)가 설정되지 않았습니다." }, { status: 500 });
+      const q = (searchParams.get("q") || "").trim(), item = (searchParams.get("item") || "").trim();
+      if (!q && !item) return Response.json({ error: "q(통계표 이름 검색어) 또는 item(통계표 코드)을 지정하세요. 예: ?q=M2 또는 ?item=101Y004" }, { status: 400 });
+      const call = async (path) => {
+        const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 15000);
+        try { const resp = await fetch(`https://ecos.bok.or.kr/api/${path}`, { signal: controller.signal }); return JSON.parse(await resp.text()); } finally { clearTimeout(timer); }
+      };
+      try {
+        const key = env.ECOS_API_KEY;
+        if (item) {
+          const j = await call(`StatisticItemList/${key}/json/kr/1/300/${encodeURIComponent(item)}`);
+          if (j.RESULT && j.RESULT.CODE !== "INFO-000") return Response.json({ error: `ECOS: ${j.RESULT.CODE} ${j.RESULT.MESSAGE || ""}` }, { status: 502 });
+          const rows = ((j.StatisticItemList || {}).row || []).map((r) => ({ stat_code: r.STAT_CODE, stat_name: r.STAT_NAME, item_code: r.ITEM_CODE, item_name: r.ITEM_NAME, group: r.GRP_NAME, cycle: r.CYCLE, start: r.START_TIME, end: r.END_TIME, unit: r.UNIT_NAME }));
+          return Response.json({ count: rows.length, rows });
+        }
+        const out = [];
+        for (const [a, b] of [[1, 1000], [1001, 2000]]) {
+          const j = await call(`StatisticTableList/${key}/json/kr/${a}/${b}`);
+          if (j.RESULT && j.RESULT.CODE !== "INFO-000") { if (a === 1) return Response.json({ error: `ECOS: ${j.RESULT.CODE} ${j.RESULT.MESSAGE || ""}` }, { status: 502 }); break; }
+          const rows = (j.StatisticTableList || {}).row || [];
+          for (const r of rows) if (String(r.STAT_NAME || "").toLowerCase().includes(q.toLowerCase())) out.push({ stat_code: r.STAT_CODE, stat_name: r.STAT_NAME, cycle: r.CYCLE, searchable: r.SRCH_YN });
+          if (rows.length < 1000) break;
+        }
+        return Response.json({ count: out.length, rows: out.slice(0, 100) });
+      } catch (e) {
+        return Response.json({ error: "ECOS 조회 실패: " + (e && e.message ? String(e.message).replace(/[A-Za-z0-9]{20,}/g, "***") : "알 수 없는 오류") }, { status: 502 });
+      }
     }
 
     if (pathname === "/api/macro/series") {
