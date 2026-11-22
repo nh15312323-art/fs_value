@@ -7837,7 +7837,7 @@ async function pfuExport() {
         const res = await fetch('/api/data/summary', { cache: 'no-store' });
         const d = await res.json();
         if (!res.ok) throw new Error(d.error || '조회 실패');
-        const ml = { usdkrw: '환율', msb1y: '통안1Y', ktb3y: '국고3Y', ktb10y: '국고10Y', wti: 'WTI', kospi: '코스피', sp500: 'S&P500', us2y: '미2Y', us10y: '미10Y', usrrp: '역레포', ustga: 'TGA', usbs: '연준자산', usm2: '미M2', ushy: 'HY', usvix: 'VIX', usdxy: '달러', uscpi: '미CPI', usunemp: '미실업', krbase: '기준금리', krcpi: '한CPI', krm2: '한M2' };
+        const ml = { usdkrw: '환율', msb1y: '통안1Y', ktb3y: '국고3Y', ktb10y: '국고10Y', wti: 'WTI', kospi: '코스피', sp500: 'S&P500', us2y: '미2Y', us10y: '미10Y', usrrp: '역레포', ustga: 'TGA', usbs: '연준자산', usm2: '미M2', ushy: 'HY', usvix: 'VIX', usdxy: '달러', uscpi: '미CPI', usunemp: '미실업', krbase: '기준금리', krcpi: '한CPI', krm2: '한신M2', usres: '미지급준비금', sofr: 'SOFR', effr: 'EFFR', iorb: 'IORB', tb3m: '미3M국채', kcall: '콜금리', kcd91: 'CD91', kcp91: 'CP91' };
         const macroTxt = d.macro && d.macro.length ? d.macro.map(function (m) { return (ml[m.series] || m.series) + ' ~' + m.last; }).join(' · ') : '없음(거시·상관을 쓰려면 아래에서 갱신)';
         el.innerHTML =
           '• <b>시세(스크리닝)</b>: 최근 거래일 ' + (d.market_last || '없음') + ' · 가격이력 확보 종목 ' + sN(d.backfilled) + '개 / 조건 통과 ' + sN(d.passed) + '개 (대기 ' + sN(d.market_queue) + '개)<br />' +
@@ -8991,7 +8991,7 @@ async function pfuExport() {
     // ===== 경제 상황 (거시 지표만으로 보는 한국·미국 현황: 신호표 + 시계열 그래프) =====
     // 원칙: 지표마다 "최신값·기준일·1/3/12개월 변화·9년 내 위치(백분위)"를 따로 보여주고, 규칙이 알려진 일부 지표에만 투명한 임계값 신호를 붙인다.
     // 여러 지표를 하나의 "경제 점수"로 합치지 않는다. 월·주별 지표는 발표가 늦어 기준일을 그대로 표시한다.
-    const ECON_GROUPS = [['rate', '금리'], ['liq', '유동성'], ['risk', '위험선호·주가'], ['infl', '물가·성장'], ['fx', '환율·원자재']];
+    const ECON_GROUPS = [['rate', '금리'], ['liq', '유동성'], ['mm', '단기자금'], ['risk', '위험선호·주가'], ['infl', '물가·성장'], ['fx', '환율·원자재']];
     // chg: 'pct'=변화율(%), 'diff'=변화폭(단위 그대로, %나 %p). unit은 값 표시용.
     const ECON_INDS = [
       { k: 'krbase', c: 'KR', g: 'rate', f: 'M', u: '%', chg: 'diff', n: '한국 기준금리' },
@@ -9001,12 +9001,24 @@ async function pfuExport() {
       { k: 'us2y', c: 'US', g: 'rate', f: 'D', u: '%', chg: 'diff', n: '미국 국채 2년' },
       { k: 'us10y', c: 'US', g: 'rate', f: 'D', u: '%', chg: 'diff', n: '미국 국채 10년' },
       { k: 'us10m2', c: 'US', g: 'rate', f: 'D', u: '%p', chg: 'diff', n: '미국 10년-2년 금리차', d: 1 },
-      { k: 'krm2yoy', c: 'KR', g: 'liq', f: 'M', u: '%', chg: 'diff', n: '한국 M2 증가율(전년동월비)', d: 1 },
+      { k: 'krm2yoy', c: 'KR', g: 'liq', f: 'M', u: '%', chg: 'diff', n: '한국 신M2 증가율(수익증권 제외, 전년동월비)', d: 1 },
       { k: 'usm2yoy', c: 'US', g: 'liq', f: 'M', u: '%', chg: 'diff', n: '미국 M2 증가율(전년동월비)', d: 1 },
       { k: 'usnl', c: 'US', g: 'liq', f: 'W', u: '십억$', chg: 'pct', n: '미국 순유동성(연준자산-TGA-역레포)', d: 1 },
       { k: 'usbs', c: 'US', g: 'liq', f: 'W', u: '백만$', chg: 'pct', n: '연준 총자산' },
       { k: 'ustga', c: 'US', g: 'liq', f: 'W', u: '백만$', chg: 'pct', n: '재무부 TGA(수요일)' },
       { k: 'usrrp', c: 'US', g: 'liq', f: 'D', u: '십억$', chg: 'pct', n: '연준 역레포 잔고' },
+      { k: 'usres', c: 'US', g: 'liq', f: 'W', u: '백만$', chg: 'pct', n: '미국 은행 지급준비금(연준 예치, 수요일)' },
+      { k: 'sofrm', c: 'US', g: 'mm', f: 'D', u: '%p', chg: 'diff', n: 'SOFR - IORB 스프레드(담보부 단기금리 압력)', d: 1 },
+      { k: 'sofr', c: 'US', g: 'mm', f: 'D', u: '%', chg: 'diff', n: 'SOFR(담보부 익일물)' },
+      { k: 'effr', c: 'US', g: 'mm', f: 'D', u: '%', chg: 'diff', n: '실효 연방기금금리(EFFR)' },
+      { k: 'iorb', c: 'US', g: 'mm', f: 'D', u: '%', chg: 'diff', n: '지급준비금 이자율(IORB)' },
+      { k: 'tb3m', c: 'US', g: 'mm', f: 'D', u: '%', chg: 'diff', n: '미국 3개월 국채금리' },
+      { k: 'kcdm', c: 'KR', g: 'mm', f: 'D', u: '%p', chg: 'diff', n: 'CD(91일) - 기준금리 스프레드', d: 1 },
+      { k: 'kcallm', c: 'KR', g: 'mm', f: 'D', u: '%p', chg: 'diff', n: '콜금리 - 기준금리 스프레드', d: 1 },
+      { k: 'kcpm', c: 'KR', g: 'mm', f: 'D', u: '%p', chg: 'diff', n: 'CP(91일) - CD(91일) 스프레드(신용 프리미엄)', d: 1 },
+      { k: 'kcall', c: 'KR', g: 'mm', f: 'D', u: '%', chg: 'diff', n: '콜금리(1일)' },
+      { k: 'kcd91', c: 'KR', g: 'mm', f: 'D', u: '%', chg: 'diff', n: 'CD(91일)' },
+      { k: 'kcp91', c: 'KR', g: 'mm', f: 'D', u: '%', chg: 'diff', n: 'CP(91일)' },
       { k: 'kospi', c: 'KR', g: 'risk', f: 'D', u: 'pt', chg: 'pct', n: '코스피' },
       { k: 'sp500', c: 'US', g: 'risk', f: 'D', u: 'pt', chg: 'pct', n: 'S&P500' },
       { k: 'usvix', c: 'US', g: 'risk', f: 'D', u: '', chg: 'diff', n: 'VIX 변동성지수' },
@@ -9057,12 +9069,20 @@ async function pfuExport() {
       });
       return out;
     }
+    // 일별 a에서, 월별(또는 드문) b의 '그날 이전 가장 가까운 값'(최대 45일)을 뺀다. 기준금리처럼 월 단위로 기록된 계열용.
+    function econSubAsOf(a, b) {
+      const out = [];
+      (a || []).forEach(function (p) { const v = macroValueAsOf(b, p.date, 45); if (v != null) out.push({ date: p.date, value: p.value - v }); });
+      return out;
+    }
     function econBuild(raw) {
       const S = {};
       Object.keys(raw).forEach(function (k) { S[k] = raw[k]; });
       S.kr10m3 = econSub(raw.ktb10y, raw.ktb3y);
       S.us10m2 = econSub(raw.us10y, raw.us2y);
       S.usnl = econNetLiq(raw.usbs, raw.ustga, raw.usrrp);
+      S.sofrm = econSub(raw.sofr, raw.iorb);
+      S.kcdm = econSubAsOf(raw.kcd91, raw.krbase); S.kcallm = econSubAsOf(raw.kcall, raw.krbase); S.kcpm = econSub(raw.kcp91, raw.kcd91);
       S.krm2yoy = econYoY(raw.krm2); S.usm2yoy = econYoY(raw.usm2);
       S.krexpyoy = econYoY(raw.krexp);
       S.krcpiyoy = econYoY(raw.krcpi); S.uscpiyoy = econYoY(raw.uscpi);
@@ -9089,6 +9109,11 @@ async function pfuExport() {
       if (ind.k === 'kr10m3') return v < 0 ? ['역전', 'bad', '장기금리가 단기금리보다 낮음(한국 적용은 참고용)'] : ['정상', 'good', '장기금리가 더 높음'];
       if (ind.k === 'ushy') return v >= 5 ? ['신용 스트레스', 'bad', '스프레드 5%p 이상(실무 관행 임계값)'] : v <= 3.5 ? ['안정', 'good', '스프레드 3.5%p 이하(실무 관행 임계값)'] : ['중립', 'neutral', '3.5~5%p'];
       if (ind.k === 'usvix') return v >= 30 ? ['공포 높음', 'bad', 'VIX 30 이상(실무 관행)'] : v <= 15 ? ['낮음', 'good', 'VIX 15 이하(실무 관행)'] : ['보통', 'neutral', '15~30'];
+      if (ind.k === 'sofrm') return v >= 0.1 ? ['자금 압박 조짐', 'warn', 'SOFR가 IORB보다 0.10%p 이상 높음: 담보부 단기자금이 빠듯하다는 신호로 흔히 쓰는 실무 관행 임계값(검증된 매매 규칙 아님)'] : v <= -0.1 ? ['여유', 'good', 'SOFR가 IORB보다 0.10%p 이상 낮음(실무 관행)'] : ['정상 범위', 'neutral', 'SOFR-IORB ±0.10%p 이내'];
+      if (ind.k === 'usres') return st.c3 == null ? null : st.c3 > 5 ? ['3개월 증가', 'good', '지급준비금이 3개월 전보다 5% 넘게 증가(방향만 보는 규칙)'] : st.c3 < -5 ? ['3개월 감소', 'warn', '지급준비금이 3개월 전보다 5% 넘게 감소'] : ['횡보', 'neutral', '3개월 변화 ±5% 이내'];
+      if (ind.k === 'kcdm') return v >= 0.4 ? ['단기자금 경색 조짐', 'warn', 'CD(91일)가 기준금리보다 0.40%p 이상 높음(실무 관행 임계값). 금리 인상·인하 기대에도 움직이므로 단독 해석 주의'] : v <= -0.1 ? ['여유/인하 기대', 'neutral', 'CD가 기준금리보다 낮음'] : ['보통', 'neutral', '기준금리 대비 -0.1~0.4%p'];
+      if (ind.k === 'kcallm') return v >= 0.15 ? ['콜금리 상단', 'warn', '콜금리가 기준금리보다 0.15%p 이상 높음(실무 관행)'] : v <= -0.15 ? ['콜금리 하단(유동성 풍부)', 'good', '콜금리가 기준금리보다 0.15%p 이상 낮음(실무 관행)'] : ['정상 범위', 'neutral', '기준금리 ±0.15%p 이내'];
+      if (ind.k === 'kcpm') return v >= 0.5 ? ['신용 프리미엄 확대', 'warn', 'CP-CD 격차 0.50%p 이상(실무 관행)'] : ['보통', 'neutral', 'CP-CD 격차 0.5%p 미만'];
       if (ind.k === 'usnl') return st.c3 == null ? null : st.c3 > 1 ? ['3개월 확대', 'good', '순유동성이 3개월 전보다 1% 넘게 증가(방향만 보는 규칙)'] : st.c3 < -1 ? ['3개월 축소', 'warn', '순유동성이 3개월 전보다 1% 넘게 감소'] : ['횡보', 'neutral', '3개월 변화 ±1% 이내'];
       if (ind.k === 'krm2yoy' || ind.k === 'usm2yoy') return v < 0 ? ['감소', 'warn', '전년동월보다 통화량 감소'] : v >= 8 ? ['빠른 증가', 'neutral', '증가율 8% 이상'] : ['증가', 'neutral', '전년동월비 증가'];
       if (ind.k === 'krcpiyoy' || ind.k === 'uscpiyoy') return v >= 3 ? ['물가 부담', 'warn', '상승률 3% 이상(목표 2% 대비)'] : v <= 2.5 ? ['안정권', 'good', '상승률 2.5% 이하'] : ['다소 높음', 'neutral', '2.5~3%'];
@@ -9195,6 +9220,9 @@ async function pfuExport() {
       { n: '한국·미국 증시 + 불안·환율', k: ['kospi', 'sp500', 'usvix', 'usdkrw'] },
       { n: '미국 금리 (2년·10년·금리차)', k: ['us2y', 'us10y', 'us10m2'] },
       { n: '미국 유동성 (순유동성·M2·S&P500)', k: ['usnl', 'usm2yoy', 'sp500'] },
+      { n: '미국 단기자금 (SOFR·IORB·EFFR·역레포)', k: ['sofr', 'iorb', 'effr', 'usrrp'] },
+      { n: '미국 지급준비금·순유동성·S&P500', k: ['usres', 'usnl', 'sp500'] },
+      { n: '한국 단기자금 (콜·CD·CP·기준금리)', k: ['kcall', 'kcd91', 'kcp91', 'krbase'] },
       { n: '한국 금리·환율·코스피', k: ['krbase', 'ktb3y', 'ktb10y', 'usdkrw', 'kospi'] },
     ];
     let econOv = ['kospi', 'sp500', 'usvix', 'usdkrw'], econOvMode = 'z', econOvGeo = null;
@@ -9301,7 +9329,7 @@ async function pfuExport() {
       return h;
     }
 
-    const ECON_KPI_KEYS = ['us10m2', 'usnl', 'usvix', 'ushy', 'kr10m3', 'usdkrw'];
+    const ECON_KPI_KEYS = ['us10m2', 'usnl', 'usvix', 'ushy', 'kr10m3', 'usdkrw', 'sofrm', 'kcdm'];
     function econKpiRender() {
       const box = document.getElementById('econKpi'); if (!box) return;
       if (!econSer) { box.innerHTML = ''; return; }
@@ -9518,7 +9546,7 @@ async function pfuExport() {
 
     async function refreshMacroData() {
       const statusEl = document.getElementById('macroStatus');
-      statusEl.textContent = '거시경제 데이터를 받아오는 중입니다(최근 9년치, 지표 23개 — 처음엔 여러 번에 나눠 자동으로 이어받습니다)...';
+      statusEl.textContent = '거시경제 데이터를 받아오는 중입니다(최근 9년치, 지표 32개 — 처음엔 여러 번에 나눠 자동으로 이어받습니다)...';
       try {
         let total = 0, last = null;
         for (let round = 1; round <= 80; round++) {
@@ -10176,8 +10204,18 @@ const MACRO_SERIES = {
   krexp:  { source: "fred", seriesId: "XTEXVA01KRM667S", label: "한국 수출(OECD, 계절조정, 달러)", dash: true, freq: "M" },
   krbase: { source: "ecos", statCode: "722Y001", itemCode: "0101000", label: "한국 기준금리(%)", dash: true, freq: "M", expectName: "기준금리" },
   krcpi:  { source: "ecos", statCode: "901Y009", itemCode: "0", label: "한국 소비자물가지수", dash: true, freq: "M", expectName: "총지수" },
-  // M2 통계표 코드는 공식 문서로 아직 확인하지 못했다. 항목 이름에 "M2"가 없으면 저장하지 않고 오류로 알린다(엉뚱한 계열 방지).
-  krm2:   { source: "ecos", statCode: "101Y004", itemCode: "BBHS00", label: "한국 M2(십억원)", dash: true, freq: "M", expectName: "M2" },
+  // 신M2(2026년 1월 개편: 수익증권 제외) 평잔·계절조정. 통계표 코드를 공식 문서로 확인하지 못해, 한국은행이 발표한 값
+  // (2026-05 4,184.4조원, 2026-07 4,225.6조원)과 일치하는 계열을 ECOS에서 자동으로 찾아 market_job에 저장해 쓴다(discoverEcosM2).
+  krm2:   { source: "ecos", discover: "m2", label: "한국 신M2(수익증권 제외, 계절조정 평잔, 십억원)", dash: true, freq: "M" },
+  // ---- 지급준비금·단기자금시장(미국 FRED, 한국 ECOS 시장금리(일별) 817Y002). 쓰기 한도 때문에 최초 백필은 3년만. ----
+  usres:  { source: "fred", seriesId: "WRBWFRBL", label: "미국 지급준비금(수요일, 백만$)", dash: true, freq: "W" },
+  sofr:   { source: "fred", seriesId: "SOFR", label: "SOFR(담보부 익일물 금리)", dash: true, freq: "D", lookbackYears: 3 },
+  effr:   { source: "fred", seriesId: "EFFR", label: "실효 연방기금금리(EFFR)", dash: true, freq: "D", lookbackYears: 3 },
+  iorb:   { source: "fred", seriesId: "IORB", label: "지급준비금 이자율(IORB)", dash: true, freq: "D", lookbackYears: 3 },
+  tb3m:   { source: "fred", seriesId: "DTB3", label: "미국 3개월 국채금리", dash: true, freq: "D", lookbackYears: 3 },
+  kcall:  { source: "ecos", statCode: "817Y002", itemCode: "010101000", label: "콜금리(1일)", dash: true, freq: "D", lookbackYears: 3, expectName: "콜금리" },
+  kcd91:  { source: "ecos", statCode: "817Y002", itemCode: "010502000", label: "CD(91일)", dash: true, freq: "D", lookbackYears: 3, expectName: "CD" },
+  kcp91:  { source: "ecos", statCode: "817Y002", itemCode: "010503000", label: "CP(91일)", dash: true, freq: "D", lookbackYears: 3, expectName: "CP" },
 };
 const MACRO_DASH_KEYS = Object.keys(MACRO_SERIES).filter((k) => MACRO_SERIES[k].dash);
 const MACRO_LEGACY_KEYS = Object.keys(MACRO_SERIES).filter((k) => !MACRO_SERIES[k].dash);
@@ -10212,6 +10250,52 @@ async function fetchEcosSeries(statCode, itemCode, startDate, endDate, apiKey, t
   return rows
     .map((r) => ({ date: cycle === "M" && /^\d{6}$/.test(String(r.TIME)) ? r.TIME + "01" : r.TIME, value: Number(r.DATA_VALUE) })) // 월별은 그 달 1일로 저장(기준월)
     .filter((r) => /^\d{8}$/.test(r.date) && !Number.isNaN(r.value));
+}
+
+// 신M2 계열 자동 탐색: ECOS 통계표 목록에서 통화·M2·유동성 관련 월별 통계표를 골라, 항목을 지정하지 않고(=전 항목) 2026-05~07을 받아
+// 한국은행이 발표한 신M2 평잔(계절조정) 값(2026-05 4,184.4조원, 2026-07 4,225.6조원)과 "두 달 모두" 0.3% 안으로 일치하는 항목을 찾는다.
+// 단위는 십억원/조원/억원/백만원 중 무엇이든 비율로 알아내 십억원으로 환산한다. 호출 수(subrequest)를 calls로 돌려준다.
+const M2_PROBE = [["202605", 4184400], ["202607", 4225600]]; // 십억원 기준
+async function discoverEcosM2(apiKey, maxTables = 12, timeoutMs = 15000) {
+  let calls = 0;
+  const get = async (path) => {
+    calls++;
+    const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try { const resp = await fetch(`https://ecos.bok.or.kr/api/${path}`, { signal: controller.signal }); return JSON.parse(await resp.text()); } finally { clearTimeout(timer); }
+  };
+  const tables = [];
+  for (const [a, b] of [[1, 1000], [1001, 2000]]) {
+    const j = await get(`StatisticTableList/${apiKey}/json/kr/${a}/${b}`);
+    if (j.RESULT && j.RESULT.CODE && j.RESULT.CODE !== "INFO-000") { if (a === 1) return { hit: null, calls, err: `통계표 목록 조회 실패: ${j.RESULT.CODE} ${j.RESULT.MESSAGE || ""}` }; break; }
+    const rows = (j.StatisticTableList || {}).row || [];
+    tables.push(...rows);
+    if (rows.length < 1000) break;
+  }
+  const monthly = (r) => !r.CYCLE || /M|월/i.test(String(r.CYCLE));
+  const cand = tables.filter((r) => /M2|광의통화|통화|유동성/i.test(String(r.STAT_NAME || "")) && monthly(r))
+    .sort((x, y) => (/M2|광의통화/i.test(String(y.STAT_NAME)) ? 1 : 0) - (/M2|광의통화/i.test(String(x.STAT_NAME)) ? 1 : 0))
+    .slice(0, maxTables);
+  const ratios = [0.001, 1, 10, 1000, 1000000];
+  for (const t of cand) {
+    let j;
+    try { j = await get(`StatisticSearch/${apiKey}/json/kr/1/1000/${t.STAT_CODE}/M/${M2_PROBE[0][0]}/${M2_PROBE[M2_PROBE.length - 1][0]}`); } catch (e) { continue; }
+    const rows = ((j.StatisticSearch || {}).row) || [];
+    const byItem = {};
+    for (const r of rows) {
+      if (r.ITEM_CODE2) continue; // 항목이 2차원인 표는 단일 항목 조회 URL로 받을 수 없어 제외
+      const v = Number(String(r.DATA_VALUE).replace(/,/g, ""));
+      if (!Number.isFinite(v)) continue;
+      (byItem[r.ITEM_CODE1] = byItem[r.ITEM_CODE1] || { name: r.ITEM_NAME1, v: {} }).v[r.TIME] = v;
+    }
+    for (const [code, it] of Object.entries(byItem)) {
+      for (const ratio of ratios) {
+        if (M2_PROBE.every(([ym, target]) => it.v[ym] != null && Math.abs(it.v[ym] / ratio / target - 1) < 0.003)) {
+          return { hit: { stat: t.STAT_CODE, item: code, ratio, tableName: t.STAT_NAME, itemName: it.name }, calls, scanned: cand.length };
+        }
+      }
+    }
+  }
+  return { hit: null, calls, scanned: cand.length, err: `통화 관련 월별 통계표 ${cand.length}개를 확인했지만 신M2(2026-05 4,184.4조원, 2026-07 4,225.6조원)와 일치하는 계열이 없습니다` };
 }
 
 // FRED(Federal Reserve Economic Data) API: 한 번 호출로 기간 전체를 받아온다.
@@ -10256,17 +10340,41 @@ async function runMacroRefresh(env, explicitStart, endDate, defaultLookbackStart
   const lastMap = {};
   const lastRows = await env.DB.prepare("SELECT series, MAX(date) AS d FROM macro_data GROUP BY series").all();
   for (const r of (lastRows.results || [])) lastMap[r.series] = r.d;
+  // 자동 탐색한 신M2 계열 정보(없으면 탐색). 오늘 이미 탐색에 실패했으면 다시 시도하지 않는다(호출 낭비 방지).
+  sub++;
+  const jobRows = await env.DB.prepare("SELECT k, v FROM market_job WHERE k IN ('ecos_m2', 'ecos_m2_fail')").all();
+  const jobs = {}; for (const r of (jobRows.results || [])) { try { jobs[r.k] = JSON.parse(r.v); } catch (e) { /* 무시 */ } }
   let budget = explicitStart ? Infinity : 1000; // 한 번에 저장하는 점 수(INSERT 약 31건)
   // 아직 데이터가 없는 지표를 먼저 처리해 최초 백필이 굶지 않게 한다.
-  const keys = Object.keys(MACRO_SERIES).sort((x, y) => (lastMap[x] ? 1 : 0) - (lastMap[y] ? 1 : 0));
+  const needsFirst = (k) => (!lastMap[k] || (MACRO_SERIES[k].discover === "m2" && !jobs.ecos_m2)) ? 0 : 1; // 데이터 없는 지표·탐색 전 신M2를 먼저(뒤로 밀려 굶는 것 방지)
+  const keys = Object.keys(MACRO_SERIES).sort((x, y) => needsFirst(x) - needsFirst(y));
   const defer = (seriesKey, def) => { summary[seriesKey] = { label: def.label, points: 0, partial: true, note: "이번 회차 한도 때문에 다음 회차로 미룸" }; };
   for (const seriesKey of keys) {
     const def = MACRO_SERIES[seriesKey];
+    let fetchDef = def; // 자동 탐색 계열은 탐색 결과의 통계표·항목 코드로 바꿔 쓴다
+    let ratio = 1;
+    if (def.discover === "m2") {
+      if (!jobs.ecos_m2) {
+        if (jobs.ecos_m2_fail && jobs.ecos_m2_fail.day === endDate) { summary[seriesKey] = { error: "신M2 자동 탐색 실패(오늘 이미 시도함): " + jobs.ecos_m2_fail.err }; continue; }
+        if (!explicitStart && sub + 16 > SUB_CAP) { defer(seriesKey, def); continue; }
+        let found;
+        try { found = await discoverEcosM2(env.ECOS_API_KEY); } catch (e) { found = { hit: null, calls: 3, err: "탐색 중 오류: " + (e && e.message ? e.message : String(e)) }; }
+        sub += found.calls;
+        if (!found.hit) {
+          await env.DB.prepare("INSERT OR REPLACE INTO market_job (k, v) VALUES ('ecos_m2_fail', ?)").bind(JSON.stringify({ day: endDate, err: found.err })).run(); sub++;
+          summary[seriesKey] = { error: "신M2 자동 탐색 실패: " + found.err }; continue;
+        }
+        jobs.ecos_m2 = found.hit;
+        await env.DB.prepare("INSERT OR REPLACE INTO market_job (k, v) VALUES ('ecos_m2', ?)").bind(JSON.stringify(found.hit)).run(); sub++;
+      }
+      fetchDef = { ...def, statCode: jobs.ecos_m2.stat, itemCode: jobs.ecos_m2.item, expectName: null };
+      ratio = jobs.ecos_m2.ratio || 1;
+    }
     let effectiveStart = explicitStart;
     if (!effectiveStart) {
       const lastD = lastMap[seriesKey];
       // 일별은 마지막 저장일 다음날부터, 주·월별은 마지막 저장일부터 다시 받아(발표치가 나중에 고쳐지는 경우 덮어쓰기) 값 몇 개만 다시 쓴다.
-      effectiveStart = lastD ? (def.freq === "W" || def.freq === "M" ? lastD : addDaysStr(lastD, 1)) : defaultLookbackStart;
+      effectiveStart = lastD ? (def.freq === "W" || def.freq === "M" ? lastD : addDaysStr(lastD, 1)) : (def.lookbackYears ? addDaysStr(endDate, -365 * def.lookbackYears) : defaultLookbackStart);
     }
     if (effectiveStart > endDate) {
       summary[seriesKey] = { label: def.label, points: 0, note: "이미 최신 상태" };
@@ -10276,13 +10384,14 @@ async function runMacroRefresh(env, explicitStart, endDate, defaultLookbackStart
     if (!explicitStart && (budget <= 0 || sub + fetchCost + 2 > SUB_CAP)) { defer(seriesKey, def); continue; }
     let points;
     try {
-      if (def.source === "ecos") points = await fetchEcosSeries(def.statCode, def.itemCode, effectiveStart, endDate, env.ECOS_API_KEY, 15000, def.expectName || null, def.freq === "M" ? "M" : "D");
+      if (def.source === "ecos") points = await fetchEcosSeries(fetchDef.statCode, fetchDef.itemCode, effectiveStart, endDate, env.ECOS_API_KEY, 15000, fetchDef.expectName || null, def.freq === "M" ? "M" : "D");
       else if (def.source === "krxidx") {
         if (!env.DATA_GO_KR_KEY) throw new Error("DATA_GO_KR_KEY 미설정");
         const rows = await fetchIndexHistory(def.idxName, effectiveStart, endDate, env.DATA_GO_KR_KEY);
         points = rows.map((r) => ({ date: r.basDt, value: Number(r.clpr) })).filter((r) => /^\d{8}$/.test(r.date) && Number.isFinite(r.value) && r.value > 0)
           .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)); // 오래된 날짜부터 저장해야 partial 이어받기가 맞다
       } else points = await fetchFredSeries(def.seriesId, effectiveStart, endDate, env.FRED_API_KEY);
+      if (ratio !== 1) points = points.map((p) => ({ date: p.date, value: p.value / ratio })); // 신M2: 십억원으로 환산
     } catch (e) {
       sub += fetchCost;
       summary[seriesKey] = { error: e.message || String(e) };

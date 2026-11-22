@@ -20,9 +20,9 @@ const S = {
   usrrp: daily(() => 100), ustga: weekly(() => 800000), usbs: weekly(() => 7000000),
   usm2: monthly((i) => 20000 + i * 50), krm2: [], uscpi: monthly((i) => 100 * Math.pow(1.04, i / 12)), krcpi: monthly((i) => 100 + i * 0.2),
   usunemp: monthly((i) => i >= 115 ? 4.8 : 4.0), ushy: daily(() => 4.0), usvix: daily((i) => 32 + (i % 50) / 10), usdxy: daily((i) => 120 + (i % 20) / 10),
-  krbase: monthly(() => 2.5), kospi: daily((i) => 2000 + i), sp500: daily((i) => 3000 + i), usdkrw: daily((i) => 1400 + (i % 40)), wti: daily(() => 70),
+  krbase: monthly(() => 2.5), usres: weekly((i) => i >= 508 ? 2400000 : 3000000), sofr: daily((i) => 4.55 + (i % 3) / 100), iorb: daily(() => 4.4), effr: daily(() => 4.33), tb3m: daily(() => 4.2), kcall: daily((i) => 2.5 + (i % 3) / 100), kcd91: daily((i) => 3.0 + (i % 5) / 100), kcp91: daily((i) => 3.4 + (i % 5) / 100), kospi: daily((i) => 2000 + i), sp500: daily((i) => 3000 + i), usdkrw: daily((i) => 1400 + (i % 40)), wti: daily(() => 70),
 };
-const dashKeys = new Set(['us2y', 'us10y', 'usrrp', 'ustga', 'usbs', 'usm2', 'krm2', 'uscpi', 'krcpi', 'usunemp', 'ushy', 'usvix', 'usdxy', 'krbase']);
+const dashKeys = new Set(['us2y', 'us10y', 'usrrp', 'ustga', 'usbs', 'usm2', 'krm2', 'uscpi', 'krcpi', 'usunemp', 'ushy', 'usvix', 'usdxy', 'krbase', 'usres', 'sofr', 'iorb', 'effr', 'tb3m', 'kcall', 'kcd91', 'kcp91']);
 let fail500 = false;
 const srv = http.createServer((q, r) => {
   if (q.url === '/') { r.setHeader('content-type', 'text/html;charset=utf-8'); return r.end(HTML_PAGE); }
@@ -51,16 +51,21 @@ const cp = await row('미국 소비자물가'); ok('물가 상승률 4.00% → �
 const un = await row('미국 실업률'); ok('Sahm 룰 발동(3개월 평균 4.8 vs 직전 최저 4.0)', un && un.includes('삼 룰 발동'), un);
 const vx = await row('VIX'); ok('VIX 32 → 공포 높음', vx && vx.includes('공포 높음'), vx);
 const hy = await row('하이일드'); ok('하이일드 4.0 → 중립', hy && hy.includes('중립'), hy);
-const kr = await row('한국 M2'); ok('한국 M2 자료 없으면 "자료 없음"(숫자 지어내지 않음)', kr && kr.includes('자료 없음'), kr);
+const kr = await row('한국 신M2'); ok('한국 신M2 자료 없으면 "자료 없음"(숫자 지어내지 않음)', kr && kr.includes('자료 없음'), kr);
 const kb = await row('한국 기준금리'); ok('한국 기준금리 2.50, 동결 수준', kb && kb.includes('2.50') && kb.includes('동결'), kb);
 const k10 = await row('국고채 10년-3년'); ok('한국 장단기 금리차 +0.40 정상', k10 && k10.includes('0.40') && k10.includes('정상'), k10);
+const sm = await row('SOFR - IORB'); ok('SOFR 4.55-IORB 4.40 = +0.15 → 자금 압박 조짐(임계값은 실무 관행으로 표기)', sm && sm.includes('0.15') && sm.includes('자금 압박 조짐'), sm);
+const cdm = await row('CD(91일) - 기준금리'); ok('CD 3.0x - 기준금리 2.5 ≈ +0.5 → 경색 조짐', cdm && cdm.includes('단기자금 경색 조짐'), cdm);
+const cpm = await row('CP(91일) - CD(91일)'); ok('CP-CD 스프레드 행이 있음(+0.4 보통)', cpm && cpm.includes('보통'), cpm);
+const rs = await row('지급준비금'); ok('미국 지급준비금: 3개월 감소 신호', rs && rs.includes('3개월 감소'), rs);
+ok('단기자금 분야 버튼이 있음', await pg.isVisible('#econOut button:has-text("단기자금")'));
 ok('그래프 SVG가 지표마다 그려짐', (await pg.locator('#econOut svg').count()) >= 20, 'n=' + await pg.locator('#econOut svg').count());
 ok('종합 점수 같은 단일 점수가 없음', !(await pg.innerText('#econOut')).includes('종합 점수'));
 await pg.click('#econOut button >> text="한국"'); await pg.waitForTimeout(100);
 const onlyKr = await pg.evaluate(() => document.querySelector('#econOut .ec-tbl-wrap').innerText);
 ok('한국만 보기: 미국 지표 숨김', onlyKr.includes('한국 기준금리') && !onlyKr.includes('미국 국채 2년'));
 await pg.click('#econOut button:has-text("유동성")'); await pg.waitForTimeout(100);
-ok('분야 필터(유동성)', (await pg.innerText('#econOut')).includes('한국 M2') );
+ok('분야 필터(유동성)', (await pg.innerText('#econOut')).includes('한국 신M2') );
 await pg.click('#econOut button >> text="미국"'); await pg.waitForTimeout(100);
 ok('미국+유동성에 TGA·역레포 표시', (await pg.innerText('#econOut')).includes('재무부 TGA') && (await pg.innerText('#econOut')).includes('역레포'));
 const nsvg = await pg.locator('#econOut svg').count();
@@ -129,7 +134,7 @@ const introTxt = await pg.evaluate(() => document.getElementById('econModelOut')
 ok('설명에 기준선·시험 보기·근거 수준 포함', introTxt.includes('기준선') && introTxt.includes('시험 보기') && introTxt.includes('Estrella') && introTxt.includes('Jegadeesh'));
 await pg.screenshot({ path: path.join(os.tmpdir(), 'fs_value_econ_ov.png'), fullPage: true });
 const kp = await pg.innerText('#econKpi');
-ok('핵심 지표 카드 6개(금리차·순유동성·VIX·HY·한국 금리차·환율)', (await pg.locator('#econKpi .ec-kpis > .ec-card').count()) === 6 && kp.includes('순유동성') && kp.includes('VIX'));
+ok('핵심 지표 카드 8개(금리차·순유동성·VIX·HY·한국 금리차·환율·SOFR-IORB·CD-기준금리)', (await pg.locator('#econKpi .ec-kpis > .ec-card').count()) === 8 && kp.includes('순유동성') && kp.includes('VIX'));
 await pg.setViewportSize({ width: 1100, height: 1000 }); await pg.waitForTimeout(200);
 await pg.screenshot({ path: path.join(os.tmpdir(), 'fs_value_econ_desktop.png'), fullPage: true });
 await pg.setViewportSize({ width: 390, height: 900 }); await pg.waitForTimeout(200);
