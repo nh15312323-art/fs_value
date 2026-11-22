@@ -16,10 +16,10 @@ const multiRowInsert = async (D, head, cols, rows, f) => { for (const r of rows)
   let lastUrl = '', body = '';
   globalThis.fetch = async (u) => { lastUrl = u; return { text: async () => body }; };
   const mod = new Function('addDaysStr', 'multiRowInsert', 'fetchFredSeries', 'fetchIndexHistory',
-    text.slice(ms0, ms1e) + '\n' + text.slice(f0, f1) + '\n' + text.slice(a0, a1) + '\nreturn { runMacroRefresh, fetchEcosSeries, discoverEcosM2, MACRO_SERIES, MACRO_DASH_KEYS, MACRO_LEGACY_KEYS };');
+    text.slice(ms0, ms1e) + '\n' + text.slice(f0, f1) + '\n' + text.slice(a0, a1) + '\nreturn { runMacroRefresh, fetchEcosSeries, discoverEcosM2, thinOldPoints, MACRO_SERIES, MACRO_DASH_KEYS, MACRO_LEGACY_KEYS };');
   const fredCalls = [];
   const m = mod(addDaysStr, multiRowInsert, async (id, s, e) => { fredCalls.push(id + ':' + s); return [{ date: '20261014', value: 1 }, { date: '20261021', value: 2 }]; }, async () => []);
-  const { runMacroRefresh, fetchEcosSeries, discoverEcosM2, MACRO_SERIES, MACRO_DASH_KEYS, MACRO_LEGACY_KEYS } = m;
+  const { runMacroRefresh, fetchEcosSeries, discoverEcosM2, thinOldPoints, MACRO_SERIES, MACRO_DASH_KEYS, MACRO_LEGACY_KEYS } = m;
   // (1)
   body = JSON.stringify({ StatisticSearch: { row: [{ TIME: '202609', DATA_VALUE: '2.50', ITEM_NAME1: '한국은행 기준금리' }, { TIME: '202610', DATA_VALUE: '2.50', ITEM_NAME1: '한국은행 기준금리' }] } });
   let pts = await fetchEcosSeries('722Y001', '0101000', '20260901', '20261031', 'KEY', 1000, '기준금리', 'M');
@@ -44,7 +44,7 @@ const multiRowInsert = async (D, head, cols, rows, f) => { for (const r of rows)
   for (let r = 0; r < 12; r++) { const x = await runMacroRefresh(env, null, '20261030', '20250101'); if (!Object.values(x).some((v) => v.partial)) break; } // 지표가 많아 회차를 나눠 처리하므로 끝날 때까지 반복
   check('주별(TGA)·월별(M2)은 마지막 저장일부터 다시', fredCalls.includes('WDTGAL:20261014') && fredCalls.includes('M2SL:20260901'), fredCalls.join(','));
   check('일별(미국 2년)은 마지막 저장일 다음날부터', fredCalls.includes('DGS2:20261021'));
-  check('처음 받는 지표는 기본 시작일부터', fredCalls.includes('DGS10:20250101'));
+  check('처음 받는 지표는 1990-01-01부터', fredCalls.includes('DGS10:19900101'), fredCalls.slice(0,6).join(','));
   const tga = db.prepare("SELECT date, value FROM macro_data WHERE series='ustga' ORDER BY date").all();
   check('다시 받은 주별 값은 덮어쓰기(중복행 없음)', tga.length === 2 && tga[0].value === 1 && tga[1].date === '20261021', JSON.stringify(tga));
   // (3) 라우트
@@ -91,8 +91,8 @@ const multiRowInsert = async (D, head, cols, rows, f) => { for (const r of rows)
     db.exec('DELETE FROM macro_data'); db.exec("INSERT INTO macro_data VALUES ('usdkrw','20261120',1400)");
     body = JSON.stringify({ RESULT: { CODE: 'INFO-200', MESSAGE: '해당하는 데이터가 없습니다.' } });
     const sm = {}; // 회차 한도로 미뤄진 지표는 다음 회차에서 처리되므로, 끝날 때까지 돌려 지표별 최종 결과를 모은다
-    for (let r = 0; r < 6; r++) { const x = await runMacroRefresh({ DB, ECOS_API_KEY: 'e', FRED_API_KEY: 'f', DATA_GO_KR_KEY: 'd' }, null, '20261122', '20171122'); Object.keys(x).forEach((k) => { if (!(x[k].partial && x[k].points === 0)) sm[k] = x[k]; }); if (!Object.values(x).some((v) => v.partial)) break; }
-    check('이미 저장된 환율은 주말에 INFO-200이어도 "새 데이터 없음"(오류 아님)', sm.usdkrw && !sm.usdkrw.error && sm.usdkrw.points === 0 && /새 데이터 없음/.test(sm.usdkrw.note || ''), JSON.stringify(sm.usdkrw));
+    for (let r = 0; r < 40; r++) { const x = await runMacroRefresh({ DB, ECOS_API_KEY: 'e', FRED_API_KEY: 'f', DATA_GO_KR_KEY: 'd' }, null, '20261122', '20171122'); Object.keys(x).forEach((k) => { if (x[k].note === '오늘 이미 확인함' && sm[k]) return; if (!(x[k].partial && x[k].points === 0)) sm[k] = x[k]; }); if (!Object.values(x).some((v) => v.partial)) break; }
+check('이미 저장된 환율은 주말에 INFO-200이어도 "새 데이터 없음"(오류 아님)', sm.usdkrw && !sm.usdkrw.error && sm.usdkrw.points === 0 && /새 데이터 없음/.test(sm.usdkrw.note || ''), JSON.stringify(sm.usdkrw));
     check('신M2는 자동 탐색에 실패하면 이유와 함께 오류로 알림(엉뚱한 값 저장 안 함)', sm.krm2 && /신M2 자동 탐색 실패/.test(sm.krm2.error || ''), JSON.stringify(sm.krm2));
     check('단기자금 신규 지표 이름·ID', MACRO_SERIES.usres.seriesId === 'WRBWFRBL' && MACRO_SERIES.sofr.seriesId === 'SOFR' && MACRO_SERIES.iorb.seriesId === 'IORB' && MACRO_SERIES.effr.seriesId === 'EFFR' && MACRO_SERIES.tb3m.seriesId === 'DTB3' && MACRO_SERIES.kcd91.expectName === 'CD' && MACRO_SERIES.kcp91.expectName === 'CP' && MACRO_SERIES.kcall.expectName === '콜금리');
   }
@@ -137,6 +137,37 @@ const multiRowInsert = async (D, head, cols, rows, f) => { for (const r of rows)
     for (let r = 0; r < 12; r++) { const x = await runMacroRefresh({ DB, ECOS_API_KEY: 'e', FRED_API_KEY: 'f', DATA_GO_KR_KEY: 'd' }, null, '20261122', '20171122'); if (!Object.values(x).some((v) => v.partial)) break; }
     for (let r = 0; r < 3; r++) await runMacroRefresh({ DB, ECOS_API_KEY: 'e', FRED_API_KEY: 'f', DATA_GO_KR_KEY: 'd' }, null, '20261122', '20171122');
     check('탐색 실패 시 같은 날에는 통계표 목록을 다시 조회하지 않음(1번만)', tableCalls === 1, 'tableCalls=' + tableCalls);
+  }
+  // (8) 1990년부터의 과거 이력: 오래된 일별은 월말만, 이미 저장된 지표도 과거를 이어받고, 하루 쓰기 상한을 지킨다
+  {
+    const mkDaily = (start, end) => { const o = []; for (let t = Date.UTC(+start.slice(0, 4), +start.slice(4, 6) - 1, +start.slice(6, 8)); t <= Date.UTC(+end.slice(0, 4), +end.slice(4, 6) - 1, +end.slice(6, 8)); t += 86400000) { const d = new Date(t); if (d.getUTCDay() % 6) o.push({ date: d.toISOString().slice(0, 10).replace(/-/g, ''), value: 1 + o.length / 1000 }); } return o; };
+    const th = thinOldPoints(mkDaily('20000103', '20000331'), '20000301');
+    check('월말 축소: 기준일 이전은 달마다 1개, 이후는 그대로', th.filter((p) => p.date < '20000301').map((p) => p.date).join() === '20000131,20000229' && th.filter((p) => p.date >= '20000301').length === mkDaily('20000301', '20000331').length, th.slice(0, 3).map((p) => p.date).join());
+    const calls = [];
+    const fredMock = async (id, s0, e0) => { calls.push(id + ':' + s0 + '-' + e0); return id === 'DGS2' ? mkDaily(s0 < '19900101' ? '19900101' : s0, e0) : []; };
+    const m3 = new Function('addDaysStr', 'multiRowInsert', 'fetchFredSeries', 'fetchIndexHistory', text.slice(ms0, ms1e) + '\n' + text.slice(f0, f1) + '\n' + text.slice(a0, a1) + '\nreturn { runMacroRefresh, MACRO_SERIES };')(addDaysStr, multiRowInsert, fredMock, async () => []);
+    globalThis.fetch = async () => ({ text: async () => JSON.stringify({ RESULT: { CODE: 'INFO-200', MESSAGE: 'x' } }) });
+    db.exec('DELETE FROM macro_data'); db.exec('DELETE FROM market_job');
+    db.exec("INSERT INTO macro_data VALUES ('us2y','20260105',4.0),('us2y','20260106',4.1)");
+    const E = { DB, ECOS_API_KEY: 'e', FRED_API_KEY: 'f', DATA_GO_KR_KEY: 'd' };
+    for (let r = 0; r < 60; r++) { const x = await m3.runMacroRefresh(E, null, '20261122', '20171122'); if (!Object.values(x).some((v) => v.partial)) break; }
+    const rows = db.prepare("SELECT date FROM macro_data WHERE series='us2y' ORDER BY date").all().map((r) => r.date);
+    const old = rows.filter((d) => d < '20161101'), perMonth = {}; old.forEach((d) => { perMonth[d.slice(0, 6)] = (perMonth[d.slice(0, 6)] || 0) + 1; });
+    check('이미 저장된 지표도 1990년 초부터 과거를 이어받음', rows[0] < '19900201', rows[0]);
+    check('10년 넘은 구간은 달마다 1개(월말)만 저장', old.length > 300 && Object.values(perMonth).every((n) => n === 1), 'old=' + old.length + ' dup=' + Object.entries(perMonth).filter(([k, n]) => n > 1).slice(0, 4).join(';'));
+    check('최근 10년은 일별 그대로', rows.filter((d) => d >= '20161201' && d < '20260105').length > 2000);
+    const mj = JSON.parse(db.prepare("SELECT v FROM market_job WHERE k='mh_us2y'").get().v);
+    check('과거 이어받기 완료 표시가 market_job에 저장됨', mj.done === true, JSON.stringify(mj));
+    check('받은 과거 구간이 기존 최초일 이전으로만 제한됨(중복·덮어쓰기 없음)', rows.length === new Set(rows).size && rows.includes('20260105') && rows.includes('20260106'));
+    calls.length = 0; db.exec("DELETE FROM market_job WHERE k='macro_chk'");
+    await m3.runMacroRefresh(E, null, '20261123', '20171123');
+    check('완료 후에는 과거 구간을 다시 요청하지 않음', !calls.some((c) => /^DGS2:1990/.test(c)), calls.filter((c) => /^DGS2/.test(c)).join());
+    // 하루 쓰기 상한
+    db.exec('DELETE FROM macro_data'); db.exec('DELETE FROM market_job');
+    db.exec("INSERT INTO market_job VALUES ('macro_wr', '{\"day\":\"20261122\",\"n\":20000}')");
+    const xc = await m3.runMacroRefresh(E, null, '20261122', '20171122');
+    const nrows = db.prepare('SELECT COUNT(*) n FROM macro_data').get().n;
+    check('하루 쓰기 상한 도달 시 저장하지 않고 "내일 이어받기" 안내', nrows === 0 && Object.values(xc).some((v) => v.capped) && !Object.values(xc).some((v) => v.partial), 'rows=' + nrows);
   }
   // (6) /api/macro/ecos-find — 코드 찾기. 응답에 인증키가 나오면 안 된다
   {

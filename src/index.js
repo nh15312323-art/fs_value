@@ -1323,7 +1323,7 @@ const HTML_PAGE = `<!doctype html>
     <div class="card">
       <div class="card-title">3. 거시경제 데이터 (환율·금리·WTI·코스피·S&P500 + 경제 상황용 미국·한국 지표)</div>
       <p class="meta-line" style="margin-top:0;">
-        원/달러 환율·통안증권(1년)·국고채(3년)·국고채(10년)는 한국은행 ECOS, WTI·S&P500은 미국 FRED(S&P500은 FRED가 최근 약 10년만 제공), 코스피는 공공데이터포털 지수시세에서 최근 9년치를 받아옵니다. 지수는 배당을 뺀 가격지수입니다. 한 번 받아두면 거시·상관 탭이 계속 재사용합니다. "경제 상황" 탭용으로 미국 국채 2년·10년, 연준 총자산·TGA·역레포, 미국 M2·소비자물가·실업률, 하이일드 스프레드, VIX, 달러지수(FRED)와 한국 기준금리·소비자물가·M2(ECOS)도 함께 받습니다(처음엔 여러 회차로 나눠 받으며, 한국 M2는 통계표 코드를 아직 공식 확인하지 못해 항목 이름이 맞지 않으면 저장하지 않고 오류로 표시합니다).
+        원/달러 환율·통안증권(1년)·국고채(3년)·국고채(10년)는 한국은행 ECOS, WTI·S&P500은 미국 FRED(S&P500은 FRED가 최근 약 10년만 제공), 코스피는 공공데이터포털 지수시세에서 최근 9년치를 받아옵니다. 나머지 지표는 1990년부터 받을 수 있는 만큼 받으며, 10년이 넘은 일·주별 값은 월말 값만 저장합니다(하루 쓰기 한도에 닿으면 다음 날 이어받습니다). 지수는 배당을 뺀 가격지수입니다. 한 번 받아두면 거시·상관 탭이 계속 재사용합니다. "경제 상황" 탭용으로 미국 국채 2년·10년, 연준 총자산·TGA·역레포, 미국 M2·소비자물가·실업률, 하이일드 스프레드, VIX, 달러지수(FRED)와 한국 기준금리·소비자물가·M2(ECOS)도 함께 받습니다(처음엔 여러 회차로 나눠 받으며, 한국 신M2는 통계표를 자동으로 찾아 한국은행 발표값과 대조하고, 못 찾으면 저장하지 않고 이유를 표시합니다).
       </p>
       <div class="row"><button class="primary" onclick="refreshMacroData()">거시경제 데이터 갱신</button></div>
       <div id="macroStatus" class="meta-line" style="white-space:pre-line;"></div>
@@ -9372,7 +9372,7 @@ async function pfuExport() {
         });
       });
       h += '<div class="ec-tbl-wrap" style="margin-top:12px;"><table class="ec-tbl"><thead><tr><th>지표</th><th>최신값(기준일)</th><th>1개월</th><th>3개월</th><th>12개월</th><th>위치·신호</th></tr></thead><tbody>' + rows.join('') + '</tbody></table></div>';
-      h += '<details class="ec-note"><summary>표 읽는 법과 한계</summary><div>변화는 값이 금리·비율이면 %p 차이, 지수·잔고·가격이면 % 변화입니다. "위치"는 저장된 전체 기간(최대 약 9년, 하이일드 스프레드 등은 더 짧을 수 있음) 중 현재값이 아래에서 몇 % 지점인지입니다. 신호 배지에 마우스를 올리면 규칙이 보입니다. 임계값은 실무 관행이거나 해외 연구에서 온 것으로, 한국 주식시장에서 수익이 검증된 매매 규칙이 아닙니다.' + (missing ? ' 자료가 없는 ' + missing + '개 지표는 갱신 후 나타납니다.' : '') + '</div></details>';
+      h += '<details class="ec-note"><summary>표 읽는 법과 한계</summary><div>변화는 값이 금리·비율이면 %p 차이, 지수·잔고·가격이면 % 변화입니다. "위치"는 저장된 전체 기간(1990년부터 받을 수 있는 만큼이며 지표마다 시작일이 다르고, 10년 넘은 일·주별 값은 월말만 저장) 중 현재값이 아래에서 몇 % 지점인지입니다(월말 값과 일별 값이 섞여 계산된 참고치). 신호 배지에 마우스를 올리면 규칙이 보입니다. 임계값은 실무 관행이거나 해외 연구에서 온 것으로, 한국 주식시장에서 수익이 검증된 매매 규칙이 아닙니다.' + (missing ? ' 자료가 없는 ' + missing + '개 지표는 갱신 후 나타납니다.' : '') + '</div></details>';
       h += '<div class="ec-sec"><h3>시계열 그래프</h3><div class="ec-pills"><span class="ec-pl">기간</span>' +
         [[1, '1년'], [3, '3년'], [5, '5년'], [0, '전체']].map(function (r) { return pill(econRange === r[0], 'econSetRange(' + r[0] + ')', r[1]); }).join('') + '</div></div>';
       h += econOvHtml();
@@ -9537,7 +9537,7 @@ async function pfuExport() {
         '<b>3. 규칙 배우기</b> — 로지스틱 회귀라는 방법이 "이런 재료 조합일 땐 뒤에 어떤 결과가 많았나"를 확률 계산식으로 배웁니다. 너무 꼬불꼬불하게 외우지 않도록 계수를 작게 묶는 규제(릿지)를 걸었습니다. 재료 몇 개를 점수로 바꿔 더하고, 그 점수를 합이 100%가 되는 세 확률로 바꾸는 식이라고 보면 됩니다.<br />' +
         '<b>4. 오늘 적용</b> — 지금의 재료 값을 계산식에 넣으면 상승·중립·하락 확률이 나옵니다.<br />' +
         '<b>5. 시험 보기(가장 중요)</b> — 과거 각 달로 돌아가 "그때까지 자료만" 보고 예측한 뒤 실제 결과와 채점합니다. 비교 대상은 "재료 없이 과거에 상승·중립·하락이 각각 얼마나 있었나"만 쓰는 기준선입니다. 기준선을 못 이기면 화면은 기준선을 주 확률로 보여줍니다.<br />' +
-        '<b>한계(꼭 읽어주세요)</b> — 쓸 수 있는 자료가 약 9년(월말 표본 100개 안팎)이고 3개월 구간이 서로 겹쳐 실제로는 독립 표본이 30개쯤입니다. Welch & Goyal(2008)은 흔히 쓰는 예측 변수 대부분이 표본 밖에서 과거 평균을 못 이겼다고 보고했습니다. Campbell & Thompson(2008)은 제약을 두면 작은 개선이 가능하다고 했지만 효과는 작았습니다. 금리차의 침체 예측력(Estrella & Mishkin 1998)과 시계열 모멘텀(Moskowitz, Ooi & Pedersen 2012)은 연구가 있으나 한국 지수 3개월 방향을 맞힌다는 증명은 아닙니다. 이 확률은 "맞힌다"가 아니라 "과거 비슷한 상황의 분포"이며, 투자 권유나 매매 신호가 아닙니다. 월·주별 지표는 발표가 늦어 2개월 지연을 적용했지만 발표 당시 값과 이후 수정값의 차이는 반영하지 못했습니다.</div></details>';
+        '<b>한계(꼭 읽어주세요)</b> — 주가 자료(코스피는 약 9년, S&P500은 FRED가 최근 약 10년만 제공)가 짧아 다른 지표를 1990년부터 받아도 모델이 쓸 수 있는 표본은 약 9년(월말 표본 100개 안팎)이고 3개월 구간이 서로 겹쳐 실제로는 독립 표본이 30개쯤입니다. Welch & Goyal(2008)은 흔히 쓰는 예측 변수 대부분이 표본 밖에서 과거 평균을 못 이겼다고 보고했습니다. Campbell & Thompson(2008)은 제약을 두면 작은 개선이 가능하다고 했지만 효과는 작았습니다. 금리차의 침체 예측력(Estrella & Mishkin 1998)과 시계열 모멘텀(Moskowitz, Ooi & Pedersen 2012)은 연구가 있으나 한국 지수 3개월 방향을 맞힌다는 증명은 아닙니다. 이 확률은 "맞힌다"가 아니라 "과거 비슷한 상황의 분포"이며, 투자 권유나 매매 신호가 아닙니다. 월·주별 지표는 발표가 늦어 2개월 지연을 적용했지만 발표 당시 값과 이후 수정값의 차이는 반영하지 못했습니다.</div></details>';
       box.innerHTML = h;
     }
 
@@ -9546,15 +9546,21 @@ async function pfuExport() {
 
     async function refreshMacroData() {
       const statusEl = document.getElementById('macroStatus');
-      statusEl.textContent = '거시경제 데이터를 받아오는 중입니다(최근 9년치, 지표 32개 — 처음엔 여러 번에 나눠 자동으로 이어받습니다)...';
+      statusEl.textContent = '거시경제 데이터를 받아오는 중입니다(1990년부터 받을 수 있는 만큼, 지표 32개 — 여러 번에 나눠 자동으로 이어받습니다. 하루 쓰기 한도에 닿으면 내일 이어서 받습니다)...';
       try {
-        let total = 0, last = null;
+        let total = 0, last = null; const agg = {}, hist = {};
         for (let round = 1; round <= 80; round++) {
           const res = await fetch('/api/macro/refresh');
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || '갱신 실패');
           last = data;
-          total += Object.values(data.summary).reduce((a, s) => a + (s.points || 0), 0);
+          total += Object.values(data.summary).reduce((a, s) => a + (s.points || 0) + (s.histPoints || 0), 0);
+          Object.entries(data.summary).forEach(([k, s]) => {
+            if (s.histPoints) hist[k] = (hist[k] || 0) + s.histPoints;
+            if (s.note === '오늘 이미 확인함' && agg[k]) return;
+            if (s.partial && !s.points && !s.error && !s.histPoints && agg[k]) return;
+            agg[k] = Object.assign({}, agg[k] && agg[k].capped ? { capped: true } : {}, s);
+          });
           statusEl.textContent = '받는 중... ' + round + '회차, 누적 ' + total.toLocaleString() + '개 저장';
           if (!data.partial) break;
         }
@@ -9562,8 +9568,8 @@ async function pfuExport() {
         econRaw = null; // 경제 상황 화면도 다음에 열 때 새로 받음
         macroLoadFailed = false;
         if (rawRows.length > 0) applyView(); // 표의 거시경제 열도 새 데이터로 다시 채움
-        const lines = Object.entries(last.summary).map(([key, s]) =>
-          s.error ? key + ': 실패 — ' + s.error : s.label + ': ' + (s.partial ? '일부 저장(다시 눌러 이어받기)' : (s.points === 0 && s.note ? s.note : s.points + '개 저장(마지막 회차)')));
+        const lines = Object.entries(agg).map(([key, s]) =>
+          s.error ? key + ': 실패 — ' + s.error : s.label + ': ' + (s.capped ? (s.note || s.histNote || '오늘 쓰기 한도 도달, 내일 이어받음') : s.partial ? '일부 저장(다시 눌러 이어받기)' : (s.points === 0 && s.note ? s.note : s.points + '개 저장(마지막 회차)')) + (hist[key] ? ' · 과거 이력 ' + hist[key].toLocaleString() + '개 추가' : '') + (s.histError ? ' · ' + s.histError : ''));
         statusEl.textContent = '완료 — 이번에 총 ' + total.toLocaleString() + '개 저장' + String.fromCharCode(10) + lines.join(String.fromCharCode(10));
       } catch (e) {
         statusEl.textContent = '오류: ' + e.message;
@@ -10209,13 +10215,13 @@ const MACRO_SERIES = {
   krm2:   { source: "ecos", discover: "m2", label: "한국 신M2(수익증권 제외, 계절조정 평잔, 십억원)", dash: true, freq: "M" },
   // ---- 지급준비금·단기자금시장(미국 FRED, 한국 ECOS 시장금리(일별) 817Y002). 쓰기 한도 때문에 최초 백필은 3년만. ----
   usres:  { source: "fred", seriesId: "WRBWFRBL", label: "미국 지급준비금(수요일, 백만$)", dash: true, freq: "W" },
-  sofr:   { source: "fred", seriesId: "SOFR", label: "SOFR(담보부 익일물 금리)", dash: true, freq: "D", lookbackYears: 3 },
-  effr:   { source: "fred", seriesId: "EFFR", label: "실효 연방기금금리(EFFR)", dash: true, freq: "D", lookbackYears: 3 },
-  iorb:   { source: "fred", seriesId: "IORB", label: "지급준비금 이자율(IORB)", dash: true, freq: "D", lookbackYears: 3 },
-  tb3m:   { source: "fred", seriesId: "DTB3", label: "미국 3개월 국채금리", dash: true, freq: "D", lookbackYears: 3 },
-  kcall:  { source: "ecos", statCode: "817Y002", itemCode: "010101000", label: "콜금리(1일)", dash: true, freq: "D", lookbackYears: 3, expectName: "콜금리" },
-  kcd91:  { source: "ecos", statCode: "817Y002", itemCode: "010502000", label: "CD(91일)", dash: true, freq: "D", lookbackYears: 3, expectName: "CD" },
-  kcp91:  { source: "ecos", statCode: "817Y002", itemCode: "010503000", label: "CP(91일)", dash: true, freq: "D", lookbackYears: 3, expectName: "CP" },
+  sofr:   { source: "fred", seriesId: "SOFR", label: "SOFR(담보부 익일물 금리)", dash: true, freq: "D" },
+  effr:   { source: "fred", seriesId: "EFFR", label: "실효 연방기금금리(EFFR)", dash: true, freq: "D" },
+  iorb:   { source: "fred", seriesId: "IORB", label: "지급준비금 이자율(IORB)", dash: true, freq: "D" },
+  tb3m:   { source: "fred", seriesId: "DTB3", label: "미국 3개월 국채금리", dash: true, freq: "D" },
+  kcall:  { source: "ecos", statCode: "817Y002", itemCode: "010101000", label: "콜금리(1일)", dash: true, freq: "D", expectName: "콜금리" },
+  kcd91:  { source: "ecos", statCode: "817Y002", itemCode: "010502000", label: "CD(91일)", dash: true, freq: "D", expectName: "CD" },
+  kcp91:  { source: "ecos", statCode: "817Y002", itemCode: "010503000", label: "CP(91일)", dash: true, freq: "D", expectName: "CP" },
 };
 const MACRO_DASH_KEYS = Object.keys(MACRO_SERIES).filter((k) => MACRO_SERIES[k].dash);
 const MACRO_LEGACY_KEYS = Object.keys(MACRO_SERIES).filter((k) => !MACRO_SERIES[k].dash);
@@ -10298,6 +10304,22 @@ async function discoverEcosM2(apiKey, maxTables = 12, timeoutMs = 15000) {
   return { hit: null, calls, scanned: cand.length, err: `통화 관련 월별 통계표 ${cand.length}개를 확인했지만 신M2(2026-05 4,184.4조원, 2026-07 4,225.6조원)와 일치하는 계열이 없습니다` };
 }
 
+// ---- 과거 이력: 1990년부터. 오래된 일·주별 값은 월말 값만 저장(쓰기 한도 절약), 최근 10년은 원래 주기 그대로. ----
+const MACRO_HIST_START = "19900101";
+const MACRO_DAILY_ROW_CAP = 20000; // 하루에 이 함수가 쓰는 최대 행 수(macro_data는 행당 쓰기 약 2건 → 약 4만 건. 하루 10만 건 한도를 다른 수집과 나눠 쓴다)
+// cutoff 이전 구간은 달마다 마지막 관측값 하나만 남긴다(points는 날짜 오름차순).
+function thinOldPoints(points, cutoff) {
+  const out = []; let lastYm = null, hold = null;
+  for (const p of points) {
+    if (p.date >= cutoff) { if (hold) { out.push(hold); hold = null; } out.push(p); continue; }
+    const ym = p.date.slice(0, 6);
+    if (lastYm !== null && ym !== lastYm && hold) out.push(hold);
+    hold = p; lastYm = ym;
+  }
+  if (hold) out.push(hold);
+  return out;
+}
+
 // FRED(Federal Reserve Economic Data) API: 한 번 호출로 기간 전체를 받아온다.
 async function fetchFredSeries(seriesId, startDate, endDate, apiKey, timeoutMs = 15000) {
   const fmt = (ymd) => `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)}`;
@@ -10338,16 +10360,26 @@ async function runMacroRefresh(env, explicitStart, endDate, defaultLookbackStart
   const SUB_CAP = 40;
   let sub = 1; // 아래 MAX(date) 조회
   const lastMap = {};
-  const lastRows = await env.DB.prepare("SELECT series, MAX(date) AS d FROM macro_data GROUP BY series").all();
-  for (const r of (lastRows.results || [])) lastMap[r.series] = r.d;
+  const lastRows = await env.DB.prepare("SELECT series, MAX(date) AS d, MIN(date) AS m FROM macro_data GROUP BY series").all();
+  const minMap = {};
+  for (const r of (lastRows.results || [])) { lastMap[r.series] = r.d; minMap[r.series] = r.m; }
   // 자동 탐색한 신M2 계열 정보(없으면 탐색). 오늘 이미 탐색에 실패했으면 다시 시도하지 않는다(호출 낭비 방지).
   sub++;
-  const jobRows = await env.DB.prepare("SELECT k, v FROM market_job WHERE k IN ('ecos_m2', 'ecos_m2_fail')").all();
+  const jobRows = await env.DB.prepare("SELECT k, v FROM market_job WHERE k IN ('ecos_m2', 'ecos_m2_fail', 'macro_wr', 'macro_chk') OR k LIKE 'mh_%'").all();
   const jobs = {}; for (const r of (jobRows.results || [])) { try { jobs[r.k] = JSON.parse(r.v); } catch (e) { /* 무시 */ } }
-  let budget = explicitStart ? Infinity : 1000; // 한 번에 저장하는 점 수(INSERT 약 31건)
+  let capLeft = Infinity;
+  if (!explicitStart) { const w = jobs.macro_wr; capLeft = Math.max(0, MACRO_DAILY_ROW_CAP - (w && w.day === endDate ? w.n : 0)); }
+  const capNote = { note: "오늘 쓰기 한도(하루 " + MACRO_DAILY_ROW_CAP + "행)에 도달 — 내일 '갱신'을 누르면 이어받습니다", capped: true };
+  let wroteRows = 0;
+  let budget = explicitStart ? Infinity : Math.min(1000, capLeft); // 한 번에 저장하는 점 수(INSERT 약 31건)
   // 아직 데이터가 없는 지표를 먼저 처리해 최초 백필이 굶지 않게 한다.
   const needsFirst = (k) => (!lastMap[k] || (MACRO_SERIES[k].discover === "m2" && !jobs.ecos_m2)) ? 0 : 1; // 데이터 없는 지표·탐색 전 신M2를 먼저(뒤로 밀려 굶는 것 방지)
-  const keys = Object.keys(MACRO_SERIES).sort((x, y) => needsFirst(x) - needsFirst(y));
+  // 오늘 이미 확인한 지표는 건너뛰고(주·월별 지표는 매번 마지막 값을 다시 받아 호출 예산을 먹어, 뒤쪽 지표가 영영 차례를 못 받던 문제 방지),
+  // 아직 확인 안 한 지표부터 처리한다. 확인 기록은 market_job 'macro_chk'에 {지표: 날짜}로 남긴다.
+  const chk = (jobs.macro_chk && typeof jobs.macro_chk === "object") ? { ...jobs.macro_chk } : {};
+  let chkChanged = false;
+  const checkedToday = (k) => !explicitStart && lastMap[k] && chk[k] === endDate;
+  const keys = Object.keys(MACRO_SERIES).sort((x, y) => (needsFirst(x) - needsFirst(y)) || ((checkedToday(x) ? 1 : 0) - (checkedToday(y) ? 1 : 0)));
   const defer = (seriesKey, def) => { summary[seriesKey] = { label: def.label, points: 0, partial: true, note: "이번 회차 한도 때문에 다음 회차로 미룸" }; };
   for (const seriesKey of keys) {
     const def = MACRO_SERIES[seriesKey];
@@ -10370,17 +10402,20 @@ async function runMacroRefresh(env, explicitStart, endDate, defaultLookbackStart
       fetchDef = { ...def, statCode: jobs.ecos_m2.stat, itemCode: jobs.ecos_m2.item, expectName: null };
       ratio = jobs.ecos_m2.ratio || 1;
     }
+    if (checkedToday(seriesKey)) { summary[seriesKey] = { label: def.label, points: 0, note: "오늘 이미 확인함" }; continue; }
     let effectiveStart = explicitStart;
     if (!effectiveStart) {
       const lastD = lastMap[seriesKey];
       // 일별은 마지막 저장일 다음날부터, 주·월별은 마지막 저장일부터 다시 받아(발표치가 나중에 고쳐지는 경우 덮어쓰기) 값 몇 개만 다시 쓴다.
-      effectiveStart = lastD ? (def.freq === "W" || def.freq === "M" ? lastD : addDaysStr(lastD, 1)) : (def.lookbackYears ? addDaysStr(endDate, -365 * def.lookbackYears) : defaultLookbackStart);
+      effectiveStart = lastD ? (def.freq === "W" || def.freq === "M" ? lastD : addDaysStr(lastD, 1)) : (def.source === "krxidx" ? defaultLookbackStart : MACRO_HIST_START);
     }
     if (effectiveStart > endDate) {
       summary[seriesKey] = { label: def.label, points: 0, note: "이미 최신 상태" };
+      if (!explicitStart && lastMap[seriesKey]) { chk[seriesKey] = endDate; chkChanged = true; }
       continue;
     }
     const fetchCost = def.source === "krxidx" ? 3 : 1;
+    if (!explicitStart && capLeft <= 0) { summary[seriesKey] = { label: def.label, points: 0, ...capNote }; continue; }
     if (!explicitStart && (budget <= 0 || sub + fetchCost + 2 > SUB_CAP)) { defer(seriesKey, def); continue; }
     let points;
     try {
@@ -10392,6 +10427,7 @@ async function runMacroRefresh(env, explicitStart, endDate, defaultLookbackStart
           .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)); // 오래된 날짜부터 저장해야 partial 이어받기가 맞다
       } else points = await fetchFredSeries(def.seriesId, effectiveStart, endDate, env.FRED_API_KEY);
       if (ratio !== 1) points = points.map((p) => ({ date: p.date, value: p.value / ratio })); // 신M2: 십억원으로 환산
+      if (def.source !== "krxidx" && def.freq !== "M") points = thinOldPoints(points, addDaysStr(endDate, -3653)); // 10년 넘은 일·주별은 월말만
     } catch (e) {
       sub += fetchCost;
       summary[seriesKey] = { error: e.message || String(e) };
@@ -10399,6 +10435,7 @@ async function runMacroRefresh(env, explicitStart, endDate, defaultLookbackStart
     }
     sub += fetchCost;
     if (points.length === 0) {
+      if (!explicitStart && lastMap[seriesKey]) { chk[seriesKey] = endDate; chkChanged = true; }
       summary[seriesKey] = lastMap[seriesKey]
         ? { label: def.label, points: 0, note: "새 데이터 없음(이미 최신이거나 휴일·주말)" }
         : { error: "이 기간에 받은 데이터가 없습니다 — 통계표·항목 코드가 맞는지 확인이 필요합니다(데이터 관리 > /api/macro/ecos-find 로 코드 찾기)" };
@@ -10409,7 +10446,11 @@ async function runMacroRefresh(env, explicitStart, endDate, defaultLookbackStart
     const room = explicitStart ? Infinity : Math.max(0, (SUB_CAP - sub) * 33);
     const allow = Math.min(budget, room);
     if (points.length > allow) { points = points.slice(0, Math.max(0, allow)); partial = true; }
-    budget -= points.length;
+    budget -= points.length; capLeft -= points.length; wroteRows += points.length;
+    if (points.length > 0 && !lastMap[seriesKey] && !explicitStart && def.source !== "krxidx") {
+      // 처음부터 1990년 이후를 받은 지표는 과거 이력 이어받기가 필요 없다(표시만 남김)
+      await env.DB.prepare("INSERT OR REPLACE INTO market_job (k, v) VALUES (?, ?)").bind("mh_" + seriesKey, JSON.stringify({ done: true })).run(); sub++;
+    }
     if (points.length > 0) {
       await multiRowInsert(
         env.DB,
@@ -10421,6 +10462,49 @@ async function runMacroRefresh(env, explicitStart, endDate, defaultLookbackStart
       sub += Math.ceil(points.length / 33);
     }
     summary[seriesKey] = { label: def.label, points: points.length, from: effectiveStart, partial };
+    if (!partial && !explicitStart) { chk[seriesKey] = endDate; chkChanged = true; }
+  }
+  // ---- 이미 저장된 지표의 과거 이력(1990년~)을 이어받는다. 최신 갱신이 끝나고 예산이 남을 때만, 오래된 날짜부터. ----
+  if (!explicitStart) {
+    for (const seriesKey of keys) {
+      const def = MACRO_SERIES[seriesKey];
+      if (def.source === "krxidx" || !lastMap[seriesKey] || !minMap[seriesKey]) continue;
+      if (def.discover === "m2" && !jobs.ecos_m2) continue;
+      let hj = jobs["mh_" + seriesKey];
+      if (hj && hj.done) continue;
+      if (summary[seriesKey] && (summary[seriesKey].partial || summary[seriesKey].error)) continue; // 최신 갱신이 안 끝난 지표는 나중에
+      if (capLeft <= 0) { summary[seriesKey] = { ...(summary[seriesKey] || { label: def.label, points: 0 }), histNote: "과거 이력: 오늘 쓰기 한도 도달, 내일 이어받음", capped: true }; continue; }
+      if (budget <= 0 || sub + 4 > SUB_CAP) { summary[seriesKey] = { ...(summary[seriesKey] || { label: def.label, points: 0 }), partial: true, histNote: "과거 이력 이어받기 대기" }; continue; }
+      if (!hj) hj = { from: MACRO_HIST_START, end: minMap[seriesKey] }; // end는 포함하지 않음(이미 저장된 가장 오래된 날)
+      const fetchDef = def.discover === "m2" ? { ...def, statCode: jobs.ecos_m2.stat, itemCode: jobs.ecos_m2.item, expectName: null } : def;
+      const ratio = def.discover === "m2" ? (jobs.ecos_m2.ratio || 1) : 1;
+      const endEx = addDaysStr(hj.end, -1);
+      let pts;
+      try {
+        if (def.source === "ecos") pts = await fetchEcosSeries(fetchDef.statCode, fetchDef.itemCode, hj.from, endEx, env.ECOS_API_KEY, 15000, fetchDef.expectName || null, def.freq === "M" ? "M" : "D");
+        else pts = await fetchFredSeries(def.seriesId, hj.from, endEx, env.FRED_API_KEY);
+        if (ratio !== 1) pts = pts.map((p) => ({ date: p.date, value: p.value / ratio }));
+        if (def.freq !== "M") pts = thinOldPoints(pts, addDaysStr(endDate, -3653));
+      } catch (e) { sub++; summary[seriesKey] = { ...(summary[seriesKey] || { label: def.label, points: 0 }), histError: "과거 이력: " + (e.message || String(e)) }; continue; }
+      sub++;
+      pts = pts.filter((p) => p.date < hj.end).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+      const allow = Math.max(0, Math.min(budget, capLeft, (SUB_CAP - sub - 2) * 33));
+      const more = pts.length > allow;
+      if (more) pts = pts.slice(0, allow);
+      if (pts.length > 0) {
+        await multiRowInsert(env.DB, "INSERT OR REPLACE INTO macro_data (series, date, value)", 3, pts, (p) => [seriesKey, p.date, p.value]);
+        sub += Math.ceil(pts.length / 33);
+      }
+      budget -= pts.length; capLeft -= pts.length; wroteRows += pts.length;
+      const job = more && pts.length ? { from: addDaysStr(pts[pts.length - 1].date, 1), end: hj.end } : (more ? hj : { done: true, first: pts.length ? pts[0].date : hj.end });
+      await env.DB.prepare("INSERT OR REPLACE INTO market_job (k, v) VALUES (?, ?)").bind("mh_" + seriesKey, JSON.stringify(job)).run(); sub++;
+      summary[seriesKey] = { ...(summary[seriesKey] || { label: def.label, points: 0 }), histPoints: pts.length, ...(more ? { partial: true, histNote: "과거 이력 이어받는 중" } : {}) };
+    }
+  }
+  if (chkChanged && !explicitStart) await env.DB.prepare("INSERT OR REPLACE INTO market_job (k, v) VALUES ('macro_chk', ?)").bind(JSON.stringify(chk)).run();
+  if (wroteRows > 0 && !explicitStart) {
+    const w = jobs.macro_wr;
+    await env.DB.prepare("INSERT OR REPLACE INTO market_job (k, v) VALUES ('macro_wr', ?)").bind(JSON.stringify({ day: endDate, n: (w && w.day === endDate ? w.n : 0) + wroteRows })).run();
   }
   return summary;
 }
