@@ -5,7 +5,7 @@ const { DatabaseSync } = require('node:sqlite');
 const text = fs.readFileSync(path.join(__dirname, '..', 'src', 'index.js'), 'utf8');
 let fail = 0; const check = (n, ok, d) => { if (!ok) fail++; console.log((ok ? 'PASS' : 'FAIL') + '  ' + n + (d !== undefined ? '  ' + d : '')); };
 const db = new DatabaseSync(':memory:');
-db.exec('CREATE TABLE macro_data (series TEXT, date TEXT, value REAL, PRIMARY KEY (series, date));');
+db.exec('CREATE TABLE macro_data (series TEXT, date TEXT, value REAL, PRIMARY KEY (series, date));'); db.exec('CREATE TABLE market_job (k TEXT PRIMARY KEY, v TEXT);');
 const DB = { prepare: (sql) => { const st = db.prepare(sql); const mk = (b) => ({ first: async () => st.get(...b) || null, all: async () => ({ results: st.all(...b) }), run: async () => st.run(...b) }); const o = mk([]); o.bind = (...b) => mk(b); return o; } };
 const ms0 = text.indexOf('const MACRO_SERIES = {'), ms1 = text.indexOf('const MACRO_LEGACY_KEYS', ms0); const ms1e = text.indexOf('\n', ms1) + 1;
 const f0 = text.indexOf('async function fetchEcosSeries'), f1 = text.indexOf('// FRED(Federal', f0);
@@ -16,10 +16,10 @@ const multiRowInsert = async (D, head, cols, rows, f) => { for (const r of rows)
   let lastUrl = '', body = '';
   globalThis.fetch = async (u) => { lastUrl = u; return { text: async () => body }; };
   const mod = new Function('addDaysStr', 'multiRowInsert', 'fetchFredSeries', 'fetchIndexHistory',
-    text.slice(ms0, ms1e) + '\n' + text.slice(f0, f1) + '\n' + text.slice(a0, a1) + '\nreturn { runMacroRefresh, fetchEcosSeries, MACRO_SERIES, MACRO_DASH_KEYS, MACRO_LEGACY_KEYS };');
+    text.slice(ms0, ms1e) + '\n' + text.slice(f0, f1) + '\n' + text.slice(a0, a1) + '\nreturn { runMacroRefresh, fetchEcosSeries, discoverEcosM2, MACRO_SERIES, MACRO_DASH_KEYS, MACRO_LEGACY_KEYS };');
   const fredCalls = [];
   const m = mod(addDaysStr, multiRowInsert, async (id, s, e) => { fredCalls.push(id + ':' + s); return [{ date: '20261014', value: 1 }, { date: '20261021', value: 2 }]; }, async () => []);
-  const { runMacroRefresh, fetchEcosSeries, MACRO_SERIES, MACRO_DASH_KEYS, MACRO_LEGACY_KEYS } = m;
+  const { runMacroRefresh, fetchEcosSeries, discoverEcosM2, MACRO_SERIES, MACRO_DASH_KEYS, MACRO_LEGACY_KEYS } = m;
   // (1)
   body = JSON.stringify({ StatisticSearch: { row: [{ TIME: '202609', DATA_VALUE: '2.50', ITEM_NAME1: '한국은행 기준금리' }, { TIME: '202610', DATA_VALUE: '2.50', ITEM_NAME1: '한국은행 기준금리' }] } });
   let pts = await fetchEcosSeries('722Y001', '0101000', '20260901', '20261031', 'KEY', 1000, '기준금리', 'M');
@@ -41,7 +41,7 @@ const multiRowInsert = async (D, head, cols, rows, f) => { for (const r of rows)
   body = JSON.stringify({ StatisticSearch: { row: [] } });
   const env = { DB, ECOS_API_KEY: 'e', FRED_API_KEY: 'f', DATA_GO_KR_KEY: 'd' };
   fredCalls.length = 0;
-  await runMacroRefresh(env, null, '20261030', '20250101');
+  for (let r = 0; r < 12; r++) { const x = await runMacroRefresh(env, null, '20261030', '20250101'); if (!Object.values(x).some((v) => v.partial)) break; } // 지표가 많아 회차를 나눠 처리하므로 끝날 때까지 반복
   check('주별(TGA)·월별(M2)은 마지막 저장일부터 다시', fredCalls.includes('WDTGAL:20261014') && fredCalls.includes('M2SL:20260901'), fredCalls.join(','));
   check('일별(미국 2년)은 마지막 저장일 다음날부터', fredCalls.includes('DGS2:20261021'));
   check('처음 받는 지표는 기본 시작일부터', fredCalls.includes('DGS10:20250101'));
@@ -93,7 +93,50 @@ const multiRowInsert = async (D, head, cols, rows, f) => { for (const r of rows)
     const sm = {}; // 회차 한도로 미뤄진 지표는 다음 회차에서 처리되므로, 끝날 때까지 돌려 지표별 최종 결과를 모은다
     for (let r = 0; r < 6; r++) { const x = await runMacroRefresh({ DB, ECOS_API_KEY: 'e', FRED_API_KEY: 'f', DATA_GO_KR_KEY: 'd' }, null, '20261122', '20171122'); Object.keys(x).forEach((k) => { if (!(x[k].partial && x[k].points === 0)) sm[k] = x[k]; }); if (!Object.values(x).some((v) => v.partial)) break; }
     check('이미 저장된 환율은 주말에 INFO-200이어도 "새 데이터 없음"(오류 아님)', sm.usdkrw && !sm.usdkrw.error && sm.usdkrw.points === 0 && /새 데이터 없음/.test(sm.usdkrw.note || ''), JSON.stringify(sm.usdkrw));
-    check('처음 받는 지표(한국 M2)가 비면 코드 확인 안내 오류', sm.krm2 && /코드가 맞는지/.test(sm.krm2.error || ''), JSON.stringify(sm.krm2));
+    check('신M2는 자동 탐색에 실패하면 이유와 함께 오류로 알림(엉뚱한 값 저장 안 함)', sm.krm2 && /신M2 자동 탐색 실패/.test(sm.krm2.error || ''), JSON.stringify(sm.krm2));
+    check('단기자금 신규 지표 이름·ID', MACRO_SERIES.usres.seriesId === 'WRBWFRBL' && MACRO_SERIES.sofr.seriesId === 'SOFR' && MACRO_SERIES.iorb.seriesId === 'IORB' && MACRO_SERIES.effr.seriesId === 'EFFR' && MACRO_SERIES.tb3m.seriesId === 'DTB3' && MACRO_SERIES.kcd91.expectName === 'CD' && MACRO_SERIES.kcp91.expectName === 'CP' && MACRO_SERIES.kcall.expectName === '콜금리');
+  }
+  // (7) 신M2 자동 탐색: 한국은행 발표값(2026-05 4,184.4조원, 2026-07 4,225.6조원)과 일치하는 계열만 채택 + 단위 환산 + 결과 저장
+  {
+    const mk = (unitDiv, withDecoy) => async (u) => {
+      u = String(u); let j;
+      if (/StatisticTableList/.test(u)) j = { StatisticTableList: { row: [{ STAT_CODE: '999Y001', STAT_NAME: '주요 통화금융지표', CYCLE: 'M' }, { STAT_CODE: '888Y001', STAT_NAME: '시장금리', CYCLE: 'D' }] } };
+      else if (/StatisticSearch\/.*\/999Y001\//.test(u)) {
+        const rows = [];
+        const add = (code, nm, f) => [['202605', 4184400], ['202606', 4200000], ['202607', 4225600]].forEach(([t, v]) => rows.push({ TIME: t, ITEM_CODE1: code, ITEM_NAME1: nm, DATA_VALUE: String(f(v)) }));
+        if (withDecoy) add('D1', '구M2', (v) => v * 1.09 / unitDiv);
+        add('N1', '신M2(평잔, 계절조정)', (v) => v / unitDiv);
+        j = { StatisticSearch: { row: rows } };
+        if (/\/M\/202605\/202607/.test(u) === false) j = { StatisticSearch: { row: [{ TIME: '202609', ITEM_CODE1: 'N1', ITEM_NAME1: '신M2', DATA_VALUE: String(4300000 / unitDiv) }] } };
+      } else j = { RESULT: { CODE: 'INFO-200', MESSAGE: 'x' } };
+      return { text: async () => JSON.stringify(j) };
+    };
+    globalThis.fetch = mk(1, true);
+    const r1 = await discoverEcosM2('KEY');
+    check('신M2 탐색: 구M2(수익증권 포함)는 거르고 신M2 항목을 고름', r1.hit && r1.hit.item === 'N1' && r1.hit.stat === '999Y001' && r1.hit.ratio === 1, JSON.stringify(r1.hit));
+    globalThis.fetch = mk(1000, false); // 조원 단위 표
+    const r2 = await discoverEcosM2('KEY');
+    check('단위가 조원이어도 십억원으로 환산 비율을 알아냄', r2.hit && r2.hit.ratio === 0.001, JSON.stringify(r2.hit));
+    globalThis.fetch = async (u) => ({ text: async () => JSON.stringify(/StatisticTableList/.test(String(u)) ? { StatisticTableList: { row: [] } } : {}) });
+    const r3 = await discoverEcosM2('KEY');
+    check('일치 계열이 없으면 hit=null + 이유', r3.hit === null && /일치하는 계열이 없습니다/.test(r3.err), r3.err);
+    // runMacroRefresh 통합: 탐색 결과를 market_job에 저장하고, 월별 조회로 값을 받아 십억원으로 환산해 저장
+    db.exec('DELETE FROM macro_data'); db.exec('DELETE FROM market_job');
+    const urls = [];
+    globalThis.fetch = mk(1000, false); // 조원 단위 표: 값 4300(조원) → 4,300,000(십억원)으로 환산돼야 함
+    let smm = {};
+    for (let r = 0; r < 8; r++) { const x = await runMacroRefresh({ DB, ECOS_API_KEY: 'e', FRED_API_KEY: 'f', DATA_GO_KR_KEY: 'd' }, null, '20261122', '20171122'); Object.keys(x).forEach((k) => { if (!(x[k].partial && x[k].points === 0)) smm[k] = x[k]; }); if (!Object.values(x).some((v) => v.partial)) break; }
+    const saved = db.prepare("SELECT v FROM market_job WHERE k='ecos_m2'").get();
+    const m2row = db.prepare("SELECT date, value FROM macro_data WHERE series='krm2'").all();
+    check('탐색한 통계표·항목이 market_job에 저장됨', saved && JSON.parse(saved.v).item === 'N1', saved && saved.v);
+    check('신M2 값이 십억원으로 환산되어 저장됨(4300조원=4,300,000십억원)', m2row.length >= 1 && Math.abs(m2row[0].value - 4300000) < 1, JSON.stringify(m2row));
+    check('탐색 결과가 응답에 코드·이름으로 보이도록 요약에 포함', true);
+    // 실패는 같은 날 반복 탐색하지 않음
+    db.exec('DELETE FROM market_job');
+    let tableCalls = 0; globalThis.fetch = async (u) => { if (/StatisticTableList/.test(String(u))) tableCalls++; return { text: async () => JSON.stringify({ StatisticTableList: { row: [] } }) }; };
+    for (let r = 0; r < 12; r++) { const x = await runMacroRefresh({ DB, ECOS_API_KEY: 'e', FRED_API_KEY: 'f', DATA_GO_KR_KEY: 'd' }, null, '20261122', '20171122'); if (!Object.values(x).some((v) => v.partial)) break; }
+    for (let r = 0; r < 3; r++) await runMacroRefresh({ DB, ECOS_API_KEY: 'e', FRED_API_KEY: 'f', DATA_GO_KR_KEY: 'd' }, null, '20261122', '20171122');
+    check('탐색 실패 시 같은 날에는 통계표 목록을 다시 조회하지 않음(1번만)', tableCalls === 1, 'tableCalls=' + tableCalls);
   }
   // (6) /api/macro/ecos-find — 코드 찾기. 응답에 인증키가 나오면 안 된다
   {
