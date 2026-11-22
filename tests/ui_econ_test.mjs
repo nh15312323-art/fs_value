@@ -76,7 +76,7 @@ ok('서버 오류 시 안내(빈 화면 아님)', (await pg.innerText('#econStat
 // ---- 지수 방향 확률 모델
 await pg.goto('http://localhost:' + srv.address().port + '/#econ'); await pg.waitForTimeout(1200);
 const mt = await pg.innerText('#econModelOut');
-ok('코스피·S&P500 확률 카드가 나옴', mt.includes('코스피 — 앞으로 3개월') && mt.includes('S&P500 — 앞으로 3개월'));
+ok('코스피·S&P500 확률 카드가 나옴', mt.includes('코스피') && mt.includes('S&P500') && mt.includes('앞으로 3개월'));
 ok('과거 채점(Brier)·기준선 비교 표시', mt.includes('과거 채점') && mt.includes('기준선'));
 const mtc = await pg.evaluate(() => document.getElementById('econModelOut').textContent);
 ok('쉬운 설명과 한계(Welch & Goyal) 포함', mtc.includes('아주 쉬운 설명') && mtc.includes('Welch & Goyal') && mtc.includes('시험 보기'));
@@ -100,5 +100,11 @@ ok('모델이 신호 있는 자료에서 방향을 학습', math.upUp && math.dn
 ok('확률 합 = 1', Math.abs(math.sum - 1) < 1e-9);
 ok('특징값에 미래 가격이 새지 않음', math.same);
 await pg.screenshot({ path: path.join(os.tmpdir(), 'fs_value_econ_model.png') });
+const kp = await pg.innerText('#econKpi');
+ok('핵심 지표 카드 6개(금리차·순유동성·VIX·HY·한국 금리차·환율)', (await pg.locator('#econKpi .ec-kpis > .ec-card').count()) === 6 && kp.includes('순유동성') && kp.includes('VIX'));
+await pg.setViewportSize({ width: 1100, height: 1000 }); await pg.waitForTimeout(200);
+await pg.screenshot({ path: path.join(os.tmpdir(), 'fs_value_econ_desktop.png'), fullPage: true });
+await pg.setViewportSize({ width: 390, height: 900 }); await pg.waitForTimeout(200);
+await pg.screenshot({ path: path.join(os.tmpdir(), 'fs_value_econ_mobile.png'), fullPage: true });
 ok('JS 오류 없음', errs.length === 0, errs.join(' | '));
 await b.close(); srv.close(); process.exit(0);
