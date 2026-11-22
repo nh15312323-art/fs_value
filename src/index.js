@@ -535,6 +535,7 @@ const HTML_PAGE = `<!doctype html>
     <button id="tabBtnMomentum" data-grp="find" onclick="switchTab('momentum')">스크리닝</button>
     <button id="tabBtnFscr" data-grp="find" onclick="switchTab('fscr')">재무 스크리닝</button>
     <button id="tabBtnFt" data-grp="find" onclick="switchTab('ft')">재무 표</button>
+    <button id="tabBtnEcon" data-grp="find" onclick="switchTab('econ')">경제 상황</button>
     <button id="tabBtnMacro" data-grp="find" onclick="switchTab('macro')">거시·상관</button>
     <button id="tabBtnFinancial" data-grp="stock" class="toggle-active" onclick="switchTab('financial')">종목분석</button>
     <button id="tabBtnPf" data-grp="my" onclick="switchTab('pf')">내 계좌</button>
@@ -823,6 +824,16 @@ const HTML_PAGE = `<!doctype html>
       </div>
     </details>
   </div><!-- /tabFt -->
+
+  <div id="tabEcon" style="display:none;">
+    <div class="card">
+      <div class="card-title">경제 상황 — 한국·미국 거시 지표 현황과 시계열</div>
+      <p class="meta-line" style="margin-top:0;">금리(미국 2년·10년 포함)·유동성(M2 증가율, 연준 TGA·역레포·순유동성)·위험선호·물가·환율을 지표별로 보여줍니다. 종목과의 상관이 아니라 경제 지표만으로 현재 국면을 읽는 용도이며, 여러 지표를 하나의 점수로 합치지 않습니다. 값이 비어 있으면 데이터 관리 탭에서 "거시경제 데이터 갱신"을 먼저 눌러주세요.</p>
+      <div class="row"><button onclick="econLoad(true)">새로고침</button></div>
+      <div id="econStatus" class="meta-line"></div>
+      <div id="econOut"></div>
+    </div>
+  </div><!-- /tabEcon -->
 
   <div id="tabMacro" style="display:none;">
     <div class="card">
@@ -1251,9 +1262,9 @@ const HTML_PAGE = `<!doctype html>
     </div>
 
     <div class="card">
-      <div class="card-title">3. 거시경제 데이터 (환율·금리·WTI·코스피·S&P500)</div>
+      <div class="card-title">3. 거시경제 데이터 (환율·금리·WTI·코스피·S&P500 + 경제 상황용 미국·한국 지표)</div>
       <p class="meta-line" style="margin-top:0;">
-        원/달러 환율·통안증권(1년)·국고채(3년)·국고채(10년)는 한국은행 ECOS, WTI·S&P500은 미국 FRED(S&P500은 FRED가 최근 약 10년만 제공), 코스피는 공공데이터포털 지수시세에서 최근 9년치를 받아옵니다. 지수는 배당을 뺀 가격지수입니다. 한 번 받아두면 거시·상관 탭이 계속 재사용합니다.
+        원/달러 환율·통안증권(1년)·국고채(3년)·국고채(10년)는 한국은행 ECOS, WTI·S&P500은 미국 FRED(S&P500은 FRED가 최근 약 10년만 제공), 코스피는 공공데이터포털 지수시세에서 최근 9년치를 받아옵니다. 지수는 배당을 뺀 가격지수입니다. 한 번 받아두면 거시·상관 탭이 계속 재사용합니다. "경제 상황" 탭용으로 미국 국채 2년·10년, 연준 총자산·TGA·역레포, 미국 M2·소비자물가·실업률, 하이일드 스프레드, VIX, 달러지수(FRED)와 한국 기준금리·소비자물가·M2(ECOS)도 함께 받습니다(처음엔 여러 회차로 나눠 받으며, 한국 M2는 통계표 코드를 아직 공식 확인하지 못해 항목 이름이 맞지 않으면 저장하지 않고 오류로 표시합니다).
       </p>
       <div class="row"><button class="primary" onclick="refreshMacroData()">거시경제 데이터 갱신</button></div>
       <div id="macroStatus" class="meta-line" style="white-space:pre-line;"></div>
@@ -1398,12 +1409,12 @@ const HTML_PAGE = `<!doctype html>
     window.addEventListener('pageshow', function () { const cv = document.getElementById('privCover'); if (cv) cv.style.display = 'none'; });
 
     // ===== 메뉴 이동: 하단 메뉴바 · 더보기 · 뒤로가기/링크(#탭) · 마지막 탭 기억 =====
-    const TAB_IDS = ['momentum', 'fscr', 'ft', 'financial', 'macro', 'data', 'bt', 'pf', 'db', 'guide'];
+    const TAB_IDS = ['momentum', 'fscr', 'ft', 'econ', 'financial', 'macro', 'data', 'bt', 'pf', 'db', 'guide'];
     let curTab = 'financial';
     function toggleMore() { const e = document.getElementById('moreSheet'); e.style.display = e.style.display === 'block' ? 'none' : 'block'; }
     function closeMore() { const e = document.getElementById('moreSheet'); if (e) e.style.display = 'none'; }
     // 메뉴는 4개 묶음(발굴·종목·내 투자·검증/관리). 묶음 안의 화면은 위쪽 보조 메뉴(#grpNav)로 옮긴다. 화면(탭) 자체와 switchTab은 그대로다.
-    const TAB_GROUP = { momentum: 'find', fscr: 'find', ft: 'find', macro: 'find', financial: 'stock', pf: 'my', bt: 'admin', data: 'admin', db: 'admin', guide: 'admin' };
+    const TAB_GROUP = { momentum: 'find', fscr: 'find', ft: 'find', econ: 'find', macro: 'find', financial: 'stock', pf: 'my', bt: 'admin', data: 'admin', db: 'admin', guide: 'admin' };
     const GROUP_FIRST = { find: 'momentum', stock: 'financial', my: 'pf', admin: 'bt' };
     const grpLast = {};
     function switchGroup(g) { switchTab(grpLast[g] || GROUP_FIRST[g]); }
@@ -7720,8 +7731,8 @@ async function pfuExport() {
     function switchTab(tab, navMode) {
       const prevTab = curTab; curTab = tab; try { tblFullClose(); } catch (e) {}
       navRecord(tab, navMode || (tab === prevTab ? 'replace' : 'push')); updateBnav(tab); closeMore();
-      const tabs = { financial: 'tabFinancial', momentum: 'tabMomentum', fscr: 'tabFscr', ft: 'tabFt', macro: 'tabMacro', data: 'tabData', bt: 'tabBt', pf: 'tabPf', db: 'tabDb', guide: 'tabGuide' };
-      const btns = { financial: 'tabBtnFinancial', momentum: 'tabBtnMomentum', fscr: 'tabBtnFscr', ft: 'tabBtnFt', macro: 'tabBtnMacro', data: 'tabBtnData', bt: 'tabBtnBt', pf: 'tabBtnPf', db: 'tabBtnDb', guide: 'tabBtnGuide' };
+      const tabs = { financial: 'tabFinancial', momentum: 'tabMomentum', fscr: 'tabFscr', ft: 'tabFt', econ: 'tabEcon', macro: 'tabMacro', data: 'tabData', bt: 'tabBt', pf: 'tabPf', db: 'tabDb', guide: 'tabGuide' };
+      const btns = { financial: 'tabBtnFinancial', momentum: 'tabBtnMomentum', fscr: 'tabBtnFscr', ft: 'tabBtnFt', econ: 'tabBtnEcon', macro: 'tabBtnMacro', data: 'tabBtnData', bt: 'tabBtnBt', pf: 'tabBtnPf', db: 'tabBtnDb', guide: 'tabBtnGuide' };
       Object.keys(tabs).forEach(function (k) {
         document.getElementById(tabs[k]).style.display = k === tab ? '' : 'none';
         document.getElementById(btns[k]).className = k === tab ? 'toggle-active' : '';
@@ -7731,6 +7742,7 @@ async function pfuExport() {
       if (tab === 'bt') { btInitUi(); }
       if (tab === 'fscr') { fscInit(); }
       if (tab === 'ft') { ftGroupChips(); }
+      if (tab === 'econ') { econLoad(false); }
       if (tab === 'db') { dbLoad(false); }
       if (tab === 'guide') { guideInit(); }
       if (tab === 'pf') { pfuInit(); }
@@ -7766,7 +7778,7 @@ async function pfuExport() {
         const res = await fetch('/api/data/summary', { cache: 'no-store' });
         const d = await res.json();
         if (!res.ok) throw new Error(d.error || '조회 실패');
-        const ml = { usdkrw: '환율', msb1y: '통안1Y', ktb3y: '국고3Y', ktb10y: '국고10Y', wti: 'WTI', kospi: '코스피', sp500: 'S&P500' };
+        const ml = { usdkrw: '환율', msb1y: '통안1Y', ktb3y: '국고3Y', ktb10y: '국고10Y', wti: 'WTI', kospi: '코스피', sp500: 'S&P500', us2y: '미2Y', us10y: '미10Y', usrrp: '역레포', ustga: 'TGA', usbs: '연준자산', usm2: '미M2', ushy: 'HY', usvix: 'VIX', usdxy: '달러', uscpi: '미CPI', usunemp: '미실업', krbase: '기준금리', krcpi: '한CPI', krm2: '한M2' };
         const macroTxt = d.macro && d.macro.length ? d.macro.map(function (m) { return (ml[m.series] || m.series) + ' ~' + m.last; }).join(' · ') : '없음(거시·상관을 쓰려면 아래에서 갱신)';
         el.innerHTML =
           '• <b>시세(스크리닝)</b>: 최근 거래일 ' + (d.market_last || '없음') + ' · 가격이력 확보 종목 ' + sN(d.backfilled) + '개 / 조건 통과 ' + sN(d.passed) + '개 (대기 ' + sN(d.market_queue) + '개)<br />' +
@@ -8917,12 +8929,237 @@ async function pfuExport() {
       ctx.textAlign = 'left';
     }
 
+    // ===== 경제 상황 (거시 지표만으로 보는 한국·미국 현황: 신호표 + 시계열 그래프) =====
+    // 원칙: 지표마다 "최신값·기준일·1/3/12개월 변화·9년 내 위치(백분위)"를 따로 보여주고, 규칙이 알려진 일부 지표에만 투명한 임계값 신호를 붙인다.
+    // 여러 지표를 하나의 "경제 점수"로 합치지 않는다. 월·주별 지표는 발표가 늦어 기준일을 그대로 표시한다.
+    const ECON_GROUPS = [['rate', '금리'], ['liq', '유동성'], ['risk', '위험선호·주가'], ['infl', '물가·성장'], ['fx', '환율·원자재']];
+    // chg: 'pct'=변화율(%), 'diff'=변화폭(단위 그대로, %나 %p). unit은 값 표시용.
+    const ECON_INDS = [
+      { k: 'krbase', c: 'KR', g: 'rate', f: 'M', u: '%', chg: 'diff', n: '한국 기준금리' },
+      { k: 'ktb3y', c: 'KR', g: 'rate', f: 'D', u: '%', chg: 'diff', n: '국고채 3년' },
+      { k: 'ktb10y', c: 'KR', g: 'rate', f: 'D', u: '%', chg: 'diff', n: '국고채 10년' },
+      { k: 'kr10m3', c: 'KR', g: 'rate', f: 'D', u: '%p', chg: 'diff', n: '국고채 10년-3년 금리차', d: 1 },
+      { k: 'us2y', c: 'US', g: 'rate', f: 'D', u: '%', chg: 'diff', n: '미국 국채 2년' },
+      { k: 'us10y', c: 'US', g: 'rate', f: 'D', u: '%', chg: 'diff', n: '미국 국채 10년' },
+      { k: 'us10m2', c: 'US', g: 'rate', f: 'D', u: '%p', chg: 'diff', n: '미국 10년-2년 금리차', d: 1 },
+      { k: 'krm2yoy', c: 'KR', g: 'liq', f: 'M', u: '%', chg: 'diff', n: '한국 M2 증가율(전년동월비)', d: 1 },
+      { k: 'usm2yoy', c: 'US', g: 'liq', f: 'M', u: '%', chg: 'diff', n: '미국 M2 증가율(전년동월비)', d: 1 },
+      { k: 'usnl', c: 'US', g: 'liq', f: 'W', u: '십억$', chg: 'pct', n: '미국 순유동성(연준자산-TGA-역레포)', d: 1 },
+      { k: 'usbs', c: 'US', g: 'liq', f: 'W', u: '백만$', chg: 'pct', n: '연준 총자산' },
+      { k: 'ustga', c: 'US', g: 'liq', f: 'W', u: '백만$', chg: 'pct', n: '재무부 TGA(수요일)' },
+      { k: 'usrrp', c: 'US', g: 'liq', f: 'D', u: '십억$', chg: 'pct', n: '연준 역레포 잔고' },
+      { k: 'kospi', c: 'KR', g: 'risk', f: 'D', u: 'pt', chg: 'pct', n: '코스피' },
+      { k: 'sp500', c: 'US', g: 'risk', f: 'D', u: 'pt', chg: 'pct', n: 'S&P500' },
+      { k: 'usvix', c: 'US', g: 'risk', f: 'D', u: '', chg: 'diff', n: 'VIX 변동성지수' },
+      { k: 'ushy', c: 'US', g: 'risk', f: 'D', u: '%p', chg: 'diff', n: '미국 하이일드 스프레드' },
+      { k: 'krcpiyoy', c: 'KR', g: 'infl', f: 'M', u: '%', chg: 'diff', n: '한국 소비자물가 상승률(전년동월비)', d: 1 },
+      { k: 'uscpiyoy', c: 'US', g: 'infl', f: 'M', u: '%', chg: 'diff', n: '미국 소비자물가 상승률(전년동월비)', d: 1 },
+      { k: 'usunemp', c: 'US', g: 'infl', f: 'M', u: '%', chg: 'diff', n: '미국 실업률' },
+      { k: 'usdkrw', c: 'KR', g: 'fx', f: 'D', u: '원', chg: 'pct', n: '원/달러 환율' },
+      { k: 'usdxy', c: 'US', g: 'fx', f: 'D', u: '', chg: 'pct', n: '달러지수(광의)' },
+      { k: 'wti', c: 'US', g: 'fx', f: 'D', u: '$', chg: 'pct', n: 'WTI 현물가' },
+    ];
+    let econRaw = null, econSer = null, econLoading = false, econCountry = 'ALL', econGroup = 'all', econRange = 3;
+
+    function econShift(ymd, months) {
+      let y = Number(ymd.slice(0, 4)), m = Number(ymd.slice(4, 6)) - 1 - months, d = Number(ymd.slice(6, 8));
+      y += Math.floor(m / 12); m = ((m % 12) + 12) % 12;
+      const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+      return String(y) + String(m + 1).padStart(2, '0') + String(Math.min(d, last)).padStart(2, '0');
+    }
+    // 두 시계열을 날짜로 맞춰 a-b (같은 날짜에 둘 다 있을 때만)
+    function econSub(a, b) {
+      const mb = {}; (b || []).forEach(function (p) { mb[p.date] = p.value; });
+      const out = [];
+      (a || []).forEach(function (p) { if (mb[p.date] != null) out.push({ date: p.date, value: p.value - mb[p.date] }); });
+      return out;
+    }
+    // 월별 수준 지수 → 전년동월비(%). 정확히 12개월 전 관측이 있을 때만 계산(없으면 건너뜀).
+    function econYoY(a) {
+      const m = {}; (a || []).forEach(function (p) { m[p.date.slice(0, 6)] = p.value; });
+      const out = [];
+      (a || []).forEach(function (p) {
+        const prev = m[econShift(p.date, 12).slice(0, 6)];
+        if (prev != null && prev > 0) out.push({ date: p.date, value: (p.value / prev - 1) * 100 });
+      });
+      return out;
+    }
+    // 순유동성 = 연준 총자산 - TGA - 역레포(단위 통일: 십억$). 연준 총자산 발표일(수요일)마다, 그날 TGA와 4일 이내 가장 가까운 과거 역레포 값이 있을 때만 계산.
+    // 연준 자산·TGA·역레포만 반영한 단순 근사치이며 은행 지급준비금 등 다른 요인은 빠져 있다.
+    function econNetLiq(bs, tga, rrp) {
+      const mt = {}; (tga || []).forEach(function (p) { mt[p.date] = p.value; });
+      const out = [];
+      (bs || []).forEach(function (p) {
+        if (mt[p.date] == null) return;
+        const r = macroValueAsOf(rrp, p.date, 4);
+        if (r == null) return;
+        out.push({ date: p.date, value: (p.value - mt[p.date]) / 1000 - r });
+      });
+      return out;
+    }
+    function econBuild(raw) {
+      const S = {};
+      Object.keys(raw).forEach(function (k) { S[k] = raw[k]; });
+      S.kr10m3 = econSub(raw.ktb10y, raw.ktb3y);
+      S.us10m2 = econSub(raw.us10y, raw.us2y);
+      S.usnl = econNetLiq(raw.usbs, raw.ustga, raw.usrrp);
+      S.krm2yoy = econYoY(raw.krm2); S.usm2yoy = econYoY(raw.usm2);
+      S.krcpiyoy = econYoY(raw.krcpi); S.uscpiyoy = econYoY(raw.uscpi);
+      return S;
+    }
+    function econStats(ind, s) {
+      if (!s || !s.length) return null;
+      const last = s[s.length - 1], r = { last: last.value, date: last.date };
+      const at = function (mo) { const v = macroValueAsOf(s, econShift(last.date, mo), ind.f === 'M' ? 45 : ind.f === 'W' ? 12 : 10); return v; };
+      [1, 3, 12].forEach(function (mo) {
+        const b = at(mo);
+        r['c' + mo] = b == null ? null : (ind.chg === 'diff' ? last.value - b : (b > 0 ? (last.value / b - 1) * 100 : null));
+      });
+      let le = 0; s.forEach(function (p) { if (p.value <= last.value) le++; });
+      r.pct = s.length >= 20 ? Math.round(le / s.length * 100) : null;
+      r.n = s.length; r.first = s[0].date;
+      return r;
+    }
+    // 규칙이 알려진 지표에만 신호를 붙인다. 임계값은 실무 관행이며(아래 근거 표기) 한국 시장에서 검증된 매매 규칙이 아니다.
+    function econSignal(ind, st, s) {
+      if (!st) return null;
+      const v = st.last;
+      if (ind.k === 'us10m2') return v < 0 ? ['역전', 'bad', '장단기 금리차 역전은 미국에서 경기침체를 앞서 알려온 지표(Estrella & Mishkin 1998). 시차가 길고 오신호도 있음'] : v < 0.5 ? ['평탄', 'warn', '금리차 0~0.5%p'] : ['정상', 'good', '금리차 0.5%p 이상'];
+      if (ind.k === 'kr10m3') return v < 0 ? ['역전', 'bad', '장기금리가 단기금리보다 낮음(한국 적용은 참고용)'] : ['정상', 'good', '장기금리가 더 높음'];
+      if (ind.k === 'ushy') return v >= 5 ? ['신용 스트레스', 'bad', '스프레드 5%p 이상(실무 관행 임계값)'] : v <= 3.5 ? ['안정', 'good', '스프레드 3.5%p 이하(실무 관행 임계값)'] : ['중립', 'neutral', '3.5~5%p'];
+      if (ind.k === 'usvix') return v >= 30 ? ['공포 높음', 'bad', 'VIX 30 이상(실무 관행)'] : v <= 15 ? ['낮음', 'good', 'VIX 15 이하(실무 관행)'] : ['보통', 'neutral', '15~30'];
+      if (ind.k === 'usnl') return st.c3 == null ? null : st.c3 > 1 ? ['3개월 확대', 'good', '순유동성이 3개월 전보다 1% 넘게 증가(방향만 보는 규칙)'] : st.c3 < -1 ? ['3개월 축소', 'warn', '순유동성이 3개월 전보다 1% 넘게 감소'] : ['횡보', 'neutral', '3개월 변화 ±1% 이내'];
+      if (ind.k === 'krm2yoy' || ind.k === 'usm2yoy') return v < 0 ? ['감소', 'warn', '전년동월보다 통화량 감소'] : v >= 8 ? ['빠른 증가', 'neutral', '증가율 8% 이상'] : ['증가', 'neutral', '전년동월비 증가'];
+      if (ind.k === 'krcpiyoy' || ind.k === 'uscpiyoy') return v >= 3 ? ['물가 부담', 'warn', '상승률 3% 이상(목표 2% 대비)'] : v <= 2.5 ? ['안정권', 'good', '상승률 2.5% 이하'] : ['다소 높음', 'neutral', '2.5~3%'];
+      if (ind.k === 'usunemp') {
+        // Sahm rule: 최근 3개월 평균 실업률이 직전 12개월 중 최저 3개월 평균보다 0.5%p 이상 높으면 침체 신호(Sahm 2019)
+        if (!s || s.length < 16) return null;
+        const avg = function (i) { return (s[i].value + s[i - 1].value + s[i - 2].value) / 3; };
+        let mn = Infinity; for (let i = s.length - 13; i <= s.length - 2; i++) if (i >= 2) mn = Math.min(mn, avg(i));
+        const gap = avg(s.length - 1) - mn;
+        return gap >= 0.5 ? ['삼 룰 발동', 'bad', '3개월 평균이 직전 12개월 최저보다 ' + gap.toFixed(2) + '%p 높음(Sahm 2019)'] : ['미발동', 'good', 'Sahm 룰 격차 ' + gap.toFixed(2) + '%p (0.5%p 이상이면 발동)'];
+      }
+      if (ind.k === 'usdkrw') return st.c3 == null ? null : st.c3 >= 5 ? ['원화 약세', 'warn', '3개월간 환율 5% 이상 상승'] : st.c3 <= -5 ? ['원화 강세', 'neutral', '3개월간 5% 이상 하락'] : ['보합권', 'neutral', '3개월 변화 ±5% 이내'];
+      if (ind.k === 'usdxy') return st.c3 == null ? null : st.c3 >= 3 ? ['달러 강세', 'warn', '3개월간 3% 이상 상승'] : st.c3 <= -3 ? ['달러 약세', 'neutral', '3개월간 3% 이상 하락'] : ['보합권', 'neutral', '3개월 변화 ±3% 이내'];
+      if (ind.k === 'krbase') return st.c12 == null ? null : st.c12 > 0.1 ? ['12개월 인상', 'neutral', '1년 전보다 기준금리 상승'] : st.c12 < -0.1 ? ['12개월 인하', 'neutral', '1년 전보다 기준금리 하락'] : ['동결 수준', 'neutral', '1년 전과 비슷'];
+      return null;
+    }
+    function econFmt(v, ind) {
+      if (v == null || !isFinite(v)) return '-';
+      const d = ind.d != null ? 2 : (Math.abs(v) >= 1000 ? 0 : 2);
+      return Number(v).toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: ind.u === '%' || ind.u === '%p' ? 2 : 0 });
+    }
+    function econChgTxt(v, ind) {
+      if (v == null || !isFinite(v)) return '-';
+      if (Math.abs(v) < 0.005) v = 0; // -0.00 표시 방지
+      const t = (v > 0 ? '+' : '') + v.toFixed(2) + (ind.chg === 'diff' ? (ind.u === '%' || ind.u === '%p' ? '%p' : '') : '%');
+      return t;
+    }
+    function econYmdTxt(y) { return y.slice(0, 4) + '-' + y.slice(4, 6) + '-' + y.slice(6, 8); }
+    function econStale(ind, date) {
+      const today = new Date(); const ty = String(today.getFullYear()) + String(today.getMonth() + 1).padStart(2, '0') + String(today.getDate()).padStart(2, '0');
+      const age = daysBetweenYmd(date, ty);
+      const lim = ind.f === 'M' ? 80 : ind.f === 'W' ? 16 : 9;
+      return { age: age, old: age > lim };
+    }
+    async function econLoad(force) {
+      const st = document.getElementById('econStatus');
+      if (econLoading) return;
+      if (econRaw && !force) { econRender(); return; }
+      econLoading = true; if (st) st.textContent = '불러오는 중...';
+      try {
+        const rs = await Promise.all([fetch('/api/macro/series?group=dash'), fetch('/api/macro/series')]);
+        const raw = {};
+        for (let i = 0; i < rs.length; i++) {
+          if (!rs[i].ok) throw new Error('서버 응답 ' + rs[i].status);
+          const j = await rs[i].json();
+          (j.rows || []).forEach(function (r) { (raw[r.series] = raw[r.series] || []).push({ date: r.date, value: Number(r.value) }); });
+        }
+        econRaw = raw; econSer = econBuild(raw);
+        macroSeriesCache = null;
+        if (st) st.textContent = '';
+      } catch (e) {
+        if (st) st.textContent = '불러오지 못했습니다: ' + e.message;
+        econLoading = false; return;
+      }
+      econLoading = false; econRender();
+    }
+    function econSetCountry(c) { econCountry = c; econRender(); }
+    function econSetGroup(g) { econGroup = g; econRender(); }
+    function econSetRange(r) { econRange = r; econRender(); }
+    function econChartSvg(ind, s) {
+      if (!s || s.length < 2) return '<div class="meta-line">그래프를 그릴 자료가 부족합니다.</div>';
+      let pts = s;
+      if (econRange > 0) { const from = econShift(s[s.length - 1].date, econRange * 12); pts = s.filter(function (p) { return p.date >= from; }); }
+      if (pts.length < 2) return '<div class="meta-line">선택한 기간에 자료가 부족합니다.</div>';
+      const stepN = Math.max(1, Math.ceil(pts.length / 220)); const dp = [];
+      for (let i = 0; i < pts.length; i += stepN) dp.push(pts[i]);
+      if (dp[dp.length - 1] !== pts[pts.length - 1]) dp.push(pts[pts.length - 1]);
+      let mn = Infinity, mx = -Infinity; dp.forEach(function (p) { if (p.value < mn) mn = p.value; if (p.value > mx) mx = p.value; });
+      if (mx === mn) { mx += 1; mn -= 1; }
+      const W = 340, H = 110, pl = 4, pr = 4, pt = 8, pb = 16;
+      const x = function (i) { return pl + i * (W - pl - pr) / (dp.length - 1); };
+      const y = function (v) { return pt + (mx - v) * (H - pt - pb) / (mx - mn); };
+      let d = ''; dp.forEach(function (p, i) { d += (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p.value).toFixed(1); });
+      let zero = '';
+      if (mn < 0 && mx > 0) zero = '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + y(0).toFixed(1) + '" y2="' + y(0).toFixed(1) + '" stroke="#94a3b8" stroke-dasharray="3 3" stroke-width="1"/>';
+      const col = ind.c === 'KR' ? '#2563eb' : '#dc2626';
+      const lastP = dp[dp.length - 1];
+      return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="' + escHtml(ind.n) + ' 시계열">' + zero +
+        '<path d="' + d + '" fill="none" stroke="' + col + '" stroke-width="1.6"/>' +
+        '<circle cx="' + x(dp.length - 1).toFixed(1) + '" cy="' + y(lastP.value).toFixed(1) + '" r="3" fill="' + col + '"/>' +
+        '<text x="' + pl + '" y="' + (H - 3) + '" font-size="9" fill="#64748b">' + econYmdTxt(dp[0].date) + '</text>' +
+        '<text x="' + (W - pr) + '" y="' + (H - 3) + '" font-size="9" fill="#64748b" text-anchor="end">' + econYmdTxt(lastP.date) + '</text>' +
+        '<text x="' + (W - pr) + '" y="10" font-size="9" fill="#64748b" text-anchor="end">최고 ' + escHtml(econFmt(mx, ind)) + '</text>' +
+        '<text x="' + (W - pr) + '" y="' + (H - 14) + '" font-size="9" fill="#64748b" text-anchor="end">최저 ' + escHtml(econFmt(mn, ind)) + '</text></svg>';
+    }
+    function econRender() { return guardedRender('경제 상황', 'econOut', econRenderImpl); }
+    function econRenderImpl() {
+      const box = document.getElementById('econOut'); if (!box) return;
+      if (!econSer) { box.innerHTML = ''; return; }
+      const TONE = { good: '#16a34a', warn: '#d97706', bad: '#dc2626', neutral: '#64748b' };
+      const btn = function (on, fn, label) { return '<button class="' + (on ? 'toggle-active' : '') + '" onclick="' + fn + '" style="padding:5px 10px; font-size:13px;">' + label + '</button>'; };
+      let h = '<div class="row" style="gap:6px; flex-wrap:wrap; align-items:center;">' +
+        btn(econCountry === 'ALL', "econSetCountry('ALL')", '한국+미국') + btn(econCountry === 'KR', "econSetCountry('KR')", '한국') + btn(econCountry === 'US', "econSetCountry('US')", '미국') +
+        '<span style="width:8px;"></span>' + btn(econGroup === 'all', "econSetGroup('all')", '전체 분야') +
+        ECON_GROUPS.map(function (g) { return btn(econGroup === g[0], "econSetGroup('" + g[0] + "')", g[1]); }).join('') + '</div>';
+      const list = ECON_INDS.filter(function (i) { return (econCountry === 'ALL' || i.c === econCountry) && (econGroup === 'all' || i.g === econGroup); });
+      const rows = []; let missing = 0;
+      ECON_GROUPS.forEach(function (g) {
+        const items = list.filter(function (i) { return i.g === g[0]; });
+        if (!items.length) return;
+        rows.push('<tr><td colspan="6" style="background:var(--bg); font-weight:700;">' + g[1] + '</td></tr>');
+        items.forEach(function (i) {
+          const s = econSer[i.k], st = econStats(i, s);
+          if (!st) { missing++; rows.push('<tr><td>' + (i.c === 'KR' ? '🇰🇷 ' : '🇺🇸 ') + escHtml(i.n) + '</td><td colspan="5" style="color:var(--text-muted);">자료 없음 — 데이터 관리에서 "거시경제 데이터 갱신"을 눌러주세요</td></tr>'); return; }
+          const sg = econSignal(i, st, s), sl = econStale(i, st.date);
+          const cell = function (v) { return '<td style="text-align:right; white-space:nowrap;">' + econChgTxt(v, i) + '</td>'; };
+          rows.push('<tr><td>' + (i.c === 'KR' ? '🇰🇷 ' : '🇺🇸 ') + escHtml(i.n) + '</td>' +
+            '<td style="text-align:right; white-space:nowrap;"><b>' + econFmt(st.last, i) + '</b> <span style="color:var(--text-muted); font-size:11px;">' + escHtml(i.u) + '</span><br><span style="font-size:11px; color:' + (sl.old ? '#d97706' : 'var(--text-muted)') + ';">' + econYmdTxt(st.date) + (i.f === 'M' ? ' 기준월' : '') + (sl.old ? ' · 오래됨' : '') + '</span></td>' +
+            cell(st.c1) + cell(st.c3) + cell(st.c12) +
+            '<td style="white-space:nowrap;">' + (st.pct == null ? '-' : '하위 ' + st.pct + '%') + (sg ? '<br><span title="' + escHtml(sg[2]) + '" style="font-size:12px; font-weight:700; color:' + TONE[sg[1]] + ';">' + escHtml(sg[0]) + '</span>' : '') + '</td></tr>');
+        });
+      });
+      h += '<div class="tbl-wrap" style="overflow-x:auto; margin-top:8px;"><table style="width:100%; font-size:13px;"><thead><tr><th>지표</th><th>최신값(기준일)</th><th>1개월</th><th>3개월</th><th>12개월</th><th>위치·신호</th></tr></thead><tbody>' + rows.join('') + '</tbody></table></div>';
+      h += '<div class="meta-line">변화는 값이 금리·비율이면 %p 차이, 지수·잔고·가격이면 % 변화입니다. "위치"는 저장된 전체 기간(최대 약 9년, 하이일드 스프레드 등은 더 짧을 수 있음) 중 현재값이 아래에서 몇 % 지점인지입니다. 신호 글자를 누르면(마우스를 올리면) 규칙이 보입니다. 임계값은 실무 관행이거나 해외 연구에서 온 것으로, 한국 주식시장에서 수익이 검증된 매매 규칙이 아닙니다.' + (missing ? ' 자료가 없는 ' + missing + '개 지표는 갱신 후 나타납니다.' : '') + '</div>';
+      h += '<div class="card-title" style="margin-top:16px;">시계열 그래프</div><div class="row" style="gap:6px; flex-wrap:wrap; align-items:center;"><span class="meta-line" style="margin:0;">기간</span>' +
+        [[1, '1년'], [3, '3년'], [5, '5년'], [0, '전체']].map(function (r) { return btn(econRange === r[0], 'econSetRange(' + r[0] + ')', r[1]); }).join('') + '</div>';
+      h += '<div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:10px; margin-top:8px;">';
+      list.forEach(function (i) {
+        const s = econSer[i.k], st = econStats(i, s);
+        h += '<div style="border:1px solid var(--border); border-radius:8px; padding:8px; background:var(--card);"><div style="font-size:13px; font-weight:600;">' + (i.c === 'KR' ? '🇰🇷 ' : '🇺🇸 ') + escHtml(i.n) +
+          (st ? ' <span style="font-weight:400; color:var(--text-muted);">' + econFmt(st.last, i) + ' ' + escHtml(i.u) + '</span>' : '') + '</div>' + econChartSvg(i, s) + '</div>';
+      });
+      h += '</div><div class="meta-line">그래프는 지표마다 세로축 범위를 따로 잡습니다(서로 크기를 직접 비교하는 용도가 아님). 점선은 0선, 점은 최신값입니다.</div>';
+      box.innerHTML = h;
+    }
+
     // --- 거시경제 지표(환율·금리·WTI) ---
     let macroSeriesCache = null; // { usdkrw: [{date,value}, ...], ... } — /api/macro/series 결과를 한 번만 받아 재사용
 
     async function refreshMacroData() {
       const statusEl = document.getElementById('macroStatus');
-      statusEl.textContent = '거시경제 데이터를 받아오는 중입니다(최근 9년치, 지표 7개 — 처음엔 여러 번에 나눠 자동으로 이어받습니다)...';
+      statusEl.textContent = '거시경제 데이터를 받아오는 중입니다(최근 9년치, 지표 22개 — 처음엔 여러 번에 나눠 자동으로 이어받습니다)...';
       try {
         let total = 0, last = null;
         for (let round = 1; round <= 30; round++) {
@@ -8935,6 +9172,7 @@ async function pfuExport() {
           if (!data.partial) break;
         }
         macroSeriesCache = null; // 캐시 무효화 — 다음 조회 때 새로 받아오게
+        econRaw = null; // 경제 상황 화면도 다음에 열 때 새로 받음
         macroLoadFailed = false;
         if (rawRows.length > 0) applyView(); // 표의 거시경제 열도 새 데이터로 다시 채움
         const lines = Object.entries(last.summary).map(([key, s]) =>
@@ -9563,12 +9801,32 @@ const MACRO_SERIES = {
   // 주가지수: 코스피는 공공데이터포털 지수시세(종목 차트·모멘텀과 같은 출처), S&P500은 FRED SP500(종가, 최근 약 10년만 제공)
   kospi:  { source: "krxidx", idxName: "코스피", label: "코스피 지수" },
   sp500:  { source: "fred", seriesId: "SP500", label: "S&P500 지수" },
+  // ---- "경제 상황" 화면 전용(dash:true). 종목 상관 표에는 섞지 않는다(수준값이라 변화율 상관과 성격이 다름).
+  // freq: D=일별, W=주별(수요일), M=월별. 월·주별 지표는 발표가 늦어 화면에 "기준일"을 그대로 보여준다.
+  us2y:   { source: "fred", seriesId: "DGS2", label: "미국 국채 2년", dash: true, freq: "D" },
+  us10y:  { source: "fred", seriesId: "DGS10", label: "미국 국채 10년", dash: true, freq: "D" },
+  usrrp:  { source: "fred", seriesId: "RRPONTSYD", label: "연준 역레포 잔고(십억$)", dash: true, freq: "D" },
+  ustga:  { source: "fred", seriesId: "WDTGAL", label: "미 재무부 TGA(백만$, 수요일)", dash: true, freq: "W" },
+  usbs:   { source: "fred", seriesId: "WALCL", label: "연준 총자산(백만$, 수요일)", dash: true, freq: "W" },
+  usm2:   { source: "fred", seriesId: "M2SL", label: "미국 M2(십억$)", dash: true, freq: "M" },
+  ushy:   { source: "fred", seriesId: "BAMLH0A0HYM2", label: "미국 하이일드 스프레드(%p)", dash: true, freq: "D" },
+  usvix:  { source: "fred", seriesId: "VIXCLS", label: "VIX 변동성지수", dash: true, freq: "D" },
+  usdxy:  { source: "fred", seriesId: "DTWEXBGS", label: "달러지수(광의, 무역가중)", dash: true, freq: "D" },
+  uscpi:  { source: "fred", seriesId: "CPIAUCSL", label: "미국 소비자물가지수", dash: true, freq: "M" },
+  usunemp:{ source: "fred", seriesId: "UNRATE", label: "미국 실업률(%)", dash: true, freq: "M" },
+  krbase: { source: "ecos", statCode: "722Y001", itemCode: "0101000", label: "한국 기준금리(%)", dash: true, freq: "M", expectName: "기준금리" },
+  krcpi:  { source: "ecos", statCode: "901Y009", itemCode: "0", label: "한국 소비자물가지수", dash: true, freq: "M", expectName: "총지수" },
+  // M2 통계표 코드는 공식 문서로 아직 확인하지 못했다. 항목 이름에 "M2"가 없으면 저장하지 않고 오류로 알린다(엉뚱한 계열 방지).
+  krm2:   { source: "ecos", statCode: "101Y004", itemCode: "BBHS00", label: "한국 M2(십억원)", dash: true, freq: "M", expectName: "M2" },
 };
+const MACRO_DASH_KEYS = Object.keys(MACRO_SERIES).filter((k) => MACRO_SERIES[k].dash);
+const MACRO_LEGACY_KEYS = Object.keys(MACRO_SERIES).filter((k) => !MACRO_SERIES[k].dash);
 
 // ECOS StatisticSearch API: 한 번 호출로 기간 전체(start~end)를 받아온다.
 // https://ecos.bok.or.kr/api/StatisticSearch/{키}/json/kr/{시작행}/{끝행}/{통계표코드}/D/{시작일}/{종료일}/{항목코드}
-async function fetchEcosSeries(statCode, itemCode, startDate, endDate, apiKey, timeoutMs = 15000, expectName = null) {
-  const url = `https://ecos.bok.or.kr/api/StatisticSearch/${apiKey}/json/kr/1/10000/${statCode}/D/${startDate}/${endDate}/${itemCode}`;
+async function fetchEcosSeries(statCode, itemCode, startDate, endDate, apiKey, timeoutMs = 15000, expectName = null, cycle = "D") {
+  const per = (ymd) => (cycle === "M" ? ymd.slice(0, 6) : ymd); // 월별(M)은 YYYYMM 형식으로 조회
+  const url = `https://ecos.bok.or.kr/api/StatisticSearch/${apiKey}/json/kr/1/10000/${statCode}/${cycle}/${per(startDate)}/${per(endDate)}/${itemCode}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let text;
@@ -9589,7 +9847,7 @@ async function fetchEcosSeries(statCode, itemCode, startDate, endDate, apiKey, t
     throw new Error(`ECOS 항목 이름 불일치(${statCode}/${itemCode}): 기대 "${expectName}", 실제 "${rows[0].ITEM_NAME1}" — 저장하지 않음`);
   }
   return rows
-    .map((r) => ({ date: r.TIME, value: Number(r.DATA_VALUE) }))
+    .map((r) => ({ date: cycle === "M" && /^\d{6}$/.test(String(r.TIME)) ? r.TIME + "01" : r.TIME, value: Number(r.DATA_VALUE) })) // 월별은 그 달 1일로 저장(기준월)
     .filter((r) => /^\d{8}$/.test(r.date) && !Number.isNaN(r.value));
 }
 
@@ -9636,7 +9894,8 @@ async function runMacroRefresh(env, explicitStart, endDate, defaultLookbackStart
         .prepare("SELECT MAX(date) AS d FROM macro_data WHERE series = ?")
         .bind(seriesKey)
         .first();
-      effectiveStart = lastRow && lastRow.d ? addDaysStr(lastRow.d, 1) : defaultLookbackStart;
+      // 일별은 마지막 저장일 다음날부터, 주·월별은 마지막 저장일부터 다시 받아(발표치가 나중에 고쳐지는 경우 덮어쓰기) 값 몇 개만 다시 쓴다.
+      effectiveStart = lastRow && lastRow.d ? (def.freq === "W" || def.freq === "M" ? lastRow.d : addDaysStr(lastRow.d, 1)) : defaultLookbackStart;
     }
     if (effectiveStart > endDate) {
       summary[seriesKey] = { label: def.label, points: 0, note: "이미 최신 상태" };
@@ -9644,7 +9903,7 @@ async function runMacroRefresh(env, explicitStart, endDate, defaultLookbackStart
     }
     let points;
     try {
-      if (def.source === "ecos") points = await fetchEcosSeries(def.statCode, def.itemCode, effectiveStart, endDate, env.ECOS_API_KEY, 15000, def.expectName || null);
+      if (def.source === "ecos") points = await fetchEcosSeries(def.statCode, def.itemCode, effectiveStart, endDate, env.ECOS_API_KEY, 15000, def.expectName || null, def.freq === "M" ? "M" : "D");
       else if (def.source === "krxidx") {
         if (!env.DATA_GO_KR_KEY) throw new Error("DATA_GO_KR_KEY 미설정");
         const rows = await fetchIndexHistory(def.idxName, effectiveStart, endDate, env.DATA_GO_KR_KEY);
@@ -11827,8 +12086,12 @@ async function handleRequest(request, env) {
     }
 
     if (pathname === "/api/macro/series") {
-      const { results } = await env.DB.prepare("SELECT series, date, value FROM macro_data ORDER BY series, date").all();
-      return Response.json({ rows: results });
+      // 기본(인자 없음)은 종목 상관 표용 기존 지표만, group=dash는 "경제 상황" 화면용 지표만 돌려준다(응답 크기 절약).
+      const keys = searchParams.get("group") === "dash" ? MACRO_DASH_KEYS : MACRO_LEGACY_KEYS;
+      const { results } = await env.DB.prepare(`SELECT series, date, value FROM macro_data WHERE series IN (${keys.map(() => "?").join(",")}) ORDER BY series, date`).bind(...keys).all();
+      const meta = {};
+      if (searchParams.get("group") === "dash") for (const k of keys) meta[k] = { label: MACRO_SERIES[k].label, freq: MACRO_SERIES[k].freq };
+      return Response.json({ rows: results, meta });
     }
 
     return new Response("Not Found", { status: 404 });
