@@ -16,10 +16,10 @@ const multiRowInsert = async (D, head, cols, rows, f) => { for (const r of rows)
   let lastUrl = '', body = '';
   globalThis.fetch = async (u) => { lastUrl = u; return { text: async () => body }; };
   const mod = new Function('addDaysStr', 'multiRowInsert', 'fetchFredSeries', 'fetchIndexHistory',
-    text.slice(ms0, ms1e) + '\n' + text.slice(f0, f1) + '\n' + text.slice(a0, a1) + '\nreturn { runMacroRefresh, fetchEcosSeries, discoverEcosM2, thinOldPoints, MACRO_SERIES, MACRO_DASH_KEYS, MACRO_LEGACY_KEYS };');
+    text.slice(ms0, ms1e) + '\n' + text.slice(f0, f1) + '\n' + text.slice(a0, a1) + '\nreturn { runMacroRefresh, fetchEcosSeries, discoverEcosM2, discoverEcos, thinOldPoints, MACRO_SERIES, MACRO_DASH_KEYS, MACRO_LEGACY_KEYS };');
   const fredCalls = [];
   const m = mod(addDaysStr, multiRowInsert, async (id, s, e) => { fredCalls.push(id + ':' + s); return [{ date: '20261014', value: 1 }, { date: '20261021', value: 2 }]; }, async () => []);
-  const { runMacroRefresh, fetchEcosSeries, discoverEcosM2, thinOldPoints, MACRO_SERIES, MACRO_DASH_KEYS, MACRO_LEGACY_KEYS } = m;
+  const { runMacroRefresh, fetchEcosSeries, discoverEcosM2, discoverEcos, thinOldPoints, MACRO_SERIES, MACRO_DASH_KEYS, MACRO_LEGACY_KEYS } = m;
   // (1)
   body = JSON.stringify({ StatisticSearch: { row: [{ TIME: '202609', DATA_VALUE: '2.50', ITEM_NAME1: '한국은행 기준금리' }, { TIME: '202610', DATA_VALUE: '2.50', ITEM_NAME1: '한국은행 기준금리' }] } });
   let pts = await fetchEcosSeries('722Y001', '0101000', '20260901', '20261031', 'KEY', 1000, '기준금리', 'M');
@@ -136,7 +136,7 @@ check('이미 저장된 환율은 주말에 INFO-200이어도 "새 데이터 없
     let tableCalls = 0; globalThis.fetch = async (u) => { if (/StatisticTableList/.test(String(u))) tableCalls++; return { text: async () => JSON.stringify({ StatisticTableList: { row: [] } }) }; };
     for (let r = 0; r < 12; r++) { const x = await runMacroRefresh({ DB, ECOS_API_KEY: 'e', FRED_API_KEY: 'f', DATA_GO_KR_KEY: 'd' }, null, '20261122', '20171122'); if (!Object.values(x).some((v) => v.partial)) break; }
     for (let r = 0; r < 3; r++) await runMacroRefresh({ DB, ECOS_API_KEY: 'e', FRED_API_KEY: 'f', DATA_GO_KR_KEY: 'd' }, null, '20261122', '20171122');
-    check('탐색 실패 시 같은 날에는 통계표 목록을 다시 조회하지 않음(1번만)', tableCalls === 1, 'tableCalls=' + tableCalls);
+    check('탐색 실패 시 같은 날에는 통계표 목록을 다시 조회하지 않음(탐색 대상 신M2·선행지수 각 1번)', tableCalls === 2, 'tableCalls=' + tableCalls);
   }
   // (8) 1990년부터의 과거 이력: 오래된 일별은 월말만, 이미 저장된 지표도 과거를 이어받고, 하루 쓰기 상한을 지킨다
   {
@@ -168,6 +168,40 @@ check('이미 저장된 환율은 주말에 INFO-200이어도 "새 데이터 없
     const xc = await m3.runMacroRefresh(E, null, '20261122', '20171122');
     const nrows = db.prepare('SELECT COUNT(*) n FROM macro_data').get().n;
     check('하루 쓰기 상한 도달 시 저장하지 않고 "내일 이어받기" 안내', nrows === 0 && Object.values(xc).some((v) => v.capped) && !Object.values(xc).some((v) => v.partial), 'rows=' + nrows);
+  }
+  // (9) 선행지수 순환변동치·코스피 자동 탐색, 코스피 과거(ECOS 일별→월말) 이어받기
+  {
+    const tbl = (rows) => ({ StatisticTableList: { row: rows } });
+    const leiRows = (nameTrap) => { const r = []; for (let m = 1; m <= 12; m++) { const t = '2021' + String(m).padStart(2, '0'); r.push({ TIME: t, ITEM_CODE1: 'L1', ITEM_NAME1: '선행지수순환변동치', DATA_VALUE: m === 6 ? '101.8' : '100.9' }); r.push({ TIME: t, ITEM_CODE1: 'L0', ITEM_NAME1: nameTrap ? '선행종합지수' : '동행지수순환변동치', DATA_VALUE: '130.5' }); } return { StatisticSearch: { row: r } }; };
+    globalThis.fetch = async (u) => { u = String(u); const j = /StatisticTableList/.test(u) ? tbl([{ STAT_CODE: '901Y067', STAT_NAME: '경기종합지수(2020=100)', CYCLE: 'M' }]) : /901Y067\/M\/202101\/202112/.test(u) ? leiRows(true) : {}; return { text: async () => JSON.stringify(j) }; };
+    const l1 = await discoverEcos('KEY', 'lei');
+    check('선행지수 순환변동치: 이름(선행+순환변동치)과 2021-06≈101.8 대조로 항목 선택(선행종합지수 원지수 130대는 제외)', l1.hit && l1.hit.item === 'L1' && l1.hit.stat === '901Y067', JSON.stringify(l1.hit));
+    globalThis.fetch = async (u) => { u = String(u); const j = /StatisticTableList/.test(u) ? tbl([{ STAT_CODE: '901Y067', STAT_NAME: '경기종합지수(2020=100)', CYCLE: 'M' }]) : /901Y067/.test(u) ? { StatisticSearch: { row: leiRows(true).StatisticSearch.row.map((r) => ({ ...r, DATA_VALUE: r.ITEM_CODE1 === 'L1' ? '95' : r.DATA_VALUE })) } } : {}; return { text: async () => JSON.stringify(j) }; };
+    const l2 = await discoverEcos('KEY', 'lei');
+    check('2021-06 값이 101.8과 크게 다르면 채택하지 않음', l2.hit === null && /일치하는 계열이 없습니다/.test(l2.err), l2.err);
+    const kRows = (v) => ({ StatisticSearch: { row: [{ TIME: '20260305', ITEM_CODE1: 'K1', ITEM_NAME1: 'KOSPI지수', DATA_VALUE: String(v - 20) }, { TIME: '20260306', ITEM_CODE1: 'K1', ITEM_NAME1: 'KOSPI지수', DATA_VALUE: String(v) }, { TIME: '20260306', ITEM_CODE1: 'K2', ITEM_NAME1: 'KOSPI200', DATA_VALUE: '740' }] } });
+    globalThis.fetch = async (u) => { u = String(u); const j = /StatisticTableList/.test(u) ? tbl([{ STAT_CODE: '802Y001', STAT_NAME: '주식시장(일별)', CYCLE: 'D' }]) : /802Y001\/D\/20260303\/20260309/.test(u) ? kRows(5585.2) : {}; return { text: async () => JSON.stringify(j) }; };
+    const k1 = await discoverEcos('KEY', 'kospi');
+    check('코스피: KOSPI200은 제외하고 2026-03-06≈5,585인 KOSPI 항목 선택', k1.hit && k1.hit.item === 'K1', JSON.stringify(k1.hit));
+    // 통합: 공공데이터포털 코스피가 2017년부터 저장된 상태에서 과거를 ECOS 일별로 채우고 월말만 남김
+    const ecosCalls = [];
+    const mkD = (s0, e0) => { const o = []; for (let t = Date.UTC(+s0.slice(0, 4), +s0.slice(4, 6) - 1, +s0.slice(6, 8)); t <= Date.UTC(+e0.slice(0, 4), +e0.slice(4, 6) - 1, +e0.slice(6, 8)); t += 86400000) { const d = new Date(t); if (d.getUTCDay() % 6) o.push({ TIME: d.toISOString().slice(0, 10).replace(/-/g, ''), ITEM_CODE1: 'K1', ITEM_NAME1: 'KOSPI지수', DATA_VALUE: String(1000 + o.length) }); } return o; };
+    globalThis.fetch = async (u) => { u = String(u); ecosCalls.push(u.replace(/\/api\/\w+\/KEY/, '')); let j;
+      if (/StatisticTableList/.test(u)) j = tbl([{ STAT_CODE: '802Y001', STAT_NAME: '주식시장(일별)', CYCLE: 'D' }]);
+      else if (/802Y001\/D\/20260303\/20260309/.test(u)) j = kRows(5585);
+      else { const m = u.match(/802Y001\/D\/(\d{8})\/(\d{8})\/K1/); j = m ? { StatisticSearch: { row: mkD(m[1], m[2]) } } : { RESULT: { CODE: 'INFO-200', MESSAGE: 'x' } }; }
+      return { text: async () => JSON.stringify(j) }; };
+    db.exec('DELETE FROM macro_data'); db.exec('DELETE FROM market_job');
+    db.exec("INSERT INTO macro_data VALUES ('kospi','20170102',2000),('kospi','20170103',2001)");
+    const m4 = new Function('addDaysStr', 'multiRowInsert', 'fetchFredSeries', 'fetchIndexHistory', text.slice(ms0, ms1e) + '\n' + text.slice(f0, f1) + '\n' + text.slice(a0, a1) + '\nreturn { runMacroRefresh };')(addDaysStr, multiRowInsert, async () => [{ date: '20261014', value: 1 }], async () => []);
+    const E2 = { DB, ECOS_API_KEY: 'e', FRED_API_KEY: 'f', DATA_GO_KR_KEY: 'd' };
+    for (let r = 0; r < 60; r++) { const x = await m4.runMacroRefresh(E2, null, '20261122', '20171122'); if (!Object.values(x).some((v) => v.partial)) break; }
+    const kr = db.prepare("SELECT date FROM macro_data WHERE series='kospi' ORDER BY date").all().map((r) => r.date);
+    const kpm = {}; kr.filter((d) => d < '20161101').forEach((d) => { kpm[d.slice(0, 6)] = (kpm[d.slice(0, 6)] || 0) + 1; });
+    check('코스피 과거가 ECOS 일별에서 1990년부터 월말로 채워짐', kr[0] < '19900201' && kr.filter((d) => d < '20161101').length > 300 && Object.values(kpm).every((n) => n === 1) && kr.includes('20170102') && kr.includes('20170103'), kr[0] + ' n=' + kr.length);
+    const kj = JSON.parse(db.prepare("SELECT v FROM market_job WHERE k='mh_kospi'").get().v);
+    check('코스피 과거 이어받기 완료 표시', kj.done === true, JSON.stringify(kj));
+    check('경제 상황 신규 지표 정의(선행지수 순환변동치·OECD 미국 주가지수)', MACRO_SERIES.krlei.discover === 'lei' && MACRO_SERIES.krlei.dash && MACRO_SERIES.sp500o.seriesId === 'SPASTT01USM661N' && MACRO_SERIES.kospi.histDiscover === 'kospi' && !MACRO_DASH_KEYS.includes('kospi'));
   }
   // (6) /api/macro/ecos-find — 코드 찾기. 응답에 인증키가 나오면 안 된다
   {

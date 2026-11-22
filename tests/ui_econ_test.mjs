@@ -20,9 +20,9 @@ const S = {
   usrrp: daily(() => 100), ustga: weekly(() => 800000), usbs: weekly(() => 7000000),
   usm2: monthly((i) => 20000 + i * 50), krm2: [], uscpi: monthly((i) => 100 * Math.pow(1.04, i / 12)), krcpi: monthly((i) => 100 + i * 0.2),
   usunemp: monthly((i) => i >= 115 ? 4.8 : 4.0), ushy: daily(() => 4.0), usvix: daily((i) => 32 + (i % 50) / 10), usdxy: daily((i) => 120 + (i % 20) / 10),
-  krbase: monthly(() => 2.5), usres: weekly((i) => i >= 508 ? 2400000 : 3000000), sofr: daily((i) => 4.55 + (i % 3) / 100), iorb: daily(() => 4.4), effr: daily(() => 4.33), tb3m: daily(() => 4.2), kcall: daily((i) => 2.5 + (i % 3) / 100), kcd91: daily((i) => 3.0 + (i % 5) / 100), kcp91: daily((i) => 3.4 + (i % 5) / 100), kospi: daily((i) => 2000 + i), sp500: daily((i) => 3000 + i), usdkrw: daily((i) => 1400 + (i % 40)), wti: daily(() => 70),
+  krbase: monthly(() => 2.5), krlei: monthly((i) => i >= 116 ? 98.5 : 99.5), sp500o: monthly((i) => 100 + i), usres: weekly((i) => i >= 508 ? 2400000 : 3000000), sofr: daily((i) => 4.55 + (i % 3) / 100), iorb: daily(() => 4.4), effr: daily(() => 4.33), tb3m: daily(() => 4.2), kcall: daily((i) => 2.5 + (i % 3) / 100), kcd91: daily((i) => 3.0 + (i % 5) / 100), kcp91: daily((i) => 3.4 + (i % 5) / 100), kospi: daily((i) => 2000 + i), sp500: daily((i) => 3000 + i), usdkrw: daily((i) => 1400 + (i % 40)), wti: daily(() => 70),
 };
-const dashKeys = new Set(['us2y', 'us10y', 'usrrp', 'ustga', 'usbs', 'usm2', 'krm2', 'uscpi', 'krcpi', 'usunemp', 'ushy', 'usvix', 'usdxy', 'krbase', 'usres', 'sofr', 'iorb', 'effr', 'tb3m', 'kcall', 'kcd91', 'kcp91']);
+const dashKeys = new Set(['us2y', 'us10y', 'usrrp', 'ustga', 'usbs', 'usm2', 'krm2', 'uscpi', 'krcpi', 'usunemp', 'ushy', 'usvix', 'usdxy', 'krbase', 'krlei', 'sp500o', 'usres', 'sofr', 'iorb', 'effr', 'tb3m', 'kcall', 'kcd91', 'kcp91']);
 let fail500 = false;
 const srv = http.createServer((q, r) => {
   if (q.url === '/') { r.setHeader('content-type', 'text/html;charset=utf-8'); return r.end(HTML_PAGE); }
@@ -58,6 +58,11 @@ const sm = await row('SOFR - IORB'); ok('SOFR 4.55-IORB 4.40 = +0.15 → 자금 
 const cdm = await row('CD(91일) - 기준금리'); ok('CD 3.0x - 기준금리 2.5 ≈ +0.5 → 경색 조짐', cdm && cdm.includes('단기자금 경색 조짐'), cdm);
 const cpm = await row('CP(91일) - CD(91일)'); ok('CP-CD 스프레드 행이 있음(+0.4 보통)', cpm && cpm.includes('보통'), cpm);
 const rs = await row('지급준비금'); ok('미국 지급준비금: 3개월 감소 신호', rs && rs.includes('3개월 감소'), rs);
+const lei = await row('선행지수 순환변동치'); ok('선행지수 순환변동치 98.5(100 미만·하락) → 둔화·악화, 신호 근거는 실무 관행', lei && lei.includes('98.5') && lei.includes('둔화·악화'), lei);
+const spo = await row('OECD 월평균'); ok('미국 주가지수 OECD 대용 지표는 "참고용"으로 표기', spo && spo.includes('참고용'), spo);
+const ax = await pg.evaluate(() => { const sv = document.querySelector('#econOut svg[aria-label$="시계열"]'); return { txt: sv ? sv.textContent : '', ticks: sv ? sv.querySelectorAll('line[stroke-dasharray="2 3"]').length : 0 }; });
+ok('각 지표 그래프 가로축에 연도 눈금이 있음(3년 범위: 연 단위)', /20\d\d/.test(ax.txt) && ax.ticks >= 2, JSON.stringify(ax).slice(0, 120));
+ok('기간 버튼에 10년이 있음', await pg.isVisible('#econOut button:has-text("10년")'));
 ok('단기자금 분야 버튼이 있음', await pg.isVisible('#econOut button:has-text("단기자금")'));
 ok('그래프 SVG가 지표마다 그려짐', (await pg.locator('#econOut svg').count()) >= 20, 'n=' + await pg.locator('#econOut svg').count());
 ok('종합 점수 같은 단일 점수가 없음', !(await pg.innerText('#econOut')).includes('종합 점수'));
@@ -130,6 +135,8 @@ await pg.mouse.move(box2.x + box2.width * 0.5, box2.y + 60); await pg.waitForTim
 const tip = await pg.innerText('#econOvTip');
 ok('마우스를 올리면 날짜와 실제 값이 보임', /\d{4}-\d{2}-\d{2}/.test(tip) && tip.includes('코스피') && tip.includes('S&P500'), tip.replace(/\s+/g, ' '));
 ok('모델 설명이 접지 않고 바로 보임(5단계·읽는 법·근거 수준)', await pg.isVisible('text=이 확률은 무엇이고, 어떻게 만들어지나요?') && await pg.isVisible('text=한 줄 요약') && await pg.isVisible('text=화면 읽는 법'));
+const ovAx = await pg.evaluate(() => { const sv = document.getElementById('econOvSvg'); return sv ? sv.querySelectorAll('line[stroke-dasharray="2 3"]').length + '|' + (sv.textContent.match(/20\d\d(\.\d\d)?/g) || []).join(',') : ''; });
+ok('겹쳐보기 그래프 가로축에도 시기 눈금이 있음', /^[2-9]\|.*20\d\d/.test(ovAx), ovAx);
 const introTxt = await pg.evaluate(() => document.getElementById('econModelOut').textContent);
 ok('설명에 기준선·시험 보기·근거 수준 포함', introTxt.includes('기준선') && introTxt.includes('시험 보기') && introTxt.includes('Estrella') && introTxt.includes('Jegadeesh'));
 await pg.screenshot({ path: path.join(os.tmpdir(), 'fs_value_econ_ov.png'), fullPage: true });
