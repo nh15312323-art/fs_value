@@ -78,5 +78,36 @@ const multiRowInsert = async (D, head, cols, rows, f) => { for (const r of rows)
     subs = 0; await m2.runMacroRefresh(envC, null, '20261030', '20171030');
     check('모두 받은 뒤 다시 눌러도 subrequest 한도 이하', subs <= 50, 'subs=' + subs);
   }
+
+  // (5) ECOS INFO-200(해당 기간에 데이터 없음)은 오류가 아니다 / 처음 받는 지표가 비면 코드 확인 안내
+  {
+    globalThis.fetch = async (u) => { lastUrl = u; return { text: async () => body }; };
+    body = JSON.stringify({ RESULT: { CODE: 'INFO-200', MESSAGE: '해당하는 데이터가 없습니다.' } });
+    const e0 = await fetchEcosSeries('731Y001', '0000001', '20261121', '20261122', 'KEY', 1000, null, 'D');
+    check('INFO-200은 빈 결과로 처리(예전엔 오류로 표시됨)', Array.isArray(e0) && e0.length === 0);
+    body = JSON.stringify({ RESULT: { CODE: 'ERROR-100', MESSAGE: '인증키가 유효하지 않습니다.' } });
+    let e1 = null; try { await fetchEcosSeries('731Y001', '0000001', '20261121', '20261122', 'KEY', 1000, null, 'D'); } catch (e) { e1 = e; }
+    check('INFO-200이 아닌 오류는 그대로 오류', e1 && /ERROR-100/.test(e1.message));
+    db.exec('DELETE FROM macro_data'); db.exec("INSERT INTO macro_data VALUES ('usdkrw','20261120',1400)");
+    body = JSON.stringify({ RESULT: { CODE: 'INFO-200', MESSAGE: '해당하는 데이터가 없습니다.' } });
+    const sm = {}; // 회차 한도로 미뤄진 지표는 다음 회차에서 처리되므로, 끝날 때까지 돌려 지표별 최종 결과를 모은다
+    for (let r = 0; r < 6; r++) { const x = await runMacroRefresh({ DB, ECOS_API_KEY: 'e', FRED_API_KEY: 'f', DATA_GO_KR_KEY: 'd' }, null, '20261122', '20171122'); Object.keys(x).forEach((k) => { if (!(x[k].partial && x[k].points === 0)) sm[k] = x[k]; }); if (!Object.values(x).some((v) => v.partial)) break; }
+    check('이미 저장된 환율은 주말에 INFO-200이어도 "새 데이터 없음"(오류 아님)', sm.usdkrw && !sm.usdkrw.error && sm.usdkrw.points === 0 && /새 데이터 없음/.test(sm.usdkrw.note || ''), JSON.stringify(sm.usdkrw));
+    check('처음 받는 지표(한국 M2)가 비면 코드 확인 안내 오류', sm.krm2 && /코드가 맞는지/.test(sm.krm2.error || ''), JSON.stringify(sm.krm2));
+  }
+  // (6) /api/macro/ecos-find — 코드 찾기. 응답에 인증키가 나오면 안 된다
+  {
+    const i2 = text.indexOf('    if (pathname === "/api/macro/ecos-find") {'), j2 = text.indexOf('    if (pathname === "/api/macro/series") {', i2);
+    const hf = new Function('env', 'searchParams', 'pathname', 'return (async () => {\n' + text.slice(i2, j2) + '\nreturn null; })();');
+    const KEY = 'SECRETKEYSECRETKEY1234';
+    globalThis.fetch = async (u) => { lastUrl = u; if (/StatisticTableList/.test(u)) return { text: async () => JSON.stringify({ StatisticTableList: { row: [{ STAT_CODE: '101Y004', STAT_NAME: '1.3.1.2 M2(광의통화, 평잔)', CYCLE: 'M', SRCH_YN: 'Y' }, { STAT_CODE: '722Y001', STAT_NAME: '한국은행 기준금리', CYCLE: 'D', SRCH_YN: 'Y' }] } }) }; return { text: async () => JSON.stringify({ StatisticItemList: { row: [{ STAT_CODE: '101Y004', STAT_NAME: 'M2', ITEM_CODE: 'BBHS00', ITEM_NAME: 'M2(평잔)', CYCLE: 'M', START_TIME: '195501', END_TIME: '202609', UNIT_NAME: '십억원' }] } }) }; };
+    const call = async (q) => { const r = await hf({ ECOS_API_KEY: KEY }, new URLSearchParams(q), '/api/macro/ecos-find'); return { status: r.status, j: await r.json() }; };
+    const a = await call('q=m2'); check('통계표 이름으로 검색(대소문자 무시)', a.j.count === 1 && a.j.rows[0].stat_code === '101Y004', JSON.stringify(a.j));
+    const b = await call('item=101Y004'); check('통계표 코드로 항목 목록 조회', b.j.rows && b.j.rows[0].item_code === 'BBHS00' && b.j.rows[0].cycle === 'M');
+    check('응답에 인증키가 없음', !JSON.stringify(a.j).includes(KEY) && !JSON.stringify(b.j).includes(KEY));
+    const c = await call(''); check('검색어 없으면 400 안내', c.status === 400);
+    globalThis.fetch = async () => { throw new Error('boom ' + KEY); };
+    const d = await call('q=M2'); check('조회 실패 시 502 + 키 가림', d.status === 502 && !JSON.stringify(d.j).includes(KEY), JSON.stringify(d.j));
+  }
   console.log(fail ? 'FAILED ' + fail : 'ALL PASS'); process.exit(fail ? 1 : 0);
 })();
