@@ -110,6 +110,7 @@ ok('모델이 신호 있는 자료에서 방향을 학습', math.upUp && math.dn
 ok('확률 합 = 1', Math.abs(math.sum - 1) < 1e-9);
 ok('특징값에 미래 가격이 새지 않음', math.same);
 await pg.screenshot({ path: path.join(os.tmpdir(), 'fs_value_econ_model.png') });
+await pg.locator('#econAllocOut').screenshot({ path: path.join(os.tmpdir(), 'fs_value_econ_alloc.png') }).catch(() => {});
 
 // ---- 겹쳐보기(최대 5개) + 모델 설명
 await pg.goto('http://localhost:' + srv.address().port + '/#econ'); await pg.waitForTimeout(1200);
@@ -141,6 +142,34 @@ const introTxt = await pg.evaluate(() => document.getElementById('econModelOut')
 ok('설명에 기준선·시험 보기·근거 수준 포함', introTxt.includes('기준선') && introTxt.includes('시험 보기') && introTxt.includes('Estrella') && introTxt.includes('Jegadeesh'));
 await pg.screenshot({ path: path.join(os.tmpdir(), 'fs_value_econ_ov.png'), fullPage: true });
 const kp = await pg.innerText('#econKpi');
+// ---- 자산배분 가이드 ----
+await pg.waitForSelector('#econAllocOut .ec-card', { timeout: 5000 }).catch(() => {});
+const al = await pg.evaluate(() => document.getElementById('econAllocOut').textContent);
+ok('자산배분 가이드가 화면에 있고 기본 비중·참고 비중 막대가 둘 다 보임', al.includes('자산배분 가이드') && al.includes('참고 비중') && al.includes('기본 비중'), al.slice(0, 80));
+ok('신호별 근거 수준(유력 근거/실무 관행)과 출처가 표시됨', al.includes('유력 근거') && al.includes('실무 관행') && al.includes('Faber') && al.includes('Estrella'));
+ok('조합 규칙은 검증되지 않은 가설이라고 명시', al.includes('증명되지 않은 것') && al.includes('가설') && al.includes('백테스트'));
+ok('단일 "매수 점수"를 만들지 않음', !al.includes('매수 점수') && !al.includes('AI 점수'));
+const allocChk = await pg.evaluate(() => {
+  const out = [];
+  ['KR', 'US'].forEach((m) => ['cons', 'mid', 'aggr'].forEach((p) => { const R = econAllocCompute(m, p); out.push({ m: m, p: p, sum: R.w[0] + R.w[1] + R.w[2], min: Math.min(R.w[0], R.w[1], R.w[2]), dev: Math.abs(R.w[0] - R.base[0]) }); }));
+  return out;
+});
+ok('6개 조합 모두 합계 100%·음수 없음·주식 편차 ≤ 상한(15)+0.5', allocChk.every((r) => r.sum === 100 && r.min >= 0 && r.dev <= 15.5), JSON.stringify(allocChk.slice(0, 2)));
+// 극단 시나리오: 모든 신호가 경계 → 합계 -16 → 상한 -15 적용(중립형 50 → 35)
+const ext = await pg.evaluate(() => {
+  const keep = econSer; const mk = (n, f) => { const o = []; for (let i = 0; i < n; i++) { const d = new Date(Date.UTC(2020, i, 28)); o.push({ date: d.toISOString().slice(0, 10).replace(/-/g, ''), value: f(i) }); } return o; };
+  econSer = Object.assign({}, keep, { kospi: mk(60, (i) => 3000 - i * 20), usvix: mk(60, (i) => 12 + i), kr10m3: mk(60, () => -0.3), ushy: mk(60, (i) => 3 + i / 10), krlei: mk(60, (i) => 101 - i * 0.05) });
+  const R = econAllocCompute('KR', 'mid'); econSer = keep; return { raw: R.raw, T: R.T, w: R.w, n: R.sg.length, scores: R.sg.map((x) => x.score) };
+});
+ok('모든 신호가 경계(-)면 합계 -16%p → 상한 -15%p로 제한(중립형 주식 50 → 35)', ext.raw === -16 && ext.T === -15 && ext.w[0] === 35 && ext.w.reduce((a, b) => a + b, 0) === 100, JSON.stringify(ext));
+const none = await pg.evaluate(() => { const keep = econSer; econSer = Object.assign({}, keep, { kospi: [], usvix: [], ushy: [], krlei: [], kr10m3: [] }); const R = econAllocCompute('KR', 'mid'); econSer = keep; return { raw: R.raw, w: R.w, na: R.sg.filter((x) => x.score == null).length }; });
+ok('자료가 없으면 신호를 0으로 두고 기본 비중 유지, 판정 불가로 표시', none.raw === 0 && none.w.join() === '50,40,10' && none.na === 5, JSON.stringify(none));
+await pg.click('#econAllocOut button[data-val="US"]'); await pg.waitForTimeout(100);
+const alUs = await pg.evaluate(() => document.getElementById('econAllocOut').textContent);
+ok('미국 기준으로 전환하면 S&P500 추세와 미국 금리차로 바뀜', alUs.includes('S&P500 10개월 추세') && alUs.includes('10Y-2Y') && !alUs.includes('선행지수 순환변동치'));
+await pg.click('#econAllocOut button[data-val="aggr"]'); await pg.waitForTimeout(100);
+ok('투자 성향을 바꾸면 기본 비중이 70/25/5로 바뀜', (await pg.evaluate(() => document.getElementById('econAllocOut').textContent)).includes('공격형 70/25/5'));
+await pg.click('#econAllocOut button[data-val="KR"]'); await pg.click('#econAllocOut button[data-val="mid"]');
 ok('핵심 지표 카드 8개(금리차·순유동성·VIX·HY·한국 금리차·환율·SOFR-IORB·CD-기준금리)', (await pg.locator('#econKpi .ec-kpis > .ec-card').count()) === 8 && kp.includes('순유동성') && kp.includes('VIX'));
 await pg.setViewportSize({ width: 1100, height: 1000 }); await pg.waitForTimeout(200);
 await pg.screenshot({ path: path.join(os.tmpdir(), 'fs_value_econ_desktop.png'), fullPage: true });
