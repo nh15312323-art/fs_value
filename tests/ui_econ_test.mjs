@@ -170,6 +170,43 @@ ok('미국 기준으로 전환하면 S&P500 추세와 미국 금리차로 바뀜
 await pg.click('#econAllocOut button[data-val="aggr"]'); await pg.waitForTimeout(100);
 ok('투자 성향을 바꾸면 기본 비중이 70/25/5로 바뀜', (await pg.evaluate(() => document.getElementById('econAllocOut').textContent)).includes('공격형 70/25/5'));
 await pg.click('#econAllocOut button[data-val="KR"]'); await pg.click('#econAllocOut button[data-val="mid"]');
+// ---- 백테스트 ----
+await pg.click('#econAllocOut button:has-text("백테스트 실행")'); await pg.waitForSelector('#econBtOut table', { timeout: 8000 }).catch(() => {});
+const bt = await pg.evaluate(() => ({ txt: document.getElementById('econBtOut').textContent, rows: document.querySelectorAll('#econBtOut tbody tr').length, svg: !!document.querySelector('#econBtOut svg') }));
+await pg.locator('#econBtOut').screenshot({ path: path.join(os.tmpdir(), 'fs_value_econ_bt.png') }).catch(() => {});
+ok('백테스트 표에 12개 규칙(가이드·정적·주식100%·신호 1개씩·상한 민감도)이 나옴', bt.rows === 12, 'rows=' + bt.rows + ' ' + bt.txt.slice(0, 80));
+ok('한 줄 요약·근사 수익률·완전한 표본 밖 검증이 아님을 명시', bt.txt.includes('한 줄 요약') && bt.txt.includes('근사') && bt.txt.includes('표본 밖 검증이 아니며') && bt.txt.includes('12개 규칙'));
+ok('누적 성과 그래프(연도 눈금)가 그려짐', bt.svg);
+const btc = await pg.evaluate(() => {
+  const out = {}; const keep = econBtCost;
+  econBtCost = 0; const P = econBtPrepare(); if (P.err) return { err: P.err };
+  // (1) 정적 기본 비중, 비용 0: 매월 수익률 = 기본 비중 x (주식, 채권, 현금 수익률)
+  const base = ECON_ALLOC_BASE.mid.w; const st = econBtSim(P, { mode: 'static', prof: 'mid' });
+  let maxErr = 0; for (let k = 0; k < st.rets.length; k++) { const a = P.use[k], b = P.use[k + 1]; const exp = (base[0] * (b.K / a.K - 1) + base[1] * (a.y / 1200 - econBtDur * (b.y - a.y) / 100) + base[2] * (a.c / 1200)) / 100; maxErr = Math.max(maxErr, Math.abs(exp - st.rets[k])); }
+  out.maxErr = maxErr;
+  // (2) 비용: 비용이 커질수록 가이드 누적이 작아짐(회전율>0일 때)
+  const gv = { mode: 'guide', prof: 'mid', cap: 15, mask: null };
+  const cum = (r) => r.rets.reduce((c, x) => c * (1 + x), 1);
+  const c0 = cum(econBtSim(P, gv)); econBtCost = 0.01; const c1 = cum(econBtSim(P, gv)); econBtCost = keep; out.c0 = c0; out.c1 = c1;
+  // (3) 상한 5%p면 주식 비중이 기본에서 5%p 넘게 벗어나지 않음
+  const g5 = econBtSim(P, { mode: 'guide', prof: 'mid', cap: 5, mask: null }); out.dev5 = Math.max.apply(null, g5.ws.map((w) => Math.abs(w[0] - base[0]))); out.sum = Math.max.apply(null, g5.ws.map((w) => Math.abs(w[0] + w[1] + w[2] - 100)));
+  out.n = P.use.length; return out;
+});
+ok('정적 기본 비중의 월 수익률이 수식과 일치(비용 0, 오차 < 1e-12)', btc.maxErr < 1e-12, JSON.stringify(btc));
+ok('거래비용을 높이면 누적 성과가 낮아짐(비용 0 > 비용 1%)', btc.c0 > btc.c1, btc.c0 + ' vs ' + btc.c1);
+ok('상한 ±5%p 변형은 주식 비중 편차 ≤ 5, 합계 100', btc.dev5 <= 5.0001 && btc.sum < 1e-9, JSON.stringify([btc.dev5, btc.sum]));
+// 미래 자료 차단: 마지막 12개월 코스피·VIX 값을 크게 바꿔도 앞쪽 달의 신호는 그대로여야 함
+const la = await pg.evaluate(() => {
+  const keep = econSer; const P1 = econBtPrepare(); const cut = P1.use[P1.use.length - 13].date;
+  const bump = (s) => s.map((p) => p.date > cut ? { date: p.date, value: p.value * 3 + 50 } : p);
+  econSer = Object.assign({}, keep, { kospi: bump(keep.kospi), usvix: bump(keep.usvix), kr10m3: bump(keep.kr10m3), krlei: bump(keep.krlei) });
+  const P2 = econBtPrepare(); econSer = keep;
+  const m = P1.use.length - 14; let same = 0; for (let k = 0; k < m; k++) if (JSON.stringify(P1.recs[k]) === JSON.stringify(P2.recs[k])) same++;
+  return { m: m, same: same, changed: JSON.stringify(P1.recs.slice(-3)) !== JSON.stringify(P2.recs.slice(-3)) };
+});
+ok('미래 자료를 바꿔도 과거 시점의 신호가 변하지 않음(look-ahead 없음)', la.m > 20 && la.same === la.m, JSON.stringify(la));
+const bt2 = await pg.evaluate(() => { const keep = econSer; econSer = Object.assign({}, keep, { ktb3y: [] }); const P = econBtPrepare(); econSer = keep; return P.err || ''; });
+ok('자료가 없으면 백테스트를 만들지 않고 이유를 안내', bt2.includes('국고채 3년'), bt2);
 ok('핵심 지표 카드 8개(금리차·순유동성·VIX·HY·한국 금리차·환율·SOFR-IORB·CD-기준금리)', (await pg.locator('#econKpi .ec-kpis > .ec-card').count()) === 8 && kp.includes('순유동성') && kp.includes('VIX'));
 await pg.setViewportSize({ width: 1100, height: 1000 }); await pg.waitForTimeout(200);
 await pg.screenshot({ path: path.join(os.tmpdir(), 'fs_value_econ_desktop.png'), fullPage: true });
