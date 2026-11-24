@@ -891,6 +891,7 @@ const HTML_PAGE = `<!doctype html>
     <div id="econStatus" class="ec-note" style="margin:0 0 8px;"></div>
     <div id="econKpi"></div>
     <div id="econModelOut"></div>
+    <div id="econAllocOut"></div>
     <div id="econOut"></div>
   </div><!-- /tabEcon -->
 
@@ -9171,7 +9172,7 @@ async function pfuExport() {
         if (st) st.textContent = '불러오지 못했습니다: ' + e.message;
         econLoading = false; return;
       }
-      econLoading = false; econRender(); setTimeout(econModelRender, 20);
+      econLoading = false; econRender(); setTimeout(econModelRender, 20); setTimeout(econAllocRender, 25);
     }
     function econSetCountry(c) { econCountry = c; econRender(); }
     function econSetGroup(g) { econGroup = g; econRender(); }
@@ -9531,6 +9532,94 @@ async function pfuExport() {
         '<tr><td>한국 수출 증가율 / 미국 M2 증가율</td><td style="text-align:left;">경기(수출)·유동성(M2) 흐름. 발표가 늦어 2개월 지연 적용</td><td style="text-align:left;">가설(검증 필요)</td></tr></tbody></table></div></details></div>';
     }
 
+    // ===== 자산배분 가이드: 주식·채권·현금 비중 =====
+    // 구조: (1) 투자 성향별 기본 비중(사용자 선택, 학술 근거 아님) + (2) 경제 지표 신호가 기본 비중에서 벗어나는 폭(최대 주식 ±15%p).
+    // 각 신호는 따로 보여 주고, 하나의 "매수 점수"로 합치지 않는다. 조합 규칙 자체는 백테스트하지 않은 가설이다.
+    const ECON_ALLOC_BASE = { cons: { n: '보수형', w: [30, 50, 20] }, mid: { n: '중립형', w: [50, 40, 10] }, aggr: { n: '공격형', w: [70, 25, 5] } };
+    const ECON_ALLOC_CAP = 15;
+    let econAllocMkt = 'KR', econAllocProf = 'mid';
+    function econMonthEnds(s) {
+      const out = []; (s || []).forEach(function (p) { const ym = p.date.slice(0, 6); if (out.length && out[out.length - 1].ym === ym) out[out.length - 1] = { ym: ym, date: p.date, value: p.value }; else out.push({ ym: ym, date: p.date, value: p.value }); });
+      return out;
+    }
+    function econAllocPct(me) { // 월말 값 기준 현재값의 백분위(0~100). 월말만 쓰는 이유: 오래된 구간(월말)과 최근(일별)의 표본 밀도 차이 제거
+      if (!me || me.length < 24) return null; const v = me[me.length - 1].value; let le = 0; me.forEach(function (p) { if (p.value <= v) le++; }); return Math.round(le / me.length * 100);
+    }
+    function econAllocSignals(mkt) {
+      const kr = mkt === 'KR', sg = [];
+      const na = function (o, why) { o.score = null; o.val = '자료 부족'; o.why = why; return o; };
+      // 1) 추세: 최신 값 vs 최근 10개월(월말) 평균
+      const tk = kr ? 'kospi' : 'sp500', ts = econSer[tk], me = econMonthEnds(ts), t = { id: 'trend', n: (kr ? '코스피' : 'S&P500') + ' 10개월 추세', pts: 6, ev: '유력 근거', src: 'Faber(2007, Journal of Wealth Management); Moskowitz·Ooi·Pedersen(2012, JFE 시계열 모멘텀)' };
+      if (me.length < 10) sg.push(na(t, '월말 자료가 10개월 미만'));
+      else { let sm = 0; me.slice(-10).forEach(function (p) { sm += p.value; }); sm /= 10; const last = me[me.length - 1], r = last.value / sm - 1;
+        t.date = last.date; t.val = (r >= 0 ? '+' : '') + (r * 100).toFixed(1) + '% (10개월 평균 대비)'; t.score = r > 0.01 ? 1 : r < -0.01 ? -1 : 0;
+        t.why = t.score > 0 ? '가격이 10개월 평균보다 1% 넘게 위 → 추세 유지(Faber는 평균 위면 보유, 아래면 현금)' : t.score < 0 ? '가격이 10개월 평균보다 1% 넘게 아래 → 추세 약화' : '평균 근처(±1%)라 중립. 이 중립 밴드는 VALUELAB 설계값(가설)으로 잦은 신호 번복을 줄이려는 용도'; sg.push(t); }
+      // 2) 변동성: VIX 월말 백분위
+      const vs = econMonthEnds(econSer.usvix), vp = econAllocPct(vs), v = { id: 'vol', n: '변동성(VIX, 미국 지표로 근사)', pts: 3, ev: '유력(논쟁)', src: 'Moreira·Muir(2017, JF) 변동성이 높을 때 위험 노출을 줄이면 위험조정수익이 개선. 단 JFE 2020 "On the performance of volatility-managed portfolios"는 실시간 성과가 엇갈린다고 보고. 여기선 실현변동성 대신 VIX로 근사(가설)' };
+      if (vp == null) sg.push(na(v, 'VIX 월말 자료가 24개월 미만'));
+      else { v.date = vs[vs.length - 1].date; v.val = 'VIX ' + vs[vs.length - 1].value.toFixed(1) + ' (자기 이력의 ' + vp + '%)'; v.score = vp <= 25 ? 1 : vp >= 80 ? -1 : 0; v.why = v.score > 0 ? '변동성이 이력 하위 25% 이하 → 위험 노출 여유' : v.score < 0 ? '변동성이 이력 상위 20% → 위험 노출 축소' : '중간 구간(25~80%) → 중립'; sg.push(v); }
+      // 3) 장단기 금리차 역전(경기침체 선행)
+      const ck = kr ? 'kr10m3' : 'us10m2', cs = econSer[ck], c = { id: 'curve', n: (kr ? '한국 장단기 금리차(10Y-3Y)' : '미국 장단기 금리차(10Y-2Y)'), pts: 3, ev: '유력 근거(경기침체 예측)', src: 'Estrella·Mishkin(1998, Review of Economics and Statistics): 미국에서 금리차 역전이 경기침체를 앞서 알림. 주가수익률 자체를 예측한다는 증명은 아니며' + (kr ? ' 한국 적용은 검증 전' : '') };
+      if (!cs || !cs.length) sg.push(na(c, '금리차 자료 없음'));
+      else { const l = cs[cs.length - 1]; c.date = l.date; c.val = (l.value >= 0 ? '+' : '') + l.value.toFixed(2) + '%p'; c.score = l.value < 0 ? -1 : 0; c.why = l.value < 0 ? '역전(장기금리 < 단기금리) → 침체 위험 신호. 시차가 길고 오신호도 있음' : '역전 아님. 정상 곡선은 상승 근거가 아니라 "경고 없음"으로만 취급'; sg.push(c); }
+      // 4) 신용 스프레드(미국 하이일드, 글로벌 위험 대용)
+      const hs = econMonthEnds(econSer.ushy), hp = econAllocPct(hs), h = { id: 'credit', n: '신용 스프레드(미국 하이일드, 글로벌 대용)', pts: 2, ev: '실무 관행', src: '신용 스프레드 확대를 위험회피 신호로 보는 것은 실무 관행이며, 이 조합 규칙으로 검증한 자료는 없음' };
+      if (hp == null) sg.push(na(h, '하이일드 월말 자료가 24개월 미만(FRED 제공 기간 제한 가능)'));
+      else { h.date = hs[hs.length - 1].date; h.val = hs[hs.length - 1].value.toFixed(2) + '%p (자기 이력의 ' + hp + '%)'; h.score = hp >= 80 ? -1 : 0; h.why = h.score < 0 ? '스프레드가 이력 상위 20% → 신용 스트레스' : '스트레스 구간 아님(상승 근거로는 쓰지 않음)'; sg.push(h); }
+      // 5) 한국 선행지수 순환변동치(한국만)
+      if (kr) {
+        const ls = econSer.krlei, l5 = { id: 'lei', n: '한국 선행지수 순환변동치', pts: 2, ev: '실무 관행', src: '통계청 경기종합지수 해석 관행(100 기준·방향). 주가 방향을 맞힌다는 증명은 없음' };
+        if (!ls || ls.length < 5) sg.push(na(l5, '자료 없음(데이터 관리에서 거시경제 갱신 필요)'));
+        else { const lt = ls[ls.length - 1], b3 = macroValueAsOf(ls, econShift(lt.date, 3), 45), d3 = b3 == null ? null : lt.value - b3; l5.date = lt.date; l5.val = lt.value.toFixed(1) + (d3 == null ? '' : ' (3개월 ' + (d3 >= 0 ? '+' : '') + d3.toFixed(1) + ')');
+          if (d3 == null) { l5.score = null; l5.why = '3개월 전 값이 없어 방향 판단 불가'; } else { l5.score = lt.value < 100 && d3 < 0 ? -1 : lt.value >= 100 && d3 >= 0 ? 1 : 0; l5.why = l5.score < 0 ? '100 미만이고 하락 → 둔화' : l5.score > 0 ? '100 이상이고 상승 → 확장' : '전환 구간 → 중립'; } sg.push(l5); }
+      }
+      return sg;
+    }
+    function econAllocCompute(mkt, prof) {
+      const base = ECON_ALLOC_BASE[prof].w, sg = econAllocSignals(mkt);
+      let raw = 0; sg.forEach(function (x) { if (x.score != null) raw += x.score * x.pts; });
+      const T = Math.max(-ECON_ALLOC_CAP, Math.min(ECON_ALLOC_CAP, raw));
+      // 채권 쪽: 금리차가 이력 상위 1/3이면 +3, 하위 1/3이면 -3(Fama·Bliss 1987, Cochrane·Piazzesi 2005: 금리 기울기가 채권 초과수익을 예측. 실시간 가치는 불확실)
+      const ck = mkt === 'KR' ? 'kr10m3' : 'us10m2', cp = econAllocPct(econMonthEnds(econSer[ck]));
+      const B = cp == null ? 0 : cp >= 67 ? 3 : cp <= 33 ? -3 : 0;
+      let stock = Math.max(0, Math.min(100, base[0] + T)), bond = base[1] - T * 0.5 + B, cash = 100 - stock - bond;
+      if (cash < 0) { cash = 0; bond = 100 - stock; } if (bond < 0) { bond = 0; cash = 100 - stock; }
+      stock = Math.round(stock); bond = Math.round(bond); cash = 100 - stock - bond; if (cash < 0) { cash = 0; bond = 100 - stock; }
+      return { base: base, sg: sg, raw: raw, T: T, B: B, cp: cp, w: [stock, bond, cash] };
+    }
+    function econAllocSet(kind, val) { if (kind === 'm') econAllocMkt = val; else econAllocProf = val; econAllocRender(); }
+    function econAllocSetAttr(el) { econAllocSet(el.getAttribute('data-kind'), el.getAttribute('data-val')); }
+    function econAllocRender() {
+      const box = document.getElementById('econAllocOut'); if (!box) return;
+      if (!econSer) { box.innerHTML = ''; return; }
+      let R; try { R = econAllocCompute(econAllocMkt, econAllocProf); } catch (e) { box.innerHTML = '<div class="ec-empty">자산배분 가이드를 계산하지 못했습니다: ' + escHtml(e.message) + '</div>'; return; }
+      const COL = ['#2563eb', '#0d9488', '#94a3b8'], NM = ['주식', '채권', '현금'];
+      const pill = function (on, kind, val, label) { return '<button class="ec-pill' + (on ? ' on' : '') + '" data-kind="' + kind + '" data-val="' + val + '" onclick="econAllocSetAttr(this)">' + label + '</button>'; };
+      const bar = function (w, label) { return '<div class="ec-pl">' + label + '</div><div class="ec-prob">' + [0, 1, 2].map(function (i) { return '<div title="' + NM[i] + ' ' + w[i] + '%" style="width:' + w[i] + '%; background:' + COL[i] + ';">' + (w[i] >= 8 ? NM[i] + ' ' + w[i] + '%' : '') + '</div>'; }).join('') + '</div>'; };
+      const diff = function (i) { const d = R.w[i] - R.base[i]; return (d > 0 ? '+' : '') + d + '%p'; };
+      let h = '<div class="ec-sec"><h3>자산배분 가이드 <span style="font-weight:500;">실험적 · 주식·채권·현금 비중 참고안</span></h3></div><div class="ec-card" style="margin-bottom:12px;">';
+      h += '<div class="ec-pills" style="margin-bottom:6px;"><span class="ec-pl">기준 시장</span>' + pill(econAllocMkt === 'KR', 'm', 'KR', '🇰🇷 한국') + pill(econAllocMkt === 'US', 'm', 'US', '🇺🇸 미국') + '</div>';
+      h += '<div class="ec-pills" style="margin-bottom:10px;"><span class="ec-pl">투자 성향(기본 비중)</span>' + Object.keys(ECON_ALLOC_BASE).map(function (k) { const b = ECON_ALLOC_BASE[k]; return pill(econAllocProf === k, 'p', k, b.n + ' ' + b.w.join('/')); }).join('') + '</div>';
+      h += bar(R.w, '지금 신호를 반영한 참고 비중') + bar(R.base, '기본 비중(' + ECON_ALLOC_BASE[econAllocProf].n + ', 내가 고른 값)');
+      h += '<div style="margin-top:8px; font-size:14px;"><b>주식 ' + diff(0) + ' · 채권 ' + diff(1) + ' · 현금 ' + diff(2) + '</b> <span class="ec-dim">(기본 비중 대비). 신호 합계 ' + (R.raw > 0 ? '+' : '') + R.raw + '%p → 상한 ±' + ECON_ALLOC_CAP + '%p 적용 ' + (R.T > 0 ? '+' : '') + R.T + '%p' + (R.B ? ', 채권 금리차 가산 ' + (R.B > 0 ? '+' : '') + R.B + '%p' : '') + '</span></div>';
+      const big = Math.abs(R.w[0] - R.base[0]) >= 5;
+      h += '<div class="ec-note" style="margin-top:6px;">' + (big ? '기본 비중과 5%p 이상 차이가 납니다. 실제로 조정할지는 거래비용·세금을 보고 정하세요.' : '기본 비중과 차이가 5%p 미만입니다. 이 정도 차이는 거래비용을 감안하면 그대로 두는 쪽이 일반적인 실무 관행입니다.') + ' 확인은 월 1회면 충분합니다(월말 기준 신호).</div></div>';
+      h += '<div class="ec-tbl-wrap"><table class="ec-tbl"><thead><tr><th>신호(주식 비중 조정)</th><th>현재 값</th><th>판정</th><th>반영 폭</th><th>근거 수준</th></tr></thead><tbody>';
+      R.sg.forEach(function (x) {
+        const eff = x.score == null ? '-' : (x.score * x.pts > 0 ? '+' : '') + x.score * x.pts + '%p';
+        h += '<tr><td>' + escHtml(x.n) + '<div class="ec-dim" style="font-size:11.5px; white-space:normal;">' + escHtml(x.why) + '</div></td><td class="r">' + escHtml(x.val) + (x.date ? '<div class="ec-dim" style="font-size:11px;">' + econYmdTxt(x.date) + '</div>' : '') + '</td><td class="r">' + (x.score == null ? '판정 불가' : x.score > 0 ? '우호(+)' : x.score < 0 ? '경계(-)' : '중립') + '</td><td class="r">최대 ±' + x.pts + '%p<br><b>' + eff + '</b></td><td class="r" style="white-space:normal;">' + escHtml(x.ev) + '</td></tr>';
+      });
+      h += '<tr><td>채권 비중 가산(금리차 이력 백분위)<div class="ec-dim" style="font-size:11.5px; white-space:normal;">금리차가 이력 상위 1/3이면 채권 +3%p, 하위 1/3이면 -3%p</div></td><td class="r">' + (R.cp == null ? '자료 부족' : '이력의 ' + R.cp + '%') + '</td><td class="r">' + (R.B > 0 ? '우호(+)' : R.B < 0 ? '경계(-)' : '중립') + '</td><td class="r">최대 ±3%p<br><b>' + (R.B > 0 ? '+' : '') + R.B + '%p</b></td><td class="r" style="white-space:normal;">유력(논쟁)</td></tr>';
+      h += '</tbody></table></div>';
+      h += '<details class="ec-note"><summary>이 가이드는 어떻게 계산했나요? (근거와 한계)</summary><div>';
+      h += '<p><b>1) 구조</b> 기본 비중은 내가 고른 투자 성향입니다. 학술적으로 "최적 비중"이 있는 것이 아니라 위험을 얼마나 감수할지의 선택이며, 이를 정교한 최적화로 구하는 것보다 단순한 균등 배분이 실제 표본 밖 성과에서 더 낫거나 비슷하다는 연구가 있습니다(DeMiguel·Garlappi·Uppal 2009, Review of Financial Studies: 14개 최적화 모델 중 어느 것도 1/N을 일관되게 이기지 못함). 그래서 최적화로 비중을 만들지 않고, 기본 비중에서 <b>제한된 폭(주식 최대 ±' + ECON_ALLOC_CAP + '%p)</b>만 신호로 기울입니다.</p>';
+      h += '<p><b>2) 신호</b> 추세(Faber 2007; Moskowitz·Ooi·Pedersen 2012), 변동성(Moreira·Muir 2017), 금리차 역전(Estrella·Mishkin 1998)은 학술 논문이 있는 근거이고, 신용 스프레드·한국 선행지수는 실무 관행입니다. 근거 수준은 표에 신호별로 적었습니다. 채권 쪽은 금리 기울기가 채권 초과수익을 예측한다는 연구(Fama·Bliss 1987; Cochrane·Piazzesi 2005)에 기대지만, 실시간 투자에서 경제적 가치가 체계적으로 나오지 않는다는 반론(Thornton·Valente, 세인트루이스 연준 워킹페이퍼 2010-034)도 있습니다.</p>';
+      h += '<p><b>3) 증명되지 않은 것</b> 개별 신호의 연구가 있다고 해서 <b>이 신호들을 이 가중치로 합친 규칙</b>이 한국·미국에서 수익이나 낙폭 방어에 도움이 된다는 것은 확인되지 않았습니다(가설). 신호별 최대 폭(6·3·3·2·2%p), 중립 밴드 ±1%, 백분위 25·80·67·33 같은 값은 VALUELAB 설계값이며 백테스트로 정한 것이 아닙니다. Faber의 검증도 "자산을 보유하거나 현금으로 이동"하는 방식이었습니다.</p>';
+      h += '<p><b>4) 반영하지 않은 것</b> 채권·주식의 실제 수익률 자료(채권 지수 자료가 없어 이 규칙을 백테스트하지 못함), 밸류에이션(PER 등: 단기 예측력이 약하다는 연구가 많아 넣지 않음), 환율·해외 분산, 세금·거래비용, 나이·투자 기간·소득 같은 개인 사정. 변동성과 신용 스프레드는 미국 지표를 한국 투자자에게도 글로벌 위험의 대용으로 썼습니다.</p>';
+      h += '<p><b>5) 읽는 법</b> "경계(-)"가 많아도 폭락을 예측한다는 뜻이 아니고, "우호(+)"가 많아도 상승을 보장하지 않습니다. 결과는 투자 권유가 아니라 기본 비중에서 위험을 조금 줄이거나 늘릴지 보는 참고 틀입니다. 자료가 오래됐거나 없는 신호는 0으로 처리하고 표에 표시합니다.</p>';
+      h += '</div></details>';
+      box.innerHTML = h;
+    }
     function econModelRender() {
       const box = document.getElementById('econModelOut'); if (!box) return;
       if (!econSer) { box.innerHTML = ''; return; }
