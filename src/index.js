@@ -892,6 +892,7 @@ const HTML_PAGE = `<!doctype html>
     <div id="econKpi"></div>
     <div id="econModelOut"></div>
     <div id="econAllocOut"></div>
+    <div id="econBtOut"></div>
     <div id="econOut"></div>
   </div><!-- /tabEcon -->
 
@@ -9575,17 +9576,139 @@ async function pfuExport() {
       }
       return sg;
     }
-    function econAllocCompute(mkt, prof) {
-      const base = ECON_ALLOC_BASE[prof].w, sg = econAllocSignals(mkt);
-      let raw = 0; sg.forEach(function (x) { if (x.score != null) raw += x.score * x.pts; });
-      const T = Math.max(-ECON_ALLOC_CAP, Math.min(ECON_ALLOC_CAP, raw));
+    // 신호 점수(sc: {trend, vol, curve, credit, lei -> -1/0/1/null})와 채권 금리차 백분위(cp)로 비중을 계산한다. mask가 있으면 그 신호만 사용('bond'는 채권 가산).
+    const ECON_ALLOC_PTS = { trend: 6, vol: 3, curve: 3, credit: 2, lei: 2 };
+    function econAllocWeights(base, sc, cp, cap, mask, round) {
+      let raw = 0; Object.keys(ECON_ALLOC_PTS).forEach(function (k) { if (sc[k] != null && (!mask || mask.indexOf(k) >= 0)) raw += sc[k] * ECON_ALLOC_PTS[k]; });
+      const T = Math.max(-cap, Math.min(cap, raw));
       // 채권 쪽: 금리차가 이력 상위 1/3이면 +3, 하위 1/3이면 -3(Fama·Bliss 1987, Cochrane·Piazzesi 2005: 금리 기울기가 채권 초과수익을 예측. 실시간 가치는 불확실)
-      const ck = mkt === 'KR' ? 'kr10m3' : 'us10m2', cp = econAllocPct(econMonthEnds(econSer[ck]));
-      const B = cp == null ? 0 : cp >= 67 ? 3 : cp <= 33 ? -3 : 0;
+      const B = (cp == null || (mask && mask.indexOf('bond') < 0)) ? 0 : cp >= 67 ? 3 : cp <= 33 ? -3 : 0;
       let stock = Math.max(0, Math.min(100, base[0] + T)), bond = base[1] - T * 0.5 + B, cash = 100 - stock - bond;
       if (cash < 0) { cash = 0; bond = 100 - stock; } if (bond < 0) { bond = 0; cash = 100 - stock; }
-      stock = Math.round(stock); bond = Math.round(bond); cash = 100 - stock - bond; if (cash < 0) { cash = 0; bond = 100 - stock; }
-      return { base: base, sg: sg, raw: raw, T: T, B: B, cp: cp, w: [stock, bond, cash] };
+      if (round) { stock = Math.round(stock); bond = Math.round(bond); cash = 100 - stock - bond; if (cash < 0) { cash = 0; bond = 100 - stock; } }
+      return [stock, bond, cash];
+    }
+    function econAllocCompute(mkt, prof) {
+      const base = ECON_ALLOC_BASE[prof].w, sg = econAllocSignals(mkt), sc = {};
+      sg.forEach(function (x) { sc[x.id] = x.score; });
+      let raw = 0; sg.forEach(function (x) { if (x.score != null) raw += x.score * x.pts; });
+      const T = Math.max(-ECON_ALLOC_CAP, Math.min(ECON_ALLOC_CAP, raw));
+      const ck = mkt === 'KR' ? 'kr10m3' : 'us10m2', cp = econAllocPct(econMonthEnds(econSer[ck]));
+      const B = cp == null ? 0 : cp >= 67 ? 3 : cp <= 33 ? -3 : 0;
+      return { base: base, sg: sg, raw: raw, T: T, B: B, cp: cp, w: econAllocWeights(base, sc, cp, ECON_ALLOC_CAP, null, true) };
+    }
+    // ===== 자산배분 가이드 백테스트(한국: 코스피·국고채 3년 근사·기준금리) =====
+    // 신호 시점: 매월 마지막 거래일에 그때까지 있던 자료만으로 신호를 계산(백분위도 그 시점까지의 이력만 사용, 선행지수는 2개월 지연).
+    // 체결: 신호를 낸 월말 가격으로 비중을 바꾸고 다음 달 수익률을 받는다(월말 종가 체결 가정 → 낙관적일 수 있음).
+    // 수익률: 주식=코스피 가격지수(배당 제외 → 주식 수익을 과소 반영), 채권=국고채 3년 금리로 근사(캐리 y/12 - 듀레이션 x 금리 변화, 채권지수 실제 수익률이 아님), 현금=기준금리/12.
+    let econBtDur = 2.7, econBtCost = 0.002, econBtCache = null;
+    function econBtCut(s, cut) { // 날짜 오름차순 배열에서 cut 이하만(이진 탐색)
+      if (!s || !s.length) return [];
+      let lo = 0, hi = s.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (s[mid].date <= cut) lo = mid + 1; else hi = mid; }
+      return s.slice(0, lo);
+    }
+    function econBtPrepare() {
+      const K = econMonthEnds(econSer.kospi), y3 = econSer.ktb3y, cb = econSer.krbase;
+      if (K.length < 40 || !y3 || y3.length < 40 || !cb || cb.length < 2) return { err: '코스피 월말 40개월 이상, 국고채 3년, 기준금리 자료가 모두 필요합니다(데이터 관리에서 거시경제 갱신 후 다시 시도).' };
+      const rows = [];
+      for (let i = 0; i < K.length; i++) {
+        const d = K[i].date, yv = macroValueAsOf(y3, d, 10), cv = macroValueAsOf(cb, d, 45);
+        rows.push({ i: i, date: d, ym: K[i].ym, K: K[i].value, y: yv, c: cv });
+      }
+      // 코스피·금리·기준금리가 모두 있는 연속 구간만 사용
+      let s0 = 0; while (s0 < rows.length && (rows[s0].y == null || rows[s0].c == null)) s0++;
+      const use = rows.slice(s0);
+      if (use.length < 40) return { err: '세 자료가 겹치는 구간이 40개월 미만입니다.' };
+      const keep = econSer, recs = [];
+      try {
+        for (let k = 0; k < use.length; k++) {
+          const d = use[k].date, lag2 = econShift(d, 2), o = {};
+          Object.keys(keep).forEach(function (key) { o[key] = key === 'krlei' ? econBtCut(keep[key], lag2) : econBtCut(keep[key], d); });
+          econSer = o;
+          const sg = econAllocSignals('KR'), sc = {}; sg.forEach(function (x) { sc[x.id] = x.score; });
+          const cp = econAllocPct(econMonthEnds(o.kr10m3));
+          recs.push({ sc: sc, cp: cp });
+        }
+      } finally { econSer = keep; }
+      return { use: use, recs: recs, nCredit: recs.filter(function (r) { return r.sc.credit != null; }).length, nLei: recs.filter(function (r) { return r.sc.lei != null; }).length };
+    }
+    // 변형(variant) 하나를 시뮬레이션: mode 'guide'(신호 사용)/'static'(기본 비중)/'stock'(주식 100%)
+    function econBtSim(P, v) {
+      const base = ECON_ALLOC_BASE[v.prof].w, n = P.use.length, rets = [], to = [], ws = [];
+      let prev = null, drift = null;
+      for (let k = 0; k < n - 1; k++) {
+        let w;
+        if (v.mode === 'stock') w = [100, 0, 0];
+        else if (v.mode === 'static') w = base.slice();
+        else w = econAllocWeights(base, P.recs[k].sc, P.recs[k].cp, v.cap, v.mask, false);
+        const a = P.use[k], b = P.use[k + 1];
+        const rs = b.K / a.K - 1, rb = a.y / 100 / 12 - econBtDur * (b.y - a.y) / 100, rc = a.c / 100 / 12, r = [rs, rb, rc];
+        const from = drift || (prev ? prev : w); let t = 0; for (let j = 0; j < 3; j++) t += Math.abs(w[j] - from[j]) / 100;
+        const gross = (w[0] * rs + w[1] * rb + w[2] * rc) / 100, net = gross - econBtCost * t * (k === 0 ? 0 : 1);
+        rets.push(net); to.push(k === 0 ? 0 : t); ws.push(w);
+        const tot = 1 + gross; drift = [w[0] * (1 + rs) / tot, w[1] * (1 + rb) / tot, w[2] * (1 + rc) / tot]; prev = w;
+        rets[rets.length - 1] = net; P.cashR = P.cashR || []; P.cashR[k] = rc;
+      }
+      return { rets: rets, to: to, ws: ws };
+    }
+    function econBtMetrics(rets, cashR, to, from, upto) {
+      const r = rets.slice(from, upto), c = cashR.slice(from, upto), n = r.length; if (n < 12) return null;
+      let cum = 1, peak = 1, mdd = 0, mean = 0, ex = 0;
+      r.forEach(function (x, i) { cum *= 1 + x; if (cum > peak) peak = cum; const dd = cum / peak - 1; if (dd < mdd) mdd = dd; mean += x; ex += x - c[i]; });
+      mean /= n; let v = 0; r.forEach(function (x) { v += (x - mean) * (x - mean); }); const sd = Math.sqrt(v / (n - 1));
+      let tsum = 0; to.slice(from, upto).forEach(function (t) { tsum += t; });
+      return { cagr: Math.pow(cum, 12 / n) - 1, vol: sd * Math.sqrt(12), sharpe: sd > 0 ? (ex / n * 12) / (sd * Math.sqrt(12)) : null, mdd: mdd, turn: tsum / n * 12 * 100, cum: cum, n: n };
+    }
+    function econBtVariants(prof) {
+      const g = function (cap, mask, label) { return { label: label, mode: 'guide', prof: prof, cap: cap, mask: mask }; };
+      return [
+        g(ECON_ALLOC_CAP, null, '가이드(신호 전부, 주식 ±' + ECON_ALLOC_CAP + '%p 상한)'),
+        { label: '정적 기본 비중(' + ECON_ALLOC_BASE[prof].n + ', 월 리밸런싱)', mode: 'static', prof: prof },
+        { label: '주식 100%(코스피 가격지수)', mode: 'stock', prof: prof },
+        g(ECON_ALLOC_CAP, ['trend'], '신호 1개만: 추세'), g(ECON_ALLOC_CAP, ['vol'], '신호 1개만: 변동성'), g(ECON_ALLOC_CAP, ['curve'], '신호 1개만: 금리차 역전'), g(ECON_ALLOC_CAP, ['lei'], '신호 1개만: 선행지수'),
+        g(ECON_ALLOC_CAP, ['bond'], '채권 금리차 가산만'),
+        g(5, null, '상한 민감도: ±5%p'), g(10, null, '상한 민감도: ±10%p'), g(20, null, '상한 민감도: ±20%p'), g(30, null, '상한 민감도: ±30%p'),
+      ];
+    }
+    function econBtRun() {
+      const box = document.getElementById('econBtOut'); if (!box) return;
+      if (!econSer) { box.innerHTML = '<div class="ec-empty">먼저 경제 지표를 불러와 주세요.</div>'; return; }
+      box.innerHTML = '<div class="ec-note">계산 중...</div>';
+      setTimeout(function () {
+        try { econBtCache = econBtPrepare(); econBtRender(); } catch (e) { box.innerHTML = '<div class="ec-empty">백테스트를 계산하지 못했습니다: ' + escHtml(e.message) + '</div>'; }
+      }, 30);
+    }
+    function econBtRender() {
+      const box = document.getElementById('econBtOut'), P = econBtCache; if (!box || !P) return;
+      if (P.err) { box.innerHTML = '<div class="ec-empty">' + escHtml(P.err) + '</div>'; return; }
+      const V = econBtVariants(econAllocProf), n = P.use.length - 1; P.cashR = [];
+      const R = V.map(function (v) { return { v: v, s: econBtSim(P, v) }; });
+      const half = Math.floor(n / 2), pc = function (x) { return x == null ? '-' : (x * 100).toFixed(1) + '%'; };
+      const M = R.map(function (r) { r.m = econBtMetrics(r.s.rets, P.cashR, r.s.to, 0, n); r.m1 = econBtMetrics(r.s.rets, P.cashR, r.s.to, 0, half); r.m2 = econBtMetrics(r.s.rets, P.cashR, r.s.to, half, n); return r; });
+      const G = M[0], S = M[1];
+      let h = '<div class="ec-sec"><h3>자산배분 가이드 백테스트 <span style="font-weight:500;">한국 · 코스피·국고채 3년 근사·기준금리</span></h3></div>';
+      h += '<div class="ec-note" style="margin-top:0;">기간 ' + econYmdTxt(P.use[0].date) + ' ~ ' + econYmdTxt(P.use[n].date) + ' (' + n + '개월). 신호는 매월 말에 그때까지의 자료로만 계산했고(백분위도 그 시점까지 이력만 사용, 선행지수는 2개월 지연), 비중은 같은 월말 가격에 바꿔 다음 달 수익을 받는다고 가정했습니다. 거래비용은 매매 금액의 ' + (econBtCost * 100).toFixed(1) + '%(편도)로 가정했습니다. 신용 스프레드 신호는 ' + P.nCredit + '개월만 계산 가능했고, 나머지 달은 0으로 처리됩니다.</div>';
+      const d = function (a, b, f, u) { if (a == null || b == null) return '-'; const x = (a - b) * f; return (x > 0 ? '+' : '') + x.toFixed(1) + u; };
+      if (G.m && S.m) h += '<div class="ec-card" style="margin:8px 0;"><b>한 줄 요약(사실만):</b> 가이드는 정적 기본 비중 대비 연수익률 ' + d(G.m.cagr, S.m.cagr, 100, '%p') + ', 변동성 ' + d(G.m.vol, S.m.vol, 100, '%p') + ', 최대낙폭 ' + d(G.m.mdd, S.m.mdd, 100, '%p') + '(양수면 낙폭이 줄어듦), 샤프 ' + d(G.m.sharpe, S.m.sharpe, 1, '') + '였습니다. 전반부 샤프 차이 ' + d(G.m1 && G.m1.sharpe, S.m1 && S.m1.sharpe, 1, '') + ' / 후반부 ' + d(G.m2 && G.m2.sharpe, S.m2 && S.m2.sharpe, 1, '') + '. <span class="ec-dim">전·후반에서 방향이 다르면 우연이거나 시기에 따라 달라지는 결과일 수 있습니다.</span></div>';
+      h += '<div class="ec-tbl-wrap"><table class="ec-tbl"><thead><tr><th>전략</th><th>연수익률</th><th>변동성</th><th>샤프</th><th>최대낙폭</th><th>연 회전율</th><th>누적(배)</th></tr></thead><tbody>';
+      M.forEach(function (r) { const m = r.m; h += '<tr><td>' + escHtml(r.v.label) + '</td>' + (m ? '<td class="r">' + pc(m.cagr) + '</td><td class="r">' + pc(m.vol) + '</td><td class="r">' + (m.sharpe == null ? '-' : m.sharpe.toFixed(2)) + '</td><td class="r">' + pc(m.mdd) + '</td><td class="r">' + m.turn.toFixed(0) + '%p</td><td class="r">' + m.cum.toFixed(2) + '</td>' : '<td class="r" colspan="6">표본 부족</td>') + '</tr>'; });
+      h += '</tbody></table></div>';
+      // 누적 그래프(가이드·정적·주식)
+      const lines = [[0, '#2563eb', '가이드'], [1, '#64748b', '정적 기본 비중'], [2, '#dc2626', '주식 100%']].map(function (x) { let c = 100; const pts = [{ t: econYmdMs(P.use[0].date), v: 100 }]; M[x[0]].s.rets.forEach(function (r, k) { c *= 1 + r; pts.push({ t: econYmdMs(P.use[k + 1].date), v: c }); }); return { pts: pts, col: x[1], nm: x[2] }; });
+      let mx = 0; lines.forEach(function (L) { L.pts.forEach(function (p) { if (p.v > mx) mx = p.v; }); });
+      const W = 340, H = 150, pl = 4, pr = 4, pt = 10, pb = 22, t0 = lines[0].pts[0].t, t1 = lines[0].pts[lines[0].pts.length - 1].t;
+      const xf = function (t) { return pl + (t - t0) * (W - pl - pr) / (t1 - t0 || 1); }, lmax = Math.log(mx), lmin = Math.log(100) - 0.05, yf = function (v) { return pt + (lmax - Math.log(v)) * (H - pt - pb) / (lmax - lmin || 1); };
+      let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="누적 성과(시작=100, 로그 축)">' + econTicks(t0, t1, xf, pt, H - pb, H - 8, W, pl, pr, 9);
+      lines.forEach(function (L) { let dd = ''; L.pts.forEach(function (p, i) { dd += (i ? 'L' : 'M') + xf(p.t).toFixed(1) + ' ' + yf(p.v).toFixed(1); }); svg += '<path d="' + dd + '" fill="none" stroke="' + L.col + '" stroke-width="1.5"/>'; });
+      svg += '</svg>';
+      h += '<div class="ec-card" style="margin-top:10px;"><div class="ec-pl">누적 성과(시작=100, 세로축은 로그)</div>' + svg + '<div class="ec-pills" style="gap:12px;">' + lines.map(function (L) { return '<span style="font-size:12.5px;"><span style="color:' + L.col + ';">●</span> ' + L.nm + '</span>'; }).join('') + '</div></div>';
+      h += '<details class="ec-note" open><summary>이 결과를 어떻게 읽어야 하나요? (한계)</summary><div>';
+      h += '<p><b>비교한 규칙 수:</b> 이 화면의 표에는 ' + V.length + '개 규칙이 있고 그중 어느 것도 이 자료로 고르거나 최적화하지 않았습니다(신호 폭·임계값은 먼저 정해 둔 값). 그래도 같은 자료로 평가했으므로 완전한 표본 밖 검증이 아니며, 전반부/후반부 비교는 참고용입니다. 좋은 결과가 나와도 미래 성과를 보장하지 않습니다.</p>';
+      h += '<p><b>수익률이 근사입니다:</b> 채권은 국고채 3년 금리로 만든 근사 수익률(듀레이션 ' + econBtDur + '년 가정)이라 실제 채권지수·ETF 수익률과 다릅니다. 주식은 배당을 뺀 가격지수라 주식 쪽이 실제보다 낮게 계산됩니다. 현금은 기준금리를 썼습니다.</p>';
+      h += '<p><b>실제와 다를 수 있는 점:</b> 선행지수 순환변동치는 개정된 최신 값이라 당시에 실제로 보였던 값과 다릅니다(2개월 지연만 반영). 월말 종가 체결 가정, 단순 거래비용 가정, 세금·괴리·유동성 미반영. 신용 스프레드(FRED 제공 기간 제한)와 한국 신호 일부는 자료가 짧아 0으로 처리됩니다.</p>';
+      h += '<p><b>표본:</b> ' + n + '개월(월 단위) 구간에 금융위기 등 몇 번의 국면이 들어 있을 뿐이라 통계적으로 확정적인 결론을 내기는 어렵습니다.</p>';
+      h += '</div></details>';
+      box.innerHTML = h;
     }
     function econAllocSet(kind, val) { if (kind === 'm') econAllocMkt = val; else econAllocProf = val; econAllocRender(); }
     function econAllocSetAttr(el) { econAllocSet(el.getAttribute('data-kind'), el.getAttribute('data-val')); }
@@ -9618,6 +9741,7 @@ async function pfuExport() {
       h += '<p><b>4) 반영하지 않은 것</b> 채권·주식의 실제 수익률 자료(채권 지수 자료가 없어 이 규칙을 백테스트하지 못함), 밸류에이션(PER 등: 단기 예측력이 약하다는 연구가 많아 넣지 않음), 환율·해외 분산, 세금·거래비용, 나이·투자 기간·소득 같은 개인 사정. 변동성과 신용 스프레드는 미국 지표를 한국 투자자에게도 글로벌 위험의 대용으로 썼습니다.</p>';
       h += '<p><b>5) 읽는 법</b> "경계(-)"가 많아도 폭락을 예측한다는 뜻이 아니고, "우호(+)"가 많아도 상승을 보장하지 않습니다. 결과는 투자 권유가 아니라 기본 비중에서 위험을 조금 줄이거나 늘릴지 보는 참고 틀입니다. 자료가 오래됐거나 없는 신호는 0으로 처리하고 표에 표시합니다.</p>';
       h += '</div></details>';
+      h += '<div class="ec-card" style="margin-top:10px;"><b>이 규칙을 과거 자료로 시험해 보기</b><div class="ec-dim" style="font-size:12.5px; margin:4px 0 8px;">한국(코스피·국고채 3년 근사·기준금리)에서 기본 비중 고정과 비교합니다. 선택한 투자 성향을 사용합니다.</div><button class="ec-btn" onclick="econBtRun()">백테스트 실행</button></div>';
       box.innerHTML = h;
     }
     function econModelRender() {
